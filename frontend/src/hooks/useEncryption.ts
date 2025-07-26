@@ -1,0 +1,546 @@
+/**
+ * React hook for encryption operations in SecureVault.
+ * 
+ * This hook provides a complete encryption interface including:
+ * - Key management and derivation
+ * - File encryption/decryption
+ * - Server API integration
+ * - Error handling and validation
+ */
+
+import { useState, useCallback, useEffect } from 'react';
+import useAuthStore from '../stores/authStore';
+import { 
+  deriveKey, 
+  deriveExtractableKey,
+  encryptFile, 
+  decryptFile,
+  createValidationPayload,
+  generateSalt,
+  generateIV,
+  getEncryptionParameters,
+  isWebCryptoSupported,
+  testCryptoFunctionality,
+  uint8ArrayToBase64,
+  base64ToUint8Array,
+  hashKeyMaterial,
+  ENCRYPTION_CONFIG,
+  EncryptionError,
+  KeyDerivationError,
+  DecryptionError
+} from '../utils/encryption';
+import { encryptionApi } from '../services/api/encryption';
+
+// Types
+export interface EncryptionKey {
+  keyId: string;
+  algorithm: string;
+  keyDerivationMethod: string;
+  iterations: number;
+  salt: string;
+  hint?: string;
+  isActive: boolean;
+  createdAt: string;
+  expiresAt?: string;
+  escrowAvailable: boolean;
+}
+
+export interface EncryptionKeyCreateRequest {
+  password: string;
+  hint?: string;
+  iterations?: number;
+  replaceExisting?: boolean;
+}
+
+export interface FileEncryptionResult {
+  encryptedFile: File;
+  encryptionMetadata: {
+    keyId: string;
+    iv: string;
+    authTag: string;
+    algorithm: string;
+    originalSize: number;
+    encryptedSize: number;
+  };
+}
+
+export interface EncryptionState {
+  isSupported: boolean;
+  isInitialized: boolean;
+  currentKey: EncryptionKey | null;
+  keys: EncryptionKey[];
+  isLoading: boolean;
+  error: string | null;
+}
+
+export interface EncryptionActions {
+  // Key management
+  createEncryptionKey: (request: EncryptionKeyCreateRequest) => Promise<EncryptionKey>;
+  loadEncryptionKeys: () => Promise<void>;
+  setCurrentKey: (keyId: string) => Promise<void>;
+  deactivateKey: (keyId: string, reason: string) => Promise<void>;
+  
+  // Key derivation
+  deriveUserKey: (password: string, keyData: EncryptionKey) => Promise<CryptoKey>;
+  validatePassword: (password: string, keyData: EncryptionKey) => Promise<boolean>;
+  
+  // File operations
+  encryptFileForUpload: (file: File, password: string, onProgress?: (progress: number) => void, keyOverride?: EncryptionKey) => Promise<FileEncryptionResult>;
+  decryptDownloadedFile: (encryptedData: ArrayBuffer, metadata: any, password: string) => Promise<File>;
+  
+  // Utilities
+  testEncryption: () => Promise<boolean>;
+  generateNewSalt: () => Promise<string>;
+  getRecommendedParameters: () => Promise<any>;
+  
+  // State management
+  clearError: () => void;
+  reset: () => void;
+}
+
+export interface UseEncryptionReturn extends EncryptionState, EncryptionActions {}
+
+/**
+ * Custom hook for encryption operations
+ */
+export function useEncryption(): UseEncryptionReturn {
+  const user = useAuthStore((state) => state.user);
+  
+  const [state, setState] = useState<EncryptionState>({
+    isSupported: isWebCryptoSupported(),
+    isInitialized: false,
+    currentKey: null,
+    keys: [],
+    isLoading: false,
+    error: null
+  });
+
+  /**
+   * Update state helper
+   */
+  const updateState = useCallback((updates: Partial<EncryptionState>) => {
+    setState(prev => ({ ...prev, ...updates }));
+  }, []);
+
+  /**
+   * Handle errors consistently
+   */
+  const handleError = useCallback((error: any, fallbackMessage: string) => {
+    console.error('Encryption error:', error);
+    const errorMessage = error instanceof Error ? error.message : fallbackMessage;
+    updateState({ error: errorMessage, isLoading: false });
+    throw error;
+  }, []); // updateState is stable
+
+  /**
+   * Initialize encryption system
+   */
+  const initialize = useCallback(async () => {
+    if (!state.isSupported) {
+      updateState({ error: 'Web Crypto API not supported in this browser' });
+      return;
+    }
+
+    updateState({ isLoading: true, error: null });
+
+    try {
+      // Test crypto functionality
+      const cryptoWorks = await testCryptoFunctionality();
+      if (!cryptoWorks) {
+        throw new Error('Crypto functionality test failed');
+      }
+
+      // Load user's encryption keys
+      await loadEncryptionKeys();
+      
+      updateState({ isInitialized: true, isLoading: false });
+    } catch (error) {
+      handleError(error, 'Failed to initialize encryption system');
+    }
+  }, [state.isSupported]); // updateState and handleError are stable
+
+  /**
+   * Create new encryption key
+   */
+  const createEncryptionKey = useCallback(async (request: EncryptionKeyCreateRequest): Promise<EncryptionKey> => {
+    if (!user) throw new Error('User not authenticated');
+    
+    updateState({ isLoading: true, error: null });
+
+    try {
+      // Generate salt and parameters
+      const salt = generateSalt();
+      const iterations = request.iterations || ENCRYPTION_CONFIG.RECOMMENDED_ITERATIONS;
+      
+      // Derive key for validation
+      const keyMaterial = await deriveExtractableKey({
+        password: request.password,
+        salt,
+        iterations
+      });
+      
+      const derivedKey = await deriveKey({
+        password: request.password,
+        salt,
+        iterations
+      });
+
+      // Create validation payload
+      const validationPayload = await createValidationPayload(user.username, derivedKey);
+
+      // Prepare request
+      const keyCreateRequest = {
+        password: request.password,
+        iterations,
+        salt: uint8ArrayToBase64(salt),
+        hint: request.hint,
+        validation_ciphertext: validationPayload.ciphertext,
+        validation_iv: validationPayload.iv,
+        validation_auth_tag: validationPayload.authTag,
+        replace_existing: request.replaceExisting || false
+      };
+
+      // Create key on server
+      const newKey = await encryptionApi.createKey(keyCreateRequest);
+      
+      // Update local state
+      await loadEncryptionKeys();
+      
+      updateState({ isLoading: false });
+      return newKey;
+    } catch (error) {
+      handleError(error, 'Failed to create encryption key');
+      throw error;
+    }
+  }, [user]); // updateState and handleError are stable
+
+  /**
+   * Load encryption keys from server
+   */
+  const loadEncryptionKeys = useCallback(async () => {
+    updateState({ isLoading: true, error: null });
+
+    try {
+      const keyList = await encryptionApi.listKeys();
+      const keys = keyList.keys || [];
+      const activeKey = keys.find(key => key.isActive) || null;
+      
+      updateState({ 
+        keys: keys, 
+        currentKey: activeKey, 
+        isLoading: false 
+      });
+    } catch (error) {
+      handleError(error, 'Failed to load encryption keys');
+    }
+  }, []); // updateState and handleError are stable
+
+  /**
+   * Set current active key
+   */
+  const setCurrentKey = useCallback(async (keyId: string) => {
+    const key = state.keys?.find(k => k.keyId === keyId);
+    if (!key) {
+      throw new Error('Key not found');
+    }
+    
+    updateState({ currentKey: key });
+  }, [state.keys]);
+
+  /**
+   * Deactivate encryption key
+   */
+  const deactivateKey = useCallback(async (keyId: string, reason: string) => {
+    updateState({ isLoading: true, error: null });
+
+    try {
+      await encryptionApi.deactivateKey(keyId, reason);
+      await loadEncryptionKeys(); // Refresh key list
+      updateState({ isLoading: false });
+    } catch (error) {
+      handleError(error, 'Failed to deactivate key');
+    }
+  }, [loadEncryptionKeys]); // updateState and handleError are stable
+
+  /**
+   * Derive user's encryption key from password
+   */
+  const deriveUserKey = useCallback(async (password: string, keyData: EncryptionKey): Promise<CryptoKey> => {
+    try {
+      // Validate key data
+      if (!keyData) {
+        throw new Error('Key data is required');
+      }
+      if (!keyData.salt) {
+        throw new Error('Salt is missing from key data');
+      }
+      if (!keyData.iterations || keyData.iterations < 100000) {
+        throw new Error('Invalid iterations in key data');
+      }
+      
+      console.log('Deriving key with data:', {
+        keyId: keyData.keyId,
+        saltLength: keyData.salt?.length,
+        iterations: keyData.iterations,
+        salt: keyData.salt?.substring(0, 20) + '...'
+      });
+      
+      const salt = base64ToUint8Array(keyData.salt);
+      const derivedKey = await deriveKey({
+        password,
+        salt,
+        iterations: keyData.iterations
+      });
+      
+      return derivedKey;
+    } catch (error) {
+      console.error('Key derivation error:', error);
+      throw new KeyDerivationError(`Failed to derive key: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }, []);
+
+  /**
+   * Validate password against encryption key
+   */
+  const validatePassword = useCallback(async (password: string, keyData: EncryptionKey): Promise<boolean> => {
+    if (!user) return false;
+
+    try {
+      const derivedKey = await deriveUserKey(password, keyData);
+      
+      // Create validation payload and verify with server
+      const validationPayload = await createValidationPayload(user.username, derivedKey);
+      const keyMaterial = await deriveExtractableKey({
+        password,
+        salt: base64ToUint8Array(keyData.salt),
+        iterations: keyData.iterations
+      });
+
+      const validationRequest = {
+        key: uint8ArrayToBase64(new Uint8Array(keyMaterial)),
+        iv: validationPayload.iv,
+        auth_tag: validationPayload.authTag,
+        ciphertext: validationPayload.ciphertext
+      };
+
+      const result = await encryptionApi.validateEncryption(validationRequest);
+      return result.valid;
+    } catch (error) {
+      console.error('Password validation failed:', error);
+      return false;
+    }
+  }, [user, deriveUserKey]);
+
+  /**
+   * Encrypt file for upload
+   */
+  const encryptFileForUpload = useCallback(async (
+    file: File, 
+    password: string,
+    onProgress?: (progress: number) => void,
+    keyOverride?: EncryptionKey
+  ): Promise<FileEncryptionResult> => {
+    const keyToUse = keyOverride || state.currentKey;
+    if (!keyToUse) {
+      throw new Error('No active encryption key available');
+    }
+
+    try {
+      console.log('🔐 Starting file encryption for upload:', {
+        fileName: file.name,
+        fileSize: file.size,
+        fileType: file.type,
+        keyId: keyToUse.keyId
+      });
+
+      const derivedKey = await deriveUserKey(password, keyToUse);
+      console.log('🔑 Derived encryption key successfully');
+      
+      const encryptionResult = await encryptFile(file, derivedKey, onProgress);
+      console.log('🔒 File encrypted:', {
+        algorithm: encryptionResult.algorithm,
+        originalSize: encryptionResult.originalSize,
+        encryptedSize: encryptionResult.encryptedSize,
+        ivLength: encryptionResult.iv.length,
+        authTagLength: encryptionResult.authTag.length,
+        ciphertextLength: encryptionResult.ciphertext.length
+      });
+      
+      const ciphertextBytes = base64ToUint8Array(encryptionResult.ciphertext);
+      const authTagBytes = base64ToUint8Array(encryptionResult.authTag);
+      
+      console.log('📦 Creating encrypted blob:', {
+        ciphertextBytesLength: ciphertextBytes.length,
+        authTagBytesLength: authTagBytes.length,
+        totalSize: ciphertextBytes.length + authTagBytes.length,
+        ciphertextPreview: Array.from(ciphertextBytes.slice(0, 8)),
+        authTagPreview: Array.from(authTagBytes)
+      });
+      
+      const encryptedBlob = new Blob([ciphertextBytes, authTagBytes]);
+      const encryptedFile = new File([encryptedBlob], `${file.name}.enc`, {
+        type: 'application/octet-stream'
+      });
+
+      console.log('📄 Final encrypted file:', {
+        size: encryptedFile.size,
+        name: encryptedFile.name,
+        type: encryptedFile.type
+      });
+
+      const metadata = {
+        keyId: keyToUse.keyId,
+        iv: encryptionResult.iv,
+        authTag: encryptionResult.authTag,
+        algorithm: encryptionResult.algorithm,
+        originalSize: encryptionResult.originalSize,
+        encryptedSize: encryptionResult.encryptedSize
+      };
+
+      console.log('📋 Encryption metadata:', metadata);
+
+      return {
+        encryptedFile,
+        encryptionMetadata: metadata
+      };
+    } catch (error) {
+      console.error('🚨 File encryption failed:', error);
+      throw new EncryptionError(
+        `File encryption failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        'FILE_ENCRYPTION_FAILED'
+      );
+    }
+  }, [deriveUserKey]);
+
+  /**
+   * Decrypt downloaded file
+   */
+  const decryptDownloadedFile = useCallback(async (
+    encryptedData: ArrayBuffer,
+    metadata: any,
+    password: string
+  ): Promise<File> => {
+    try {
+      // Find the key used for encryption
+      const keyData = state.keys?.find(k => k.keyId === metadata.keyId);
+      if (!keyData) {
+        throw new Error('Encryption key not found');
+      }
+
+      const derivedKey = await deriveUserKey(password, keyData);
+      
+      // Split encrypted data into ciphertext and auth tag
+      const encryptedArray = new Uint8Array(encryptedData);
+      const authTagSize = ENCRYPTION_CONFIG.AUTH_TAG_LENGTH;
+      const ciphertext = encryptedArray.slice(0, -authTagSize);
+      const authTag = encryptedArray.slice(-authTagSize);
+
+      const decryptedFile = await decryptFile(
+        {
+          ciphertext: uint8ArrayToBase64(ciphertext),
+          iv: metadata.iv,
+          authTag: uint8ArrayToBase64(authTag),
+          key: derivedKey
+        },
+        metadata.originalName || 'decrypted-file',
+        metadata.mimeType
+      );
+
+      return decryptedFile;
+    } catch (error) {
+      throw new DecryptionError(
+        `File decryption failed: ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
+    }
+  }, [state.keys, deriveUserKey]);
+
+  /**
+   * Test encryption functionality
+   */
+  const testEncryption = useCallback(async (): Promise<boolean> => {
+    try {
+      return await testCryptoFunctionality();
+    } catch (error) {
+      console.error('Encryption test failed:', error);
+      return false;
+    }
+  }, []);
+
+  /**
+   * Generate new salt
+   */
+  const generateNewSalt = useCallback(async (): Promise<string> => {
+    try {
+      const response = await encryptionApi.generateSalt();
+      return response.salt;
+    } catch (error) {
+      throw new Error(`Failed to generate salt: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }, []);
+
+  /**
+   * Get recommended parameters
+   */
+  const getRecommendedParameters = useCallback(async () => {
+    try {
+      return await encryptionApi.getParameters();
+    } catch (error) {
+      throw new Error(`Failed to get parameters: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }, []);
+
+  /**
+   * Clear current error
+   */
+  const clearError = useCallback(() => {
+    updateState({ error: null });
+  }, []); // updateState is stable
+
+  /**
+   * Reset encryption state
+   */
+  const reset = useCallback(() => {
+    setState({
+      isSupported: isWebCryptoSupported(),
+      isInitialized: false,
+      currentKey: null,
+      keys: [],
+      isLoading: false,
+      error: null
+    });
+  }, []);
+
+  // Initialize on mount
+  useEffect(() => {
+    if (user && !state.isInitialized && state.isSupported) {
+      initialize();
+    }
+  }, [user, state.isInitialized, state.isSupported, initialize]);
+
+  // Auto-load keys when user changes
+  useEffect(() => {
+    if (user && state.isInitialized) {
+      loadEncryptionKeys();
+    }
+  }, [user, state.isInitialized, loadEncryptionKeys]);
+
+  return {
+    // State
+    ...state,
+    
+    // Actions
+    createEncryptionKey,
+    loadEncryptionKeys,
+    setCurrentKey,
+    deactivateKey,
+    deriveUserKey,
+    validatePassword,
+    encryptFileForUpload,
+    decryptDownloadedFile,
+    testEncryption,
+    generateNewSalt,
+    getRecommendedParameters,
+    clearError,
+    reset
+  };
+}

@@ -1,0 +1,513 @@
+/**
+ * Document API Service for SecureVault
+ * 
+ * Provides API methods for document management including:
+ * - Document upload, download, and CRUD operations
+ * - Folder management and navigation
+ * - Search and filtering
+ * - Permissions and sharing
+ */
+
+import { apiRequest } from '../api';
+
+// Token management utility (matching api.ts)
+class TokenManager {
+  private static ACCESS_TOKEN_KEY = 'access_token';
+  private static REMEMBER_ME_KEY = 'remember_me';
+
+  static getAccessToken(): string | null {
+    if (this.getRememberMe()) {
+      return localStorage.getItem(this.ACCESS_TOKEN_KEY);
+    }
+    return sessionStorage.getItem(this.ACCESS_TOKEN_KEY);
+  }
+
+  static getRememberMe(): boolean {
+    return localStorage.getItem(this.REMEMBER_ME_KEY) === 'true';
+  }
+}
+
+export interface Document {
+  id: number;
+  name: string;
+  description?: string;
+  document_type: 'document' | 'folder';
+  mime_type?: string;
+  file_size?: number;
+  file_hash_sha256?: string;
+  storage_path?: string;
+  parent_id?: number | null;
+  owner_id: number;
+  created_by: number;
+  created_at: string;
+  updated_at: string;
+  is_deleted: boolean;
+  tags: string[];
+  doc_metadata: Record<string, any>;
+  
+  encryption_key_id?: string;
+  encryption_iv?: string;
+  encryption_auth_tag?: string;
+  
+  path?: string;
+  depth?: number;
+  children?: Document[];
+}
+
+export interface DocumentListParams {
+  parent_id?: number | null;
+  document_type?: 'document' | 'folder' | 'all';
+  search?: string;
+  tags?: string[];
+  sort_by?: 'name' | 'created_at' | 'updated_at' | 'file_size';
+  sort_order?: 'asc' | 'desc';
+  page?: number;
+  per_page?: number;
+  include_deleted?: boolean;
+}
+
+export interface DocumentListResponse {
+  documents: Document[];
+  total: number;
+  page: number;
+  per_page: number;
+  has_next: boolean;
+}
+
+export interface DocumentCreateParams {
+  name: string;
+  description?: string;
+  document_type: 'document' | 'folder';
+  parent_id?: number | null;
+  tags?: string[];
+  doc_metadata?: Record<string, any>;
+}
+
+export interface DocumentUpdateParams {
+  name?: string;
+  description?: string;
+  parent_id?: number | null;
+  tags?: string[];
+  doc_metadata?: Record<string, any>;
+}
+
+export interface BulkOperationParams {
+  document_ids: number[];
+  target_folder_id?: number | null;
+  operation: 'move' | 'copy' | 'delete';
+  conflict_resolution?: 'skip' | 'replace' | 'rename';
+}
+
+export interface DocumentPathResponse {
+  path: Document[];
+}
+
+export class DocumentsApiService {
+  /**
+   * List documents with optional filtering and pagination
+   */
+  async listDocuments(params: DocumentListParams = {}): Promise<DocumentListResponse> {
+    const searchParams = new URLSearchParams();
+    
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== null) {
+        if (Array.isArray(value)) {
+          searchParams.append(key, JSON.stringify(value));
+        } else {
+          searchParams.append(key, value.toString());
+        }
+      }
+    });
+
+    const response = await apiRequest<DocumentListResponse>('GET', `/api/v1/documents?${searchParams}`);
+    
+    if (!response.success) {
+      throw new Error(response.error?.detail || 'Failed to load documents');
+    }
+    
+    return response.data!;
+  }
+
+  /**
+   * Get a specific document by ID
+   */
+  async getDocument(documentId: number): Promise<Document> {
+    const response = await apiRequest<Document>('GET', `/api/v1/documents/${documentId}`);
+    
+    if (!response.success) {
+      throw new Error(response.error?.detail || 'Failed to get document');
+    }
+    
+    return response.data!;
+  }
+
+  /**
+   * Create a new document or folder
+   */
+  async createDocument(params: DocumentCreateParams): Promise<Document> {
+    const response = await apiRequest<Document>('POST', '/api/v1/documents', params);
+    
+    if (!response.success) {
+      throw new Error(response.error?.detail || 'Failed to create document');
+    }
+    
+    return response.data!;
+  }
+
+  /**
+   * Update document metadata
+   */
+  async updateDocument(documentId: number, params: DocumentUpdateParams): Promise<Document> {
+    const response = await apiRequest<Document>('PUT', `/api/v1/documents/${documentId}`, params);
+    
+    if (!response.success) {
+      throw new Error(response.error?.detail || 'Failed to update document');
+    }
+    
+    return response.data!;
+  }
+
+  /**
+   * Delete a document (soft delete)
+   */
+  async deleteDocument(documentId: number): Promise<void> {
+    const response = await apiRequest<void>('DELETE', `/api/v1/documents/${documentId}`);
+    
+    if (!response.success) {
+      throw new Error(response.error?.detail || 'Failed to delete document');
+    }
+  }
+
+  /**
+   * Restore a deleted document
+   */
+  async restoreDocument(documentId: number): Promise<Document> {
+    const response = await apiRequest<Document>('POST', `/api/v1/documents/${documentId}/restore`);
+    
+    if (!response.success) {
+      throw new Error(response.error?.detail || 'Failed to restore document');
+    }
+    
+    return response.data!;
+  }
+
+  /**
+   * Upload a document with encrypted file
+   */
+  async uploadDocument(
+    formData: FormData,
+    onProgress?: (progress: number) => void,
+    signal?: AbortSignal
+  ): Promise<Document> {
+    const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8002'}/api/v1/documents/upload`, {
+      method: 'POST',
+      body: formData,
+      signal,
+      headers: {
+        'Authorization': `Bearer ${TokenManager.getAccessToken()}`,
+      },
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.detail || `Upload failed: ${response.status}`);
+    }
+
+    return response.json();
+  }
+
+  /**
+   * Download a document
+   */
+  async downloadDocument(documentId: number, password?: string): Promise<void> {
+    console.log('📥 Starting document download:', { documentId, hasPassword: !!password });
+    
+    try {
+      // First, get document metadata for encryption parameters
+      console.log('📋 Fetching document metadata...');
+      const document = await this.getDocument(documentId);
+      console.log('📄 Document retrieved:', {
+        id: document.id,
+        name: document.name,
+        hasEncryptionKeyId: !!document.encryption_key_id,
+        hasEncryptionIv: !!document.encryption_iv,
+        hasEncryptionAuthTag: !!document.encryption_auth_tag
+      });
+      
+      // Download the encrypted file
+      console.log('⬇️ Downloading encrypted file...');
+      const params = password ? `?password=${encodeURIComponent(password)}` : '';
+      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8002'}/api/v1/documents/${documentId}/download${params}`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${TokenManager.getAccessToken()}`,
+        },
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.detail || `Download failed: ${response.status}`);
+      }
+
+      // Get encrypted file data
+      const encryptedBlob = await response.blob();
+      const contentDisposition = response.headers.get('Content-Disposition');
+      const filename = contentDisposition?.split('filename=')[1]?.replace(/"/g, '') || document.name || `document-${documentId}`;
+
+      console.log('📦 Downloaded blob info:', {
+        size: encryptedBlob.size,
+        type: encryptedBlob.type,
+        filename: filename,
+        contentDisposition: contentDisposition
+      });
+
+      // Check if the document has encryption metadata
+      if (document.encryption_key_id && document.encryption_iv && document.encryption_auth_tag) {
+        console.log('🔐 Document is encrypted, starting decryption...');
+        // Document is encrypted, decrypt it
+        await this.decryptAndDownload(encryptedBlob, document, filename);
+      } else {
+        console.log('📁 Document is not encrypted, downloading as-is...');
+        // Document is not encrypted, download as-is
+        this.downloadBlob(encryptedBlob, filename);
+      }
+    } catch (error) {
+      console.error('🚨 Download failed:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Decrypt and download an encrypted document
+   */
+  private async decryptAndDownload(encryptedBlob: Blob, document: Document, filename: string): Promise<void> {
+    // Dynamic import to avoid circular dependencies
+    const { decrypt, deriveKey, base64ToArrayBuffer, base64ToUint8Array } = await import('../../utils/encryption');
+    const { encryptionApi } = await import('./encryption');
+
+    try {
+      console.log('🔐 Starting decryption process for document:', document.id);
+      console.log('📄 Document metadata:', {
+        id: document.id,
+        name: document.name,
+        fileSize: document.file_size,
+        mimeType: document.mime_type,
+        encryptionKeyId: document.encryption_key_id,
+        hasIV: !!document.encryption_iv,
+        hasAuthTag: !!document.encryption_auth_tag
+      });
+
+      // Get the encryption key
+      const encryptionKey = await encryptionApi.getKey(document.encryption_key_id!);
+      console.log('🔑 Retrieved encryption key:', {
+        keyId: encryptionKey.keyId,
+        algorithm: encryptionKey.algorithm,
+        iterations: encryptionKey.iterations,
+        saltLength: encryptionKey.salt?.length
+      });
+      
+      // Prompt user for password to derive the decryption key
+      const userPassword = window.prompt('Enter your encryption password to decrypt this document:');
+      if (!userPassword) {
+        throw new Error('Password required for decryption');
+      }
+
+      // Derive the decryption key
+      const salt = base64ToUint8Array(encryptionKey.salt);
+      console.log('🧂 Salt details:', { saltLength: salt.length, saltPreview: Array.from(salt.slice(0, 8)) });
+      
+      const cryptoKey = await deriveKey({
+        password: userPassword,
+        salt,
+        iterations: encryptionKey.iterations
+      });
+      console.log('🔑 Derived crypto key successfully');
+
+      // Convert blob to array buffer for decryption
+      const arrayBuffer = await encryptedBlob.arrayBuffer();
+      const uint8Array = new Uint8Array(arrayBuffer);
+      console.log('📦 Downloaded file details:', {
+        totalSize: uint8Array.length,
+        firstBytes: Array.from(uint8Array.slice(0, 16)),
+        lastBytes: Array.from(uint8Array.slice(-16))
+      });
+      
+      // Try both approaches: using auth tag from file vs database
+      const authTagLength = 16; // 128 bits for AES-GCM
+      const ciphertextLength = uint8Array.length - authTagLength;
+      
+      const ciphertext = uint8Array.slice(0, ciphertextLength);
+      const authTagFromFile = uint8Array.slice(ciphertextLength);
+      
+      console.log('🔄 Split file data:', {
+        ciphertextLength: ciphertext.length,
+        authTagFromFileLength: authTagFromFile.length,
+        authTagFromFile: Array.from(authTagFromFile)
+      });
+
+      // Convert to base64 for the decryption function (handle large arrays safely)
+      const ciphertextBase64 = btoa(Array.from(ciphertext).map(byte => String.fromCharCode(byte)).join(''));
+      const authTagFromFileBase64 = btoa(String.fromCharCode(...authTagFromFile));
+      
+      console.log('📝 Base64 conversions:', {
+        ciphertextBase64Length: ciphertextBase64.length,
+        authTagFromFileBase64: authTagFromFileBase64,
+        authTagFromDatabase: document.encryption_auth_tag,
+        ivFromDatabase: document.encryption_iv
+      });
+
+      let decryptedData;
+      
+      // Try with auth tag from file first
+      try {
+        console.log('🎯 Attempting decryption with auth tag from file...');
+        decryptedData = await decrypt({
+          ciphertext: ciphertextBase64,
+          iv: document.encryption_iv!,
+          authTag: authTagFromFileBase64,
+          key: cryptoKey
+        });
+        console.log('✅ Decryption successful using auth tag from file');
+      } catch (fileAuthError) {
+        console.log('❌ Decryption failed with file auth tag:', fileAuthError);
+        
+        // Try with auth tag from database
+        try {
+          console.log('🎯 Attempting decryption with auth tag from database...');
+          decryptedData = await decrypt({
+            ciphertext: ciphertextBase64,
+            iv: document.encryption_iv!,
+            authTag: document.encryption_auth_tag!,
+            key: cryptoKey
+          });
+          console.log('✅ Decryption successful using auth tag from database');
+        } catch (dbAuthError) {
+          console.log('❌ Decryption failed with database auth tag:', dbAuthError);
+          
+          // Try direct Web Crypto API decryption (entire file as-is)
+          try {
+            console.log('🎯 Attempting direct Web Crypto API decryption...');
+            const iv = base64ToUint8Array(document.encryption_iv!);
+            const decryptParams = {
+              name: 'AES-GCM',
+              iv: iv
+            };
+            
+            decryptedData = await window.crypto.subtle.decrypt(
+              decryptParams,
+              cryptoKey,
+              uint8Array
+            );
+            console.log('✅ Direct Web Crypto API decryption successful');
+          } catch (directError) {
+            console.log('❌ Direct Web Crypto API decryption failed:', directError);
+            throw new Error('All decryption methods failed');
+          }
+        }
+      }
+
+      console.log('🎉 Decryption complete:', {
+        originalSize: document.file_size,
+        decryptedSize: decryptedData.byteLength,
+        sizeMismatch: document.file_size !== decryptedData.byteLength
+      });
+
+      // Create decrypted file blob
+      const decryptedBlob = new Blob([decryptedData], { type: document.mime_type || 'application/octet-stream' });
+      console.log('📁 Created decrypted blob:', {
+        size: decryptedBlob.size,
+        type: decryptedBlob.type
+      });
+      
+      // Download the decrypted file
+      this.downloadBlob(decryptedBlob, filename);
+      console.log('📥 Download initiated for:', filename);
+      
+    } catch (error) {
+      console.error('🚨 Decryption failed:', error);
+      throw new Error(`Failed to decrypt document: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  /**
+   * Download a blob with the given filename
+   */
+  private downloadBlob(blob: Blob, filename: string): void {
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.style.display = 'none';
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+  }
+
+  /**
+   * Get document path/breadcrumb
+   */
+  async getDocumentPath(documentId: number): Promise<DocumentPathResponse> {
+    const response = await apiRequest<DocumentPathResponse>('GET', `/api/v1/documents/${documentId}/path`);
+    
+    if (!response.success) {
+      throw new Error(response.error?.detail || 'Failed to get document path');
+    }
+    
+    return response.data!;
+  }
+
+  /**
+   * Move documents to a different folder
+   */
+  async moveDocuments(params: BulkOperationParams): Promise<void> {
+    const response = await apiRequest<void>('POST', '/api/v1/documents/bulk/move', params);
+    
+    if (!response.success) {
+      throw new Error(response.error?.detail || 'Failed to move documents');
+    }
+  }
+
+  /**
+   * Copy documents to a different folder
+   */
+  async copyDocuments(params: BulkOperationParams): Promise<void> {
+    const response = await apiRequest<void>('POST', '/api/v1/documents/bulk/copy', params);
+    
+    if (!response.success) {
+      throw new Error(response.error?.detail || 'Failed to copy documents');
+    }
+  }
+
+  /**
+   * Search documents
+   */
+  async searchDocuments(query: string, filters?: Partial<DocumentListParams>): Promise<DocumentListResponse> {
+    return this.listDocuments({ ...filters, search: query });
+  }
+
+  /**
+   * Get document statistics
+   */
+  async getDocumentStats(): Promise<{
+    total_documents: number;
+    total_folders: number;
+    total_size: number;
+    documents_by_type: Record<string, number>;
+  }> {
+    const response = await apiRequest<{
+      total_documents: number;
+      total_folders: number;
+      total_size: number;
+      documents_by_type: Record<string, number>;
+    }>('GET', '/api/v1/documents/stats');
+    
+    if (!response.success) {
+      throw new Error(response.error?.detail || 'Failed to get document statistics');
+    }
+    
+    return response.data!;
+  }
+}
+
+export const documentsApi = new DocumentsApiService();

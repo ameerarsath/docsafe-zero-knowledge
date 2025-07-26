@@ -1,0 +1,99 @@
+/**
+ * Main App Component for SecureVault Frontend
+ * 
+ * Root application component with routing, authentication context,
+ * and global session management.
+ */
+
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { AuthProvider } from './contexts/AuthContext';
+import { SessionTimeoutManager } from './components/auth/SessionTimeoutWarning';
+
+// Pages
+import LoginPage from './pages/LoginPage';
+import ForgotPasswordPage from './pages/ForgotPasswordPage';
+import ResetPasswordPage from './pages/ResetPasswordPage';
+import DashboardPage from './pages/DashboardPage';
+import DocumentsPage from './pages/DocumentsPage';
+
+// MFA Components
+import MFASettingsPage from './components/mfa/MFASettingsPage';
+
+// RBAC Components
+import { PermissionProvider } from './components/rbac/RoleBasedComponent';
+import MobileResponsiveRoleManagement from './components/rbac/MobileResponsiveRoleManagement';
+import RBACAdminPage from './pages/RBACAdminPage';
+
+// Styles
+import './App.css';
+
+function App() {
+  return (
+    <Router>
+      <AuthProvider>
+        <PermissionProvider>
+          <div className="App">
+            <SessionTimeoutManager />
+            {/* Main application routes */}
+            <Routes>
+            {/* Public routes */}
+            <Route path="/login" element={<LoginPage />} />
+            <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+            <Route path="/reset-password" element={<ResetPasswordPage />} />
+            
+            {/* Protected routes */}
+            <Route path="/dashboard" element={<DashboardPage />} />
+            <Route path="/documents" element={<DocumentsPage />} />
+            <Route path="/settings/mfa" element={<MFASettingsPage className="p-6" />} />
+            
+            {/* RBAC Admin Routes */}
+            <Route path="/admin" element={<RBACAdminPage />} />
+            <Route path="/admin/rbac" element={<MobileResponsiveRoleManagement initialView="roles" />} />
+            <Route path="/admin/rbac/roles" element={<MobileResponsiveRoleManagement initialView="roles" />} />
+            <Route path="/admin/rbac/assignments" element={<MobileResponsiveRoleManagement initialView="assignments" />} />
+            <Route path="/admin/rbac/matrix" element={<MobileResponsiveRoleManagement initialView="matrix" />} />
+            <Route path="/admin/rbac/hierarchy" element={<MobileResponsiveRoleManagement initialView="hierarchy" />} />
+            <Route path="/admin/rbac/audit" element={<MobileResponsiveRoleManagement initialView="audit" />} />
+            
+            {/* Default redirect */}
+            <Route path="/" element={<Navigate to="/login" replace />} />
+            
+            {/* 404 handler */}
+            <Route path="*" element={<NotFoundPage />} />
+          </Routes>
+        </div>
+        </PermissionProvider>
+      </AuthProvider>
+    </Router>
+  );
+}
+
+/**
+ * 404 Not Found Page
+ */
+function NotFoundPage() {
+  return (
+    <div className="min-h-screen bg-gray-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
+      <div className="sm:mx-auto sm:w-full sm:max-w-md">
+        <div className="bg-white py-8 px-4 shadow sm:rounded-lg sm:px-10">
+          <div className="text-center">
+            <h1 className="text-2xl font-bold text-gray-900 mb-2">
+              404 - Page Not Found
+            </h1>
+            <p className="text-sm text-gray-600 mb-4">
+              The page you're looking for doesn't exist.
+            </p>
+            <a
+              href="/dashboard"
+              className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+            >
+              Go to Dashboard
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default App;
