@@ -12,17 +12,22 @@ import {
   Grid, 
   RefreshCw,
   FileText,
-  Smartphone,
-  ArrowLeft
+  Smartphone
 } from 'lucide-react';
 import { RequireAuth } from '../components/auth/ProtectedRoute';
 import { RoleBasedComponent } from '../components/rbac/RoleBasedComponent';
+import AppLayout from '../components/layout/AppLayout';
 
 export default function RBACAdminPage() {
   return (
     <RequireAuth>
       <RoleBasedComponent requiredPermission="roles:read">
-        <RBACAdminContent />
+        <AppLayout 
+          title="RBAC Administration" 
+          subtitle="Manage roles, permissions, and access control for SecureVault"
+        >
+          <RBACAdminContent />
+        </AppLayout>
       </RoleBasedComponent>
     </RequireAuth>
   );
@@ -87,32 +92,7 @@ function RBACAdminContent() {
   ];
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <div className="bg-white shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center py-6">
-            <div>
-              <div className="flex items-center">
-                <Link 
-                  to="/dashboard"
-                  className="flex items-center text-gray-500 hover:text-gray-700 mr-4"
-                >
-                  <ArrowLeft className="h-5 w-5 mr-1" />
-                  Dashboard
-                </Link>
-                <h1 className="text-3xl font-bold text-gray-900">RBAC Administration</h1>
-              </div>
-              <p className="mt-2 text-sm text-gray-600">
-                Manage roles, permissions, and access control for SecureVault
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Content */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <div className="space-y-8">
         {/* Quick Stats */}
         <div className="mb-8 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
           <div className="bg-white overflow-hidden shadow rounded-lg">
@@ -251,7 +231,6 @@ function RBACAdminContent() {
             </div>
           </div>
         </div>
-      </div>
     </div>
   );
 }

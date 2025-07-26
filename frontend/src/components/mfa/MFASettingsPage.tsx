@@ -17,6 +17,7 @@ import { MFAStatus } from '../../types/mfa';
 import MFASetupWizard from './MFASetupWizard';
 import BackupCodesManager from './BackupCodesManager';
 import QRCodeDisplay from './QRCodeDisplay';
+import AppLayout from '../layout/AppLayout';
 
 interface MFASettingsPageProps {
   className?: string;
@@ -140,52 +141,33 @@ export default function MFASettingsPage({ className = '' }: MFASettingsPageProps
 
   return (
     <div className={`max-w-4xl mx-auto space-y-8 ${className}`}>
-      {/* Page Header */}
-      <div className="bg-white shadow rounded-lg">
-        <div className="px-6 py-4 border-b border-gray-200">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center">
+      {/* Error Display */}
+      {error && (
+        <div className="bg-red-50 border border-red-200 rounded-md p-4">
+          <div className="flex">
+            <svg className="w-5 h-5 text-red-400 mr-2 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+            </svg>
+            <div className="text-sm">
+              <p className="text-red-800">{error}</p>
               <button
-                onClick={() => navigate('/dashboard')}
-                className="mr-4 p-2 text-gray-400 hover:text-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 rounded-md"
-                aria-label="Back to dashboard"
+                type="button"
+                onClick={() => setError(null)}
+                className="mt-1 text-red-600 hover:text-red-500 underline"
               >
-                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
-                </svg>
+                Dismiss
               </button>
-              <div>
-                <h1 className="text-2xl font-bold text-gray-900">Multi-Factor Authentication</h1>
-                <p className="mt-2 text-sm text-gray-600">
-                  Manage your two-factor authentication settings and backup codes
-                </p>
-              </div>
             </div>
           </div>
         </div>
+      )}
 
-        {/* Error Display */}
-        {error && (
-          <div className="mx-6 mt-4 bg-red-50 border border-red-200 rounded-md p-4">
-            <div className="flex">
-              <svg className="w-5 h-5 text-red-400 mr-2 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-              </svg>
-              <div className="text-sm">
-                <p className="text-red-800">{error}</p>
-                <button
-                  type="button"
-                  onClick={() => setError(null)}
-                  className="mt-1 text-red-600 hover:text-red-500 underline"
-                >
-                  Dismiss
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
+      {/* MFA Status Overview */}
+      <div className="bg-white shadow rounded-lg">
+        <div className="px-6 py-4 border-b border-gray-200">
+          <h2 className="text-lg font-medium text-gray-900">Current Status</h2>
+        </div>
 
-        {/* MFA Status Overview */}
         <div className="px-6 py-6">
           {mfaStatus ? (
             <div className="flex items-center justify-between">

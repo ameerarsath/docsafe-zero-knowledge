@@ -23,6 +23,7 @@ import {
   FolderManagementDialog
 } from '../components/documents';
 import { RequireAuth } from '../components/auth/ProtectedRoute';
+import AppLayout from '../components/layout/AppLayout';
 import {
   FileText,
   FolderOpen,
@@ -53,7 +54,9 @@ import {
 export default function DocumentsPage() {
   return (
     <RequireAuth>
-      <DocumentsContent />
+      <AppLayout>
+        <DocumentsContent />
+      </AppLayout>
     </RequireAuth>
   );
 }
@@ -319,41 +322,12 @@ function DocumentsContent() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <div className="bg-white shadow-sm border-b">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
-            <div className="flex items-center space-x-4">
-              <h1 className="text-2xl font-bold text-gray-900">Documents</h1>
-              <div className="text-sm text-gray-500">
-                {totalCount} item{totalCount !== 1 ? 's' : ''}
-              </div>
-            </div>
-            
-            <div className="flex items-center space-x-2">
-              <button
-                onClick={() => handleFolderOperation(null, 'create')}
-                className="inline-flex items-center px-3 py-2 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
-              >
-                <Plus className="w-4 h-4 mr-1" />
-                New Folder
-              </button>
-              
-              <button
-                onClick={() => setShowUpload(true)}
-                className="inline-flex items-center px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-              >
-                <Upload className="w-4 h-4 mr-2" />
-                Upload Files
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        {/* Breadcrumb */}
-        <nav className="flex items-center space-x-2 mb-6 text-sm">
+      {/* Content */}
+      <div className="h-full">
+        {/* Top Bar */}
+        <div className="flex items-center justify-between mb-6">
+          {/* Breadcrumb */}
+          <nav className="flex items-center space-x-2 text-sm">
           <button
             onClick={() => navigateToFolder(null)}
             className="flex items-center text-blue-600 hover:text-blue-800 transition-colors"
@@ -373,7 +347,32 @@ function DocumentsContent() {
               </button>
             </React.Fragment>
           ))}
+          
+          {/* Item count */}
+          <span className="text-gray-500 ml-4">
+            {totalCount} item{totalCount !== 1 ? 's' : ''}
+          </span>
         </nav>
+
+        {/* Action buttons */}
+        <div className="flex items-center space-x-2">
+          <button
+            onClick={() => handleFolderOperation(null, 'create')}
+            className="inline-flex items-center px-3 py-2 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
+          >
+            <Plus className="w-4 h-4 mr-1" />
+            New Folder
+          </button>
+          
+          <button
+            onClick={() => setShowUpload(true)}
+            className="inline-flex items-center px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            <Upload className="w-4 h-4 mr-2" />
+            Upload Files
+          </button>
+        </div>
+      </div>
 
         {/* Search and Controls */}
         <div className="flex flex-col sm:flex-row gap-4 mb-6">

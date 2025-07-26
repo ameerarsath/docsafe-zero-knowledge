@@ -68,6 +68,35 @@ const getRoleBasedPermissions = (role: string): string[] => {
     ],
     'viewer': [
       'documents:read'
+    ],
+    // Handle numeric roles
+    '5': [
+      'users:read', 'users:create', 'users:update', 'users:delete', 'users:admin',
+      'roles:read', 'roles:create', 'roles:update', 'roles:delete', 'roles:admin',
+      'permissions:read', 'permissions:create', 'permissions:update', 'permissions:delete',
+      'documents:read', 'documents:create', 'documents:update', 'documents:delete', 'documents:admin',
+      'system:admin', 'audit:read', 'folders:admin'
+    ],
+    '4': [
+      'users:read', 'users:create', 'users:update', 'users:admin',
+      'roles:read', 'roles:update', 'roles:admin',
+      'permissions:read',
+      'documents:read', 'documents:create', 'documents:update', 'documents:delete',
+      'audit:read', 'folders:create', 'folders:update', 'folders:delete'
+    ],
+    '3': [
+      'users:read',
+      'roles:read',
+      'permissions:read',
+      'documents:read', 'documents:create', 'documents:update',
+      'folders:create', 'folders:update'
+    ],
+    '2': [
+      'documents:read', 'documents:create',
+      'folders:read'
+    ],
+    '1': [
+      'documents:read'
     ]
   };
   
@@ -80,7 +109,13 @@ const getRoleHierarchyLevel = (role: string): number => {
     'user': 2,
     'manager': 3,
     'admin': 4,
-    'super_admin': 5
+    'super_admin': 5,
+    // Handle numeric roles
+    '1': 1,
+    '2': 2,
+    '3': 3,
+    '4': 4,
+    '5': 5
   };
   
   return hierarchyLevels[role] || 1;

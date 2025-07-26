@@ -75,12 +75,12 @@ const PermissionMatrixDisplay: React.FC<PermissionMatrixProps> = ({
         isLoading: false
       }));
     } catch (error) {
+      console.error('Failed to load permission matrix:', error);
       setState(prev => ({
         ...prev,
         error: 'Failed to load permission matrix',
         isLoading: false
       }));
-      console.error('Failed to load permission matrix:', error);
     }
   }, []);
 
@@ -193,6 +193,23 @@ const PermissionMatrixDisplay: React.FC<PermissionMatrixProps> = ({
       <div className="flex items-center justify-center p-8">
         <LoadingSpinner />
         <span className="ml-2 text-gray-600">Loading permission matrix...</span>
+      </div>
+    );
+  }
+
+  if (state.error) {
+    return (
+      <div className="flex flex-col items-center justify-center p-8">
+        <div className="bg-red-50 border border-red-200 rounded-lg p-6 max-w-md">
+          <h3 className="text-lg font-medium text-red-800 mb-2">Error Loading Permission Matrix</h3>
+          <p className="text-red-700 mb-4">{state.error}</p>
+          <button 
+            onClick={loadPermissionMatrix}
+            className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
+          >
+            Retry
+          </button>
+        </div>
       </div>
     );
   }

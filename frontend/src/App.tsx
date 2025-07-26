@@ -13,16 +13,20 @@ import { SessionTimeoutManager } from './components/auth/SessionTimeoutWarning';
 import LoginPage from './pages/LoginPage';
 import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import ResetPasswordPage from './pages/ResetPasswordPage';
-import DashboardPage from './pages/DashboardPage';
+import ModernDashboardPage from './pages/ModernDashboardPage';
 import DocumentsPage from './pages/DocumentsPage';
-
-// MFA Components
-import MFASettingsPage from './components/mfa/MFASettingsPage';
+import MFASettingsPageWrapper from './pages/MFASettingsPageWrapper';
 
 // RBAC Components
 import { PermissionProvider } from './components/rbac/RoleBasedComponent';
-import MobileResponsiveRoleManagement from './components/rbac/MobileResponsiveRoleManagement';
 import RBACAdminPage from './pages/RBACAdminPage';
+
+// RBAC Pages
+import RoleManagementPage from './pages/rbac/RoleManagementPage';
+import UserAssignmentsPage from './pages/rbac/UserAssignmentsPage';
+import PermissionMatrixPage from './pages/rbac/PermissionMatrixPage';
+import RoleHierarchyPage from './pages/rbac/RoleHierarchyPage';
+import AuditTrailPage from './pages/rbac/AuditTrailPage';
 
 // Styles
 import './App.css';
@@ -42,18 +46,18 @@ function App() {
             <Route path="/reset-password" element={<ResetPasswordPage />} />
             
             {/* Protected routes */}
-            <Route path="/dashboard" element={<DashboardPage />} />
+            <Route path="/dashboard" element={<ModernDashboardPage />} />
             <Route path="/documents" element={<DocumentsPage />} />
-            <Route path="/settings/mfa" element={<MFASettingsPage className="p-6" />} />
+            <Route path="/settings/mfa" element={<MFASettingsPageWrapper />} />
             
             {/* RBAC Admin Routes */}
             <Route path="/admin" element={<RBACAdminPage />} />
-            <Route path="/admin/rbac" element={<MobileResponsiveRoleManagement initialView="roles" />} />
-            <Route path="/admin/rbac/roles" element={<MobileResponsiveRoleManagement initialView="roles" />} />
-            <Route path="/admin/rbac/assignments" element={<MobileResponsiveRoleManagement initialView="assignments" />} />
-            <Route path="/admin/rbac/matrix" element={<MobileResponsiveRoleManagement initialView="matrix" />} />
-            <Route path="/admin/rbac/hierarchy" element={<MobileResponsiveRoleManagement initialView="hierarchy" />} />
-            <Route path="/admin/rbac/audit" element={<MobileResponsiveRoleManagement initialView="audit" />} />
+            <Route path="/admin/rbac" element={<RoleManagementPage />} />
+            <Route path="/admin/rbac/roles" element={<RoleManagementPage />} />
+            <Route path="/admin/rbac/assignments" element={<UserAssignmentsPage />} />
+            <Route path="/admin/rbac/matrix" element={<PermissionMatrixPage />} />
+            <Route path="/admin/rbac/hierarchy" element={<RoleHierarchyPage />} />
+            <Route path="/admin/rbac/audit" element={<AuditTrailPage />} />
             
             {/* Default redirect */}
             <Route path="/" element={<Navigate to="/login" replace />} />

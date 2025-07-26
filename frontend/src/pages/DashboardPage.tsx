@@ -159,7 +159,7 @@ function DashboardContent() {
             </Link>
 
             {/* RBAC Management (if admin or super_admin) */}
-            {(user?.is_admin || user?.role === 'super_admin' || user?.role === 'admin' || user?.role === '5' || user?.role === '4') && (
+            {(user?.is_admin || ['super_admin', 'admin', '5', '4'].includes(user?.role || '')) && (
               <Link to="/admin" className="bg-white overflow-hidden shadow rounded-lg hover:shadow-md transition-shadow">
                 <div className="p-5">
                   <div className="flex items-center">
