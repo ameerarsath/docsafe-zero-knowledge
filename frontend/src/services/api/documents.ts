@@ -62,7 +62,7 @@ export interface DocumentListParams {
   sort_by?: 'name' | 'created_at' | 'updated_at' | 'file_size';
   sort_order?: 'asc' | 'desc';
   page?: number;
-  per_page?: number;
+  size?: number;
   include_deleted?: boolean;
 }
 
@@ -70,7 +70,7 @@ export interface DocumentListResponse {
   documents: Document[];
   total: number;
   page: number;
-  per_page: number;
+  size: number;
   has_next: boolean;
 }
 
@@ -500,7 +500,42 @@ export class DocumentsApiService {
       total_folders: number;
       total_size: number;
       documents_by_type: Record<string, number>;
-    }>('GET', '/api/v1/documents/stats');
+    }>('GET', '/api/v1/documents/statistics');
+    
+    if (!response.success) {
+      throw new Error(response.error?.detail || 'Failed to get document statistics');
+    }
+    
+    return response.data!;
+  }
+
+  /**
+   * Get comprehensive document statistics for dashboard
+   */
+  async getDocumentStatistics(): Promise<{
+    total_documents: number;
+    total_folders: number;
+    total_size: number;
+    encrypted_documents: number;
+    shared_documents: number;
+    sensitive_documents: number;
+    documents_by_type: Record<string, number>;
+    documents_by_status: Record<string, number>;
+    storage_usage_by_user: Record<string, number>;
+    recent_activity_count: number;
+  }> {
+    const response = await apiRequest<{
+      total_documents: number;
+      total_folders: number;
+      total_size: number;
+      encrypted_documents: number;
+      shared_documents: number;
+      sensitive_documents: number;
+      documents_by_type: Record<string, number>;
+      documents_by_status: Record<string, number>;
+      storage_usage_by_user: Record<string, number>;
+      recent_activity_count: number;
+    }>('GET', '/api/v1/documents/statistics');
     
     if (!response.success) {
       throw new Error(response.error?.detail || 'Failed to get document statistics');

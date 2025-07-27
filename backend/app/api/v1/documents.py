@@ -14,6 +14,7 @@ import os
 import hashlib
 import base64
 from typing import List, Optional, Dict, Any
+from datetime import datetime, timedelta
 from fastapi import (
     APIRouter, Depends, HTTPException, status, Query, UploadFile, 
     File, Form, BackgroundTasks
@@ -131,6 +132,122 @@ async def list_documents(
         size=size,
         has_next=offset + size < total_count
     )
+
+
+# Statistics Endpoint (moved before {document_id} to avoid route conflict)
+@router.get("/statistics", response_model=DocumentStatistics)
+async def get_document_statistics(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get document statistics for the current user."""
+    print(f"🚀 STATISTICS ENDPOINT CALLED for user {current_user.username} (ID: {current_user.id})")
+    print(f"🚀 User is_admin: {current_user.is_admin}")
+    
+    # Check if user has permission to read documents
+    if not has_permission(current_user, "documents:read", db):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Insufficient privileges to view document statistics"
+        )
+    
+    try:
+        # Use database aggregation for performance instead of loading all documents
+        base_query = db.query(Document).filter(Document.status == DocumentStatus.ACTIVE)
+        
+        # For user-level statistics, we need to consider permissions
+        if not current_user.is_admin:
+            # Non-admin users see only their own documents or ones with explicit permissions
+            base_query = base_query.filter(
+                or_(
+                    Document.owner_id == current_user.id,
+                    db.query(DocumentPermission).filter(
+                        and_(
+                            DocumentPermission.document_id == Document.id,
+                            DocumentPermission.user_id == current_user.id,
+                            DocumentPermission.granted == True
+                        )
+                    ).exists()
+                )
+            )
+        
+        # Get document counts by type
+        total_documents = base_query.filter(Document.document_type == DocumentType.DOCUMENT).count()
+        total_folders = base_query.filter(Document.document_type == DocumentType.FOLDER).count()
+        
+        # Get size aggregation
+        total_size_result = base_query.with_entities(func.coalesce(func.sum(Document.file_size), 0)).scalar()
+        total_size = int(total_size_result) if total_size_result else 0
+        
+        # Count special document types
+        encrypted_documents = base_query.filter(Document.is_encrypted == True).count()
+        shared_documents = base_query.filter(Document.is_shared == True).count()
+        sensitive_documents = base_query.filter(Document.is_sensitive == True).count()
+        
+        # Group by type and status using database aggregation
+        docs_by_type = {}
+        type_stats = db.query(
+            Document.document_type,
+            func.count(Document.id)
+        ).filter(Document.status == DocumentStatus.ACTIVE)
+        
+        if not current_user.is_admin:
+            type_stats = type_stats.filter(
+                or_(
+                    Document.owner_id == current_user.id,
+                    db.query(DocumentPermission).filter(
+                        and_(
+                            DocumentPermission.document_id == Document.id,
+                            DocumentPermission.user_id == current_user.id,
+                            DocumentPermission.granted == True
+                        )
+                    ).exists()
+                )
+            )
+        
+        for doc_type, count in type_stats.group_by(Document.document_type).all():
+            type_key = doc_type.value if hasattr(doc_type, 'value') else str(doc_type)
+            docs_by_type[type_key] = count
+        
+        # For status, since we're filtering by ACTIVE, it's straightforward
+        docs_by_status = {"active": total_documents + total_folders}
+        
+        # Recent activity count (simplified - last 30 days)
+        thirty_days_ago = datetime.now() - timedelta(days=30)
+        recent_activity_count = base_query.filter(Document.updated_at >= thirty_days_ago).count()
+        
+        result = DocumentStatistics(
+            total_documents=total_documents,
+            total_folders=total_folders,
+            total_size=total_size,
+            encrypted_documents=encrypted_documents,
+            shared_documents=shared_documents,
+            sensitive_documents=sensitive_documents,
+            documents_by_type=docs_by_type,
+            documents_by_status=docs_by_status,
+            recent_activity_count=recent_activity_count
+        )
+        print(f"🚀 STATISTICS SUCCESS: {result}")
+        return result
+        
+    except Exception as e:
+        print(f"🚨 STATISTICS ERROR: {e}")
+        import traceback
+        traceback.print_exc()
+        # Fallback to basic statistics if there's an error
+        fallback = DocumentStatistics(
+            total_documents=0,
+            total_folders=0,
+            total_size=0,
+            encrypted_documents=0,
+            shared_documents=0,
+            sensitive_documents=0,
+            documents_by_type={},
+            documents_by_status={},
+            recent_activity_count=0
+        )
+        print(f"🚨 RETURNING FALLBACK: {fallback}")
+        return fallback
 
 
 @router.get("/{document_id}", response_model=DocumentSchema)
@@ -889,51 +1006,6 @@ async def bulk_document_operation(
         successful=successful,
         failed=failed,
         total_processed=len(operation.document_ids)
-    )
-
-
-# Statistics Endpoint
-@router.get("/statistics", response_model=DocumentStatistics)
-async def get_document_statistics(
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    """Get document statistics for the current user."""
-    # Get all documents the user can access
-    all_docs = db.query(Document).filter(Document.status == DocumentStatus.ACTIVE).all()
-    accessible_docs = [doc for doc in all_docs if doc.can_user_access(current_user, "read")]
-    
-    # Calculate statistics
-    total_documents = len([d for d in accessible_docs if d.document_type == DocumentType.DOCUMENT])
-    total_folders = len([d for d in accessible_docs if d.document_type == DocumentType.FOLDER])
-    total_size = sum(d.file_size or 0 for d in accessible_docs)
-    encrypted_documents = len([d for d in accessible_docs if d.is_encrypted])
-    shared_documents = len([d for d in accessible_docs if d.is_shared])
-    sensitive_documents = len([d for d in accessible_docs if d.is_sensitive])
-    
-    # Group by type and status
-    docs_by_type = {}
-    docs_by_status = {}
-    
-    for doc in accessible_docs:
-        # By type
-        type_key = doc.document_type.value if hasattr(doc.document_type, 'value') else str(doc.document_type)
-        docs_by_type[type_key] = docs_by_type.get(type_key, 0) + 1
-        
-        # By status  
-        status_key = doc.status.value if hasattr(doc.status, 'value') else str(doc.status)
-        docs_by_status[status_key] = docs_by_status.get(status_key, 0) + 1
-    
-    return DocumentStatistics(
-        total_documents=total_documents,
-        total_folders=total_folders,
-        total_size=total_size,
-        encrypted_documents=encrypted_documents,
-        shared_documents=shared_documents,
-        sensitive_documents=sensitive_documents,
-        documents_by_type=docs_by_type,
-        documents_by_status=docs_by_status,
-        recent_activity_count=len(accessible_docs)  # Simplified
     )
 
 

@@ -13,6 +13,8 @@ import MetricCard from '../components/ui/MetricCard';
 import ActionCard from '../components/ui/ActionCard';
 import ActivityFeed, { ActivityItem } from '../components/ui/ActivityFeed';
 import { SkeletonGrid } from '../components/ui/SkeletonLoader';
+import { documentsApi } from '../services/api/documents';
+import { rbacService } from '../services/rbacService';
 import { 
   FileText, 
   Shield, 
@@ -29,7 +31,8 @@ import {
   Unlock,
   ArrowRight,
   Calendar,
-  BarChart3
+  BarChart3,
+  Folder
 } from 'lucide-react';
 
 interface DashboardStats {
@@ -43,7 +46,27 @@ interface DashboardStats {
   recentActivity: ActivityItem[];
 }
 
-// Remove this interface since we're now importing it from ActivityFeed
+// Helper function to format relative time
+const formatRelativeTime = (dateString: string): string => {
+  const date = new Date(dateString);
+  const now = new Date();
+  const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
+  
+  if (diffInSeconds < 60) {
+    return 'Just now';
+  } else if (diffInSeconds < 3600) {
+    const minutes = Math.floor(diffInSeconds / 60);
+    return `${minutes} minute${minutes > 1 ? 's' : ''} ago`;
+  } else if (diffInSeconds < 86400) {
+    const hours = Math.floor(diffInSeconds / 3600);
+    return `${hours} hour${hours > 1 ? 's' : ''} ago`;
+  } else if (diffInSeconds < 604800) {
+    const days = Math.floor(diffInSeconds / 86400);
+    return `${days} day${days > 1 ? 's' : ''} ago`;
+  } else {
+    return date.toLocaleDateString();
+  }
+};
 
 export default function ModernDashboardPage() {
   return (
@@ -60,68 +83,107 @@ function ModernDashboardContent() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Mock data - replace with actual API calls
+  // Load real dashboard data
   useEffect(() => {
     const loadDashboardData = async () => {
-      // Simulate API call
-      setTimeout(() => {
-        setStats({
-          totalDocuments: 1247,
-          documentsThisMonth: 89,
-          activeUsers: 24,
-          securityAlerts: 2,
-          mfaAdoption: 78,
-          storageUsed: 12.4,
-          storageLimit: 50,
-          recentActivity: [
-            {
-              id: '1',
-              type: 'upload',
-              title: 'Document uploaded',
-              description: 'Financial_Report_Q4.pdf uploaded successfully',
-              timestamp: '2 minutes ago',
-              user: 'John Doe',
-              status: 'success',
-              icon: Upload
-            },
-            {
-              id: '2',
-              type: 'mfa',
-              title: 'Security updated',
-              description: 'MFA enabled for account',
-              timestamp: '15 minutes ago',
-              user: 'Jane Smith',
-              status: 'success',
-              icon: Shield
-            },
-            {
-              id: '3',
-              type: 'share',
-              title: 'Document shared',
-              description: 'Contract shared with external user',
-              timestamp: '1 hour ago',
-              user: 'Mike Johnson',
-              status: 'warning',
-              icon: Users
-            },
-            {
-              id: '4',
-              type: 'download',
-              title: 'Document accessed',
-              description: 'Employee_Handbook.pdf downloaded',
-              timestamp: '2 hours ago',
-              user: 'Sarah Wilson',
-              status: 'success',
-              icon: Download
+      try {
+        setIsLoading(true);
+        
+        // Get document statistics from dedicated endpoint
+        const documentsStatsResponse = await documentsApi.getDocumentStatistics();
+        const totalDocuments = documentsStatsResponse.total_documents;
+        const totalFolders = documentsStatsResponse.total_folders;
+        const storageUsedBytes = documentsStatsResponse.total_size;
+        const storageUsedGB = storageUsedBytes / (1024 * 1024 * 1024); // Convert to GB
+        
+        // Calculate documents this month using recent activity count as approximation
+        const documentsThisMonth = documentsStatsResponse.recent_activity_count || 0;
+        
+        // Get user statistics from RBAC if admin, otherwise use MFA stats
+        let activeUsers = 1; // At least current user
+        let mfaAdoption = user?.mfa_enabled ? 100 : 0;
+        let securityAlerts = user?.mfa_enabled ? 0 : 1;
+        
+        try {
+          if (user?.is_admin || ['super_admin', 'admin'].includes(user?.role || '')) {
+            // Admin users can access MFA statistics
+            const mfaStatsResponse = await fetch('/api/v1/mfa/admin/stats', {
+              headers: {
+                'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
+                'Content-Type': 'application/json'
+              }
+            });
+            
+            if (mfaStatsResponse.ok) {
+              const mfaStats = await mfaStatsResponse.json();
+              activeUsers = mfaStats.total_users || 1;
+              mfaAdoption = mfaStats.mfa_enabled_percentage || (user?.mfa_enabled ? 100 : 0);
+              securityAlerts = mfaStats.backup_codes_exhausted || (user?.mfa_enabled ? 0 : 1);
             }
-          ]
+          } else {
+            // Non-admin users: try to get user count from roles
+            const roles = await rbacService.getRoles({ include_stats: true });
+            if (roles.roles.some(role => role.user_count !== undefined)) {
+              activeUsers = roles.roles.reduce((sum, role) => sum + (role.user_count || 0), 0);
+            }
+          }
+        } catch (error) {
+          console.warn('Could not fetch user/MFA statistics:', error);
+          // Use fallback values
+        }
+        
+        // Get sample recent documents for activity feed
+        const recentDocsResponse = await documentsApi.listDocuments({
+          size: 5,
+          sort_by: 'updated_at',
+          sort_order: 'desc'
         });
+        
+        // Generate recent activity from recent documents
+        const recentActivity: ActivityItem[] = recentDocsResponse.documents
+          .slice(0, 4)
+          .map((doc, index) => ({
+            id: doc.id.toString(),
+            type: 'upload',
+            title: doc.document_type === 'folder' ? 'Folder created' : 'Document uploaded',
+            description: `${doc.name} ${doc.document_type === 'folder' ? 'created' : 'uploaded'} successfully`,
+            timestamp: formatRelativeTime(doc.updated_at),
+            user: user?.username || 'Unknown',
+            status: 'success' as const,
+            icon: doc.document_type === 'folder' ? Folder : FileText
+          }));
+        
+        setStats({
+          totalDocuments: totalDocuments + totalFolders, // Combined for display
+          documentsThisMonth,
+          activeUsers,
+          securityAlerts,
+          mfaAdoption,
+          storageUsed: Math.round(storageUsedGB * 100) / 100, // Round to 2 decimals
+          storageLimit: 50, // Default limit - could be made configurable
+          recentActivity
+        });
+        
+      } catch (error) {
+        console.error('Failed to load dashboard data:', error);
+        // Fallback to basic data
+        setStats({
+          totalDocuments: 0,
+          documentsThisMonth: 0,
+          activeUsers: 1,
+          securityAlerts: user?.mfa_enabled ? 0 : 1,
+          mfaAdoption: user?.mfa_enabled ? 100 : 0,
+          storageUsed: 0,
+          storageLimit: 50,
+          recentActivity: []
+        });
+      } finally {
         setIsLoading(false);
-      }, 1000);
+      }
     };
 
     loadDashboardData();
-  }, []);
+  }, [user]);
 
   // Helper functions removed - now handled by reusable components
 
@@ -143,50 +205,6 @@ function ModernDashboardContent() {
 
   return (
     <div className="space-y-8">
-      {/* Welcome Section */}
-      <div className="bg-gradient-to-r from-blue-600 to-blue-700 rounded-xl text-white p-6 md:p-8">
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between">
-          <div className="mb-4 md:mb-0">
-            <h2 className="text-2xl md:text-3xl font-bold mb-2">
-              Welcome back, {user?.username}!
-            </h2>
-            <p className="text-blue-100 text-base md:text-lg">
-              You're logged in as {user?.role && getRoleName(user.role)}
-            </p>
-          </div>
-          <div className="text-left md:text-right">
-            <div className="text-blue-100 text-sm">Today</div>
-            <div className="text-xl md:text-2xl font-semibold">
-              {new Date().toLocaleDateString('en-US', { 
-                weekday: 'long',
-                month: 'short',
-                day: 'numeric'
-              })}
-            </div>
-          </div>
-        </div>
-
-        {/* Quick Status Indicators */}
-        <div className="mt-6 flex flex-wrap gap-3">
-          {user?.mfa_enabled ? (
-            <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-500 bg-opacity-20 text-green-100">
-              <CheckCircle className="h-4 w-4 mr-2" />
-              MFA Enabled
-            </span>
-          ) : (
-            <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-yellow-500 bg-opacity-20 text-yellow-100">
-              <AlertTriangle className="h-4 w-4 mr-2" />
-              MFA Disabled
-            </span>
-          )}
-          
-          <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-blue-500 bg-opacity-20 text-blue-100">
-            <Clock className="h-4 w-4 mr-2" />
-            Active Session
-          </span>
-        </div>
-      </div>
-
       {/* Key Metrics */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <MetricCard
