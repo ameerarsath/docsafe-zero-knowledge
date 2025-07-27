@@ -446,7 +446,7 @@ async def update_document(
         access_log = DocumentAccessLog(
             document_id=document.id,
             user_id=current_user.id,
-            action="update",
+            action="write",  # Use 'write' instead of 'update' to match DB constraint
             access_method="api",
             success=True
         )
@@ -506,7 +506,7 @@ async def delete_document(
             # TODO: Delete actual encrypted file from storage
             # Delete from database
             db.delete(document)
-            action = "permanent_delete"
+            action = "delete"  # Use 'delete' instead of 'permanent_delete' to match DB constraint
         else:
             # Archive the document
             document.status = DocumentStatus.DELETED
@@ -922,7 +922,7 @@ async def create_document_permission(
         access_log = DocumentAccessLog(
             document_id=document_id,
             user_id=current_user.id,
-            action="grant_permission",
+            action="share",  # Use 'share' instead of 'grant_permission' to match DB constraint
             access_method="api",
             success=True,
             details={
@@ -984,6 +984,60 @@ async def bulk_document_operation(
                 document.archived_at = func.now()
             elif operation.operation == "restore":
                 document.status = DocumentStatus.ACTIVE
+            elif operation.operation == "move":
+                target_parent_id = operation.parameters.get("target_parent_id")
+                # Validate target folder exists and user has access
+                if target_parent_id:
+                    target_folder = db.query(Document).filter(Document.id == target_parent_id).first()
+                    if not target_folder:
+                        failed.append({"document_id": doc_id, "error": "Target folder not found"})
+                        continue
+                    if not target_folder.can_user_access(current_user, "write"):
+                        failed.append({"document_id": doc_id, "error": "No access to target folder"})
+                        continue
+                
+                # Move document
+                document.parent_id = target_parent_id
+                document.updated_by = current_user.id
+                document.updated_at = func.now()
+                if document.document_type == DocumentType.FOLDER:
+                    document.update_path()
+            elif operation.operation == "copy":
+                target_parent_id = operation.parameters.get("target_parent_id")
+                # Validate target folder exists and user has access
+                if target_parent_id:
+                    target_folder = db.query(Document).filter(Document.id == target_parent_id).first()
+                    if not target_folder:
+                        failed.append({"document_id": doc_id, "error": "Target folder not found"})
+                        continue
+                    if not target_folder.can_user_access(current_user, "write"):
+                        failed.append({"document_id": doc_id, "error": "No access to target folder"})
+                        continue
+                
+                # Create copy of document
+                copy_document = Document(
+                    name=f"Copy of {document.name}",
+                    description=f"Copy of {document.description}" if document.description else None,
+                    document_type=document.document_type,
+                    mime_type=document.mime_type,
+                    file_size=document.file_size,
+                    file_hash_sha256=document.file_hash_sha256,
+                    storage_path=document.storage_path,  # Note: Would need actual file copy for full implementation
+                    parent_id=target_parent_id,
+                    owner_id=current_user.id,
+                    created_by=current_user.id,
+                    tags=document.tags.copy() if document.tags else [],
+                    doc_metadata=document.doc_metadata.copy() if document.doc_metadata else {},
+                    is_sensitive=document.is_sensitive,
+                    is_encrypted=document.is_encrypted,
+                    encryption_key_id=document.encryption_key_id,
+                    encryption_iv=document.encryption_iv,
+                    encryption_auth_tag=document.encryption_auth_tag
+                )
+                db.add(copy_document)
+                db.flush()  # Get the new document ID
+                successful.append(copy_document.id)
+                continue  # Don't add original doc_id to successful
             elif operation.operation == "update_tags":
                 if "tags" in operation.parameters:
                     document.tags = operation.parameters["tags"]
@@ -1570,7 +1624,7 @@ async def apply_permission_inheritance(
         access_log = DocumentAccessLog(
             document_id=folder_id,
             user_id=current_user.id,
-            action="permission_inheritance",
+            action="share",  # Use 'share' instead of 'permission_inheritance' to match DB constraint
             access_method="api",
             success=True,
             details={

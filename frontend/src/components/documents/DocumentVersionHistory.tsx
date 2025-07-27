@@ -101,72 +101,33 @@ export const DocumentVersionHistory: React.FC<DocumentVersionHistoryProps> = ({
     updateState({ isLoading: true, error: null });
 
     try {
-      // Mock version data - replace with actual API call
-      const mockVersions: DocumentVersion[] = [
+      // Version control is not yet implemented in backend
+      // Show current document as single version for now
+      const currentVersion: DocumentVersion[] = [
         {
-          id: 'v3',
-          version_number: 3,
-          file_size: 2048576,
-          file_hash: 'sha256:abc123def456...',
-          created_at: '2025-07-26T14:30:00Z',
-          created_by: 1,
-          created_by_name: 'John Doe',
-          comment: 'Updated financial projections for Q3',
-          change_summary: 'Modified tables 2-4, added new charts',
-          is_current: true,
-          encryption_key_id: 'key-current',
-          encryption_iv: 'iv-current',
-          encryption_auth_tag: 'tag-current',
-          metadata: {
-            upload_source: 'Web Upload',
-            client_info: 'Chrome 91.0.4472.124',
-            checksum: 'abc123'
-          }
-        },
-        {
-          id: 'v2',
-          version_number: 2,
-          file_size: 1987654,
-          file_hash: 'sha256:def456ghi789...',
-          created_at: '2025-07-25T09:15:00Z',
-          created_by: 2,
-          created_by_name: 'Jane Smith',
-          comment: 'Added quarterly review sections',
-          change_summary: 'New content in sections 3-5',
-          is_current: false,
-          encryption_key_id: 'key-v2',
-          encryption_iv: 'iv-v2',
-          encryption_auth_tag: 'tag-v2',
-          metadata: {
-            upload_source: 'Desktop Sync',
-            client_info: 'SecureVault Desktop 2.1.0',
-            checksum: 'def456'
-          }
-        },
-        {
-          id: 'v1',
+          id: `v-${document.id}`,
           version_number: 1,
-          file_size: 1654321,
-          file_hash: 'sha256:ghi789jkl012...',
-          created_at: '2025-07-24T16:45:00Z',
-          created_by: 1,
-          created_by_name: 'John Doe',
-          comment: 'Initial document upload',
-          change_summary: 'Document created',
-          is_current: false,
-          encryption_key_id: 'key-v1',
-          encryption_iv: 'iv-v1',
-          encryption_auth_tag: 'tag-v1',
+          file_size: document.file_size || 0,
+          file_hash: document.file_hash_sha256 || 'No hash available',
+          created_at: document.created_at,
+          created_by: document.created_by,
+          created_by_name: 'Current User', // Would need user lookup
+          comment: 'Current version',
+          change_summary: 'Document uploaded',
+          is_current: true,
+          encryption_key_id: document.encryption_key_id,
+          encryption_iv: document.encryption_iv,
+          encryption_auth_tag: document.encryption_auth_tag,
           metadata: {
             upload_source: 'Web Upload',
-            client_info: 'Firefox 89.0',
-            checksum: 'ghi789'
+            mime_type: document.mime_type,
+            last_modified: document.updated_at
           }
         }
       ];
 
       updateState({ 
-        versions: mockVersions.sort((a, b) => b.version_number - a.version_number),
+        versions: currentVersion,
         isLoading: false 
       });
     } catch (error) {
@@ -175,7 +136,7 @@ export const DocumentVersionHistory: React.FC<DocumentVersionHistoryProps> = ({
         isLoading: false 
       });
     }
-  }, [updateState]);
+  }, [document, updateState]);
 
   /**
    * Toggle version selection for comparison

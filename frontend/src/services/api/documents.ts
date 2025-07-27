@@ -458,10 +458,35 @@ export class DocumentsApiService {
   }
 
   /**
+   * Get all folders for folder tree
+   */
+  async getFolders(): Promise<Document[]> {
+    const response = await apiRequest<DocumentListResponse>('GET', '/api/v1/documents/', {
+      document_type: 'folder',
+      size: 1000 // Get all folders
+    });
+    
+    if (!response.success) {
+      throw new Error(response.error?.detail || 'Failed to get folders');
+    }
+    
+    return response.data!.documents;
+  }
+
+  /**
    * Move documents to a different folder
    */
   async moveDocuments(params: BulkOperationParams): Promise<void> {
-    const response = await apiRequest<void>('POST', '/api/v1/documents/bulk/move', params);
+    const bulkParams = {
+      document_ids: params.document_ids,
+      operation: 'move',
+      parameters: {
+        target_parent_id: params.target_folder_id,
+        conflict_resolution: params.conflict_resolution || 'rename'
+      }
+    };
+    
+    const response = await apiRequest<void>('POST', '/api/v1/documents/bulk-operation', bulkParams);
     
     if (!response.success) {
       throw new Error(response.error?.detail || 'Failed to move documents');
@@ -472,7 +497,16 @@ export class DocumentsApiService {
    * Copy documents to a different folder
    */
   async copyDocuments(params: BulkOperationParams): Promise<void> {
-    const response = await apiRequest<void>('POST', '/api/v1/documents/bulk/copy', params);
+    const bulkParams = {
+      document_ids: params.document_ids,
+      operation: 'copy',
+      parameters: {
+        target_parent_id: params.target_folder_id,
+        conflict_resolution: params.conflict_resolution || 'rename'
+      }
+    };
+    
+    const response = await apiRequest<void>('POST', '/api/v1/documents/bulk-operation', bulkParams);
     
     if (!response.success) {
       throw new Error(response.error?.detail || 'Failed to copy documents');
@@ -543,6 +577,117 @@ export class DocumentsApiService {
     
     return response.data!;
   }
+
+  /**
+   * Get document version history
+   */
+  async getDocumentVersions(documentId: number): Promise<DocumentVersion[]> {
+    const response = await apiRequest<DocumentVersion[]>('GET', `/api/v1/documents/${documentId}/versions`);
+    
+    if (!response.success) {
+      throw new Error(response.error?.detail || 'Failed to get document versions');
+    }
+    
+    return response.data || [];
+  }
+
+  /**
+   * Restore document version
+   */
+  async restoreDocumentVersion(documentId: number, versionId: string): Promise<void> {
+    const response = await apiRequest<void>('POST', `/api/v1/documents/${documentId}/versions/${versionId}/restore`);
+    
+    if (!response.success) {
+      throw new Error(response.error?.detail || 'Failed to restore document version');
+    }
+  }
+
+  /**
+   * Get document permissions
+   */
+  async getDocumentPermissions(documentId: number): Promise<DocumentPermission[]> {
+    const response = await apiRequest<DocumentPermission[]>('GET', `/api/v1/documents/${documentId}/permissions`);
+    
+    if (!response.success) {
+      throw new Error(response.error?.detail || 'Failed to get document permissions');
+    }
+    
+    return response.data || [];
+  }
+
+  /**
+   * Create document permission
+   */
+  async createDocumentPermission(documentId: number, permission: DocumentPermissionCreate): Promise<DocumentPermission> {
+    const response = await apiRequest<DocumentPermission>('POST', `/api/v1/documents/${documentId}/permissions`, permission);
+    
+    if (!response.success) {
+      throw new Error(response.error?.detail || 'Failed to create document permission');
+    }
+    
+    return response.data!;
+  }
+
+  /**
+   * Delete document permission
+   */
+  async deleteDocumentPermission(documentId: number, permissionId: number): Promise<void> {
+    const response = await apiRequest<void>('DELETE', `/api/v1/documents/${documentId}/permissions/${permissionId}`);
+    
+    if (!response.success) {
+      throw new Error(response.error?.detail || 'Failed to delete document permission');
+    }
+  }
+
+  /**
+   * Apply folder permission inheritance
+   */
+  async applyFolderPermissionInheritance(folderId: number, recursive: boolean = true, overwriteExisting: boolean = false): Promise<{message: string; folders_processed: number; permissions_applied: number}> {
+    const response = await apiRequest<{message: string; folders_processed: number; permissions_applied: number}>('POST', `/api/v1/documents/folders/${folderId}/permissions/inherit?recursive=${recursive}&overwrite_existing=${overwriteExisting}`);
+    
+    if (!response.success) {
+      throw new Error(response.error?.detail || 'Failed to apply permission inheritance');
+    }
+    
+    return response.data!;
+  }
+}
+
+export interface DocumentVersion {
+  id: string;
+  version_number: number;
+  file_size: number;
+  file_hash: string;
+  created_at: string;
+  created_by: number;
+  created_by_name: string;
+  comment?: string;
+  change_summary: string;
+  is_current: boolean;
+}
+
+export interface DocumentPermission {
+  id: number;
+  document_id: number;
+  user_id: number;
+  user_name?: string;
+  user_email?: string;
+  permission_type: 'read' | 'write' | 'admin';
+  granted: boolean;
+  granted_by: number;
+  granted_at: string;
+  expires_at?: string;
+  inheritable?: boolean;
+  conditions?: Record<string, any>;
+}
+
+export interface DocumentPermissionCreate {
+  user_id: number;
+  permission_type: 'read' | 'write' | 'admin';
+  granted: boolean;
+  inheritable?: boolean;
+  expires_at?: string;
+  conditions?: Record<string, any>;
 }
 
 export const documentsApi = new DocumentsApiService();

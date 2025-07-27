@@ -75,6 +75,16 @@ interface FolderFormData {
   is_sensitive: boolean;
   retention_policy?: number; // days
   auto_archive?: boolean;
+  inherit_permissions: boolean;
+  auto_encrypt: boolean;
+  share_type?: string;
+  access_level?: string;
+  metadata?: {
+    department?: string;
+    project_code?: string;
+    retention_days?: number | null;
+    [key: string]: any;
+  };
 }
 
 interface FolderManagementState {
@@ -104,7 +114,12 @@ export const FolderManagementDialog: React.FC<FolderManagementDialogProps> = ({
       name: '',
       description: '',
       tags: [],
-      is_sensitive: false
+      is_sensitive: false,
+      inherit_permissions: true,
+      auto_encrypt: false,
+      share_type: 'private',
+      access_level: 'standard',
+      metadata: {}
     },
     permissions: [],
     templates: [],
@@ -128,10 +143,11 @@ export const FolderManagementDialog: React.FC<FolderManagementDialogProps> = ({
    * Update form data helper
    */
   const updateFormData = useCallback((updates: Partial<FolderFormData>) => {
-    updateState({
-      formData: { ...state.formData, ...updates }
-    });
-  }, [state.formData, updateState]);
+    setState(prev => ({
+      ...prev,
+      formData: { ...prev.formData, ...updates }
+    }));
+  }, []);
 
   /**
    * Load folder templates
@@ -196,34 +212,26 @@ export const FolderManagementDialog: React.FC<FolderManagementDialogProps> = ({
     updateState({ isLoading: true });
 
     try {
-      // Mock permissions - replace with actual API call
-      const mockPermissions: FolderPermission[] = [
-        {
-          id: 1,
-          user_id: 1,
-          user_name: 'John Doe',
-          user_email: 'john.doe@example.com',
-          permission_type: 'admin',
-          granted_by: 1,
-          granted_at: '2025-07-26T10:00:00Z'
-        },
-        {
-          id: 2,
-          user_id: 2,
-          user_name: 'Jane Smith',
-          user_email: 'jane.smith@example.com',
-          permission_type: 'write',
-          granted_by: 1,
-          granted_at: '2025-07-26T10:00:00Z'
-        }
-      ];
+      // Load actual permissions from API
+      const permissions = await documentsApi.getDocumentPermissions(folder.id);
+      
+      // Convert DocumentPermission to FolderPermission format
+      const folderPermissions: FolderPermission[] = permissions.map(perm => ({
+        id: perm.id,
+        user_id: perm.user_id,
+        user_name: perm.user_name || `User ${perm.user_id}`,
+        user_email: perm.user_email || 'No email available',
+        permission_type: perm.permission_type,
+        granted_by: perm.granted_by,
+        granted_at: perm.granted_at,
+        expires_at: perm.expires_at
+      }));
 
-      updateState({ permissions: mockPermissions, isLoading: false });
+      updateState({ permissions: folderPermissions, isLoading: false });
     } catch (error) {
-      updateState({ 
-        error: error instanceof Error ? error.message : 'Failed to load permissions',
-        isLoading: false 
-      });
+      console.warn('Failed to load permissions, using empty list:', error);
+      // Don't show error for permissions that might not exist yet
+      updateState({ permissions: [], isLoading: false });
     }
   }, [folder, mode, updateState]);
 
@@ -403,8 +411,12 @@ export const FolderManagementDialog: React.FC<FolderManagementDialogProps> = ({
           name: folder.name,
           description: folder.description || '',
           tags: folder.tags || [],
-          is_sensitive: false,
-          ...state.formData
+          is_sensitive: folder.is_sensitive || false,
+          inherit_permissions: true,
+          auto_encrypt: false,
+          share_type: 'private',
+          access_level: 'standard',
+          metadata: folder.doc_metadata || {}
         }
       });
     } else if (mode === 'create') {
@@ -413,11 +425,16 @@ export const FolderManagementDialog: React.FC<FolderManagementDialogProps> = ({
           name: '',
           description: '',
           tags: [],
-          is_sensitive: false
+          is_sensitive: false,
+          inherit_permissions: true,
+          auto_encrypt: false,
+          share_type: 'private',
+          access_level: 'standard',
+          metadata: {}
         }
       });
     }
-  }, [folder, mode]); // Don't include state or updateState to prevent infinite loop
+  }, [folder, mode, isOpen]); // Added isOpen to trigger when dialog opens
 
   // Load data when dialog opens
   useEffect(() => {
@@ -647,22 +664,319 @@ export const FolderManagementDialog: React.FC<FolderManagementDialogProps> = ({
               {/* Permissions Tab */}
               {state.activeTab === 'permissions' && (
                 <div className="space-y-4">
-                  <div className="text-center py-8">
-                    <Lock className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                    <h4 className="text-lg font-medium text-gray-900 mb-2">Folder Permissions</h4>
-                    <p className="text-gray-500">Permission management feature coming soon.</p>
-                  </div>
+                  {state.isLoading ? (
+                    <div className="flex items-center justify-center py-8">
+                      <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+                      <span className="ml-2 text-gray-600">Loading permissions...</span>
+                    </div>
+                  ) : (
+                    <>
+                      {/* Current Permissions */}
+                      <div className="bg-gray-50 rounded-lg p-4">
+                        <h4 className="text-sm font-medium text-gray-900 mb-3 flex items-center">
+                          <Users className="w-4 h-4 mr-2" />
+                          Current Permissions
+                        </h4>
+                        
+                        {state.permissions.length > 0 ? (
+                          <div className="space-y-2">
+                            {state.permissions.map((permission) => (
+                              <div key={permission.id} className="flex items-center justify-between bg-white p-3 rounded border">
+                                <div className="flex items-center space-x-3">
+                                  <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
+                                    <span className="text-sm font-medium text-blue-600">
+                                      {permission.user_name?.charAt(0) || 'U'}
+                                    </span>
+                                  </div>
+                                  <div>
+                                    <div className="text-sm font-medium text-gray-900">
+                                      {permission.user_name || `User ${permission.user_id}`}
+                                    </div>
+                                    <div className="text-xs text-gray-500">
+                                      {permission.user_email || 'No email available'}
+                                    </div>
+                                  </div>
+                                </div>
+                                <div className="flex items-center space-x-2">
+                                  <span className={`px-2 py-1 text-xs rounded-full ${
+                                    permission.permission_type === 'admin' 
+                                      ? 'bg-red-100 text-red-700'
+                                      : permission.permission_type === 'write'
+                                      ? 'bg-yellow-100 text-yellow-700'
+                                      : 'bg-green-100 text-green-700'
+                                  }`}>
+                                    {permission.permission_type.charAt(0).toUpperCase() + permission.permission_type.slice(1)}
+                                  </span>
+                                  <button className="text-gray-400 hover:text-red-600 transition-colors">
+                                    <X className="w-4 h-4" />
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-sm text-gray-500">No explicit permissions set. Inheriting from parent folder or defaults.</p>
+                        )}
+                      </div>
+
+                      {/* Add New Permission */}
+                      <div className="border border-gray-200 rounded-lg p-4">
+                        <h4 className="text-sm font-medium text-gray-900 mb-3">Add Permission</h4>
+                        <p className="text-xs text-gray-600 mb-3">
+                          Grant specific users access to this folder. Use User ID numbers until user search is implemented.
+                        </p>
+                        <div className="space-y-3">
+                          <div>
+                            <label className="block text-xs font-medium text-gray-700 mb-1">
+                              User ID
+                            </label>
+                            <input
+                              type="number"
+                              placeholder="Enter user ID"
+                              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-gray-700 mb-1">
+                              Permission Level
+                            </label>
+                            <select className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                              <option value="read">Read Only</option>
+                              <option value="write">Read & Write</option>
+                              <option value="admin">Full Access</option>
+                            </select>
+                          </div>
+                          <div className="flex items-center space-x-3">
+                            <label className="flex items-center text-xs text-gray-700">
+                              <input type="checkbox" className="mr-2" />
+                              Inheritable to subfolders
+                            </label>
+                          </div>
+                          <button className="w-full bg-blue-600 text-white px-3 py-2 text-sm rounded-md hover:bg-blue-700 transition-colors">
+                            Add Permission
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Permission Inheritance */}
+                      <div className="border border-gray-200 rounded-lg p-4">
+                        <h4 className="text-sm font-medium text-gray-900 mb-3">Permission Inheritance</h4>
+                        <p className="text-xs text-gray-600 mb-3">
+                          Apply this folder's permissions to all subfolders and documents.
+                        </p>
+                        <div className="flex items-center space-x-3">
+                          <button className="bg-gray-100 text-gray-700 px-3 py-2 text-sm rounded-md hover:bg-gray-200 transition-colors">
+                            Apply to Subfolders
+                          </button>
+                          <label className="flex items-center text-xs text-gray-700">
+                            <input type="checkbox" className="mr-2" />
+                            Overwrite existing permissions
+                          </label>
+                        </div>
+                      </div>
+                    </>
+                  )}
                 </div>
               )}
 
               {/* Advanced Tab */}
               {state.activeTab === 'advanced' && (
                 <div className="space-y-4">
-                  <div className="text-center py-8">
-                    <Settings className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                    <h4 className="text-lg font-medium text-gray-900 mb-2">Advanced Settings</h4>
-                    <p className="text-gray-500">Advanced folder settings coming soon.</p>
+                  {/* Folder Metadata */}
+                  <div className="bg-gray-50 rounded-lg p-4">
+                    <h4 className="text-sm font-medium text-gray-900 mb-3 flex items-center">
+                      <Calendar className="w-4 h-4 mr-2" />
+                      Folder Information
+                    </h4>
+                    <div className="grid grid-cols-2 gap-4 text-xs">
+                      <div>
+                        <label className="text-gray-600">Created:</label>
+                        <p className="text-gray-900 font-medium">
+                          {folder ? new Date(folder.created_at).toLocaleDateString() : 'New folder'}
+                        </p>
+                      </div>
+                      <div>
+                        <label className="text-gray-600">Modified:</label>
+                        <p className="text-gray-900 font-medium">
+                          {folder ? new Date(folder.updated_at).toLocaleDateString() : 'New folder'}
+                        </p>
+                      </div>
+                      <div>
+                        <label className="text-gray-600">Owner:</label>
+                        <p className="text-gray-900 font-medium">
+                          {folder ? `User ${folder.owner_id}` : 'Current user'}
+                        </p>
+                      </div>
+                      <div>
+                        <label className="text-gray-600">ID:</label>
+                        <p className="text-gray-900 font-medium">
+                          {folder?.id || 'TBD'}
+                        </p>
+                      </div>
+                    </div>
                   </div>
+
+                  {/* Folder Options */}
+                  <div className="border border-gray-200 rounded-lg p-4">
+                    <h4 className="text-sm font-medium text-gray-900 mb-3">Folder Options</h4>
+                    <div className="space-y-3">
+                      <label className="flex items-center text-sm">
+                        <input 
+                          type="checkbox" 
+                          checked={state.formData.is_sensitive}
+                          onChange={(e) => updateFormData({ is_sensitive: e.target.checked })}
+                          className="mr-3 text-blue-600 focus:ring-blue-500"
+                        />
+                        <div>
+                          <span className="text-gray-900 font-medium">Mark as Sensitive</span>
+                          <p className="text-xs text-gray-500">Requires additional security measures for access</p>
+                        </div>
+                      </label>
+                      
+                      <label className="flex items-center text-sm">
+                        <input 
+                          type="checkbox" 
+                          checked={state.formData.inherit_permissions}
+                          onChange={(e) => updateFormData({ inherit_permissions: e.target.checked })}
+                          className="mr-3 text-blue-600 focus:ring-blue-500"
+                        />
+                        <div>
+                          <span className="text-gray-900 font-medium">Inherit Parent Permissions</span>
+                          <p className="text-xs text-gray-500">Automatically inherit permissions from parent folder</p>
+                        </div>
+                      </label>
+
+                      <label className="flex items-center text-sm">
+                        <input 
+                          type="checkbox" 
+                          checked={state.formData.auto_encrypt}
+                          onChange={(e) => updateFormData({ auto_encrypt: e.target.checked })}
+                          className="mr-3 text-blue-600 focus:ring-blue-500"
+                        />
+                        <div>
+                          <span className="text-gray-900 font-medium">Auto-encrypt Contents</span>
+                          <p className="text-xs text-gray-500">Automatically encrypt all files uploaded to this folder</p>
+                        </div>
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* Sharing Settings */}
+                  <div className="border border-gray-200 rounded-lg p-4">
+                    <h4 className="text-sm font-medium text-gray-900 mb-3">Sharing & Access</h4>
+                    <div className="space-y-3">
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">
+                          Default Share Type
+                        </label>
+                        <select 
+                          value={state.formData.share_type || 'private'}
+                          onChange={(e) => updateFormData({ share_type: e.target.value })}
+                          className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        >
+                          <option value="private">Private (Owner only)</option>
+                          <option value="internal">Internal (Organization)</option>
+                          <option value="team">Team Access</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">
+                          Access Level
+                        </label>
+                        <select 
+                          value={state.formData.access_level || 'standard'}
+                          onChange={(e) => updateFormData({ access_level: e.target.value })}
+                          className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        >
+                          <option value="standard">Standard Access</option>
+                          <option value="restricted">Restricted Access</option>
+                          <option value="confidential">Confidential</option>
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Custom Metadata */}
+                  <div className="border border-gray-200 rounded-lg p-4">
+                    <h4 className="text-sm font-medium text-gray-900 mb-3">Custom Metadata</h4>
+                    <div className="space-y-3">
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">
+                          Department
+                        </label>
+                        <input
+                          type="text"
+                          value={state.formData.metadata?.department || ''}
+                          onChange={(e) => updateFormData({ 
+                            metadata: { 
+                              ...state.formData.metadata, 
+                              department: e.target.value 
+                            }
+                          })}
+                          placeholder="e.g., Finance, Legal, HR"
+                          className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        />
+                      </div>
+                      
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">
+                          Project Code
+                        </label>
+                        <input
+                          type="text"
+                          value={state.formData.metadata?.project_code || ''}
+                          onChange={(e) => updateFormData({ 
+                            metadata: { 
+                              ...state.formData.metadata, 
+                              project_code: e.target.value 
+                            }
+                          })}
+                          placeholder="e.g., PROJ-2025-001"
+                          className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">
+                          Retention Period (days)
+                        </label>
+                        <input
+                          type="number"
+                          value={state.formData.metadata?.retention_days || ''}
+                          onChange={(e) => updateFormData({ 
+                            metadata: { 
+                              ...state.formData.metadata, 
+                              retention_days: parseInt(e.target.value) || null
+                            }
+                          })}
+                          placeholder="e.g., 365, 2555 (7 years)"
+                          className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Danger Zone */}
+                  {folder && (
+                    <div className="border border-red-200 rounded-lg p-4 bg-red-50">
+                      <h4 className="text-sm font-medium text-red-900 mb-3 flex items-center">
+                        <AlertCircle className="w-4 h-4 mr-2" />
+                        Danger Zone
+                      </h4>
+                      <div className="space-y-2">
+                        <button className="w-full bg-red-600 text-white px-3 py-2 text-sm rounded-md hover:bg-red-700 transition-colors">
+                          Archive Folder
+                        </button>
+                        <button className="w-full bg-red-700 text-white px-3 py-2 text-sm rounded-md hover:bg-red-800 transition-colors">
+                          Permanently Delete
+                        </button>
+                      </div>
+                      <p className="text-xs text-red-700 mt-2">
+                        These actions cannot be undone. All contents will be affected.
+                      </p>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

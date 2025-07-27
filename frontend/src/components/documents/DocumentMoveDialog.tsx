@@ -84,13 +84,8 @@ export const DocumentMoveDialog: React.FC<DocumentMoveDialogProps> = ({
    */
   const buildFolderTree = useCallback(async (): Promise<FolderNode[]> => {
     try {
-      // Get all folders
-      const response = await documentsApi.listDocuments({
-        document_type: 'folder',
-        per_page: 1000 // Get all folders
-      });
-
-      const folders = response.documents || [];
+      // Get all folders using the new method
+      const folders = await documentsApi.getFolders();
       
       // Create root node
       const rootNode: FolderNode = {
