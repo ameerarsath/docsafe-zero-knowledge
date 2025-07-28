@@ -105,12 +105,12 @@ class FolderUploadAPI {
   async createFolders(request: BulkFolderCreateRequest): Promise<BulkFolderCreateResult> {
     const response = await apiRequest<BulkFolderCreateResult>(
       'POST',
-      '/documents/bulk-create-folders',
+      '/api/v1/documents/bulk-create-folders',
       request
     );
     
     if (!response.success) {
-      throw new Error(response.error?.message || 'Failed to create folders');
+      throw new Error(response.error?.message || response.error?.detail || 'Failed to create folders');
     }
     
     return response.data;
@@ -136,7 +136,7 @@ class FolderUploadAPI {
     
     const response = await apiRequest<BatchFileUploadResult>(
       'POST',
-      '/documents/batch-upload-files',
+      '/api/v1/documents/batch-upload-files',
       formData
     );
     
@@ -153,7 +153,7 @@ class FolderUploadAPI {
   async getUploadStatus(uploadId: string): Promise<FolderUploadStatus> {
     const response = await apiRequest<FolderUploadStatus>(
       'GET',
-      `/documents/upload-status/${uploadId}`
+      `/api/v1/documents/upload-status/${uploadId}`
     );
     
     if (!response.success) {

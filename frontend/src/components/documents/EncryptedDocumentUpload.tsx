@@ -241,7 +241,7 @@ export default function EncryptedDocumentUpload({
     }
   }, [handleFiles]);
 
-  const processFileUpload = async (file: File, fileId: string) => {
+  const processFileUploadWithParent = async (file: File, fileId: string, fileParentId: number | null) => {
     try {
       // Update status to encrypting
       updateFileStatus(fileId, 'encrypting', 10);
@@ -290,7 +290,7 @@ export default function EncryptedDocumentUpload({
       // Add upload metadata including salt for key derivation
       const uploadMetadata = {
         name: file.name,
-        parent_id: parentFolderId,
+        parent_id: fileParentId,
         description: '',
         tags: selectedTags,
         doc_metadata: {
@@ -358,6 +358,11 @@ export default function EncryptedDocumentUpload({
     } catch (error) {
       updateFileStatus(fileId, 'error', 0, error instanceof Error ? error.message : 'Upload failed');
     }
+  };
+
+  // Wrapper function for backwards compatibility
+  const processFileUpload = async (file: File, fileId: string) => {
+    return processFileUploadWithParent(file, fileId, parentFolderId);
   };
 
   /**
@@ -432,11 +437,13 @@ export default function EncryptedDocumentUpload({
       let createdFolders: Record<string, number> = {};
 
       if (folderItems.length > 0) {
-        const folderResult = await folderUploadApi.createFolders({
+        const createRequest = {
           parent_id: parentFolderId,
           folders: folderItems,
           conflict_resolution: options.conflictResolution === 'rename' ? 'rename' : 'skip'
-        });
+        };
+        
+        const folderResult = await folderUploadApi.createFolders(createRequest);
 
         // Map folder paths to IDs with comprehensive safety checks
         const successful = folderResult?.successful || [];
@@ -495,17 +502,40 @@ export default function EncryptedDocumentUpload({
           setUploadedFiles(prev => [...prev, uploadedFile]);
 
           try {
-            await processFileUpload(fileEntry.file, fileId);
+            // Find the folder for this file using a more robust approach
+            let fileParentId = parentFolderId; // Default to root
+            
+            // Get the directory path of the file (everything except the filename)
+            const pathParts = fileEntry.relativePath.split('/');
+            if (pathParts.length > 1) {
+              // File is in a subfolder, find the parent folder ID
+              const folderPath = pathParts.slice(0, -1).join('/');
+              
+              // Try different path variations to find matching folder
+              const possiblePaths = [
+                folderPath,
+                pathParts[0], // Just the first folder name
+                fileEntry.path.split('/').slice(0, -1).join('/') // From full path
+              ];
+              
+              for (const possiblePath of possiblePaths) {
+                if (createdFolders[possiblePath]) {
+                  fileParentId = createdFolders[possiblePath];
+                  break;
+                }
+              }
+            }
+            
+            await processFileUploadWithParent(fileEntry.file, fileId, fileParentId);
             completedCount++;
             
-            // Update folder upload session progress
             setFolderUploadSession(prev => prev ? {
               ...prev,
               completedFiles: completedCount
             } : null);
             
           } catch (error) {
-            // Error handling is done in processFileUpload
+            console.error(`Failed to upload file ${fileEntry.file.name}:`, error);
           }
         });
 
