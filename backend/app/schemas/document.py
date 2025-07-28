@@ -517,5 +517,109 @@ class DocumentStatistics(BaseModel):
     recent_activity_count: int = 0
 
 
+# Bulk folder operation schemas
+class FolderCreationItem(BaseModel):
+    """Schema for individual folder creation item."""
+    name: str = Field(..., min_length=1, max_length=255, description="Folder name")
+    path: str = Field(..., description="Full folder path relative to parent")
+    parent_path: Optional[str] = Field(None, description="Parent folder path")
+    description: Optional[str] = Field(None, max_length=1000, description="Folder description")
+    tags: List[str] = Field(default_factory=list, description="Folder tags")
+
+
+class BulkFolderCreateRequest(BaseModel):
+    """Schema for bulk folder creation request."""
+    parent_id: Optional[int] = Field(None, description="Parent folder ID")
+    folders: List[FolderCreationItem] = Field(..., min_items=1, description="Folders to create")
+    conflict_resolution: str = Field("skip", description="How to handle existing folders")
+    
+    @validator('conflict_resolution')
+    def validate_conflict_resolution(cls, v):
+        """Validate conflict resolution strategy."""
+        allowed_strategies = ['skip', 'rename', 'error']
+        if v not in allowed_strategies:
+            raise ValueError(f"Conflict resolution must be one of: {allowed_strategies}")
+        return v
+    
+    @validator('folders')
+    def validate_folders_structure(cls, v):
+        """Validate folder structure and paths."""
+        paths = set()
+        for folder in v:
+            if folder.path in paths:
+                raise ValueError(f"Duplicate folder path: {folder.path}")
+            paths.add(folder.path)
+            
+            # Validate path characters
+            invalid_chars = ['<', '>', ':', '"', '|', '?', '*']
+            if any(char in folder.path for char in invalid_chars):
+                raise ValueError(f"Invalid characters in path: {folder.path}")
+        
+        return v
+
+
+class BulkFolderCreateResult(BaseModel):
+    """Schema for bulk folder creation result."""
+    successful: List[Dict[str, Any]] = Field(description="Successfully created folders")
+    failed: List[Dict[str, Any]] = Field(description="Failed folder creations with reasons")
+    total_requested: int = Field(description="Total number of folders requested")
+    total_created: int = Field(description="Total number of folders created")
+    skipped: List[Dict[str, Any]] = Field(default_factory=list, description="Skipped folders")
+
+
+class BatchFileUploadItem(BaseModel):
+    """Schema for individual file in batch upload."""
+    filename: str = Field(..., description="Original filename")
+    folder_path: str = Field(..., description="Target folder path relative to upload root")
+    file_size: int = Field(..., ge=0, description="File size in bytes")
+    mime_type: str = Field(..., description="File MIME type")
+    file_hash: Optional[str] = Field(None, description="File hash for deduplication")
+    tags: List[str] = Field(default_factory=list, description="File tags")
+    is_sensitive: bool = Field(False, description="Whether file contains sensitive data")
+    encryption_metadata: Optional[Dict[str, Any]] = Field(None, description="Encryption metadata")
+
+
+class BatchFileUploadRequest(BaseModel):
+    """Schema for batch file upload request."""
+    root_folder_id: Optional[int] = Field(None, description="Root folder ID for upload")
+    files: List[BatchFileUploadItem] = Field(..., min_items=1, description="Files to upload")
+    conflict_resolution: str = Field("rename", description="How to handle name conflicts")
+    create_folders: bool = Field(True, description="Whether to create missing folders")
+    
+    @validator('conflict_resolution')
+    def validate_conflict_resolution(cls, v):
+        """Validate conflict resolution strategy."""
+        allowed_strategies = ['rename', 'overwrite', 'skip', 'error']
+        if v not in allowed_strategies:
+            raise ValueError(f"Conflict resolution must be one of: {allowed_strategies}")
+        return v
+
+
+class BatchFileUploadResult(BaseModel):
+    """Schema for batch file upload result."""
+    successful: List[Dict[str, Any]] = Field(description="Successfully uploaded files")
+    failed: List[Dict[str, Any]] = Field(description="Failed file uploads with reasons")
+    total_requested: int = Field(description="Total number of files requested")
+    total_uploaded: int = Field(description="Total number of files uploaded")
+    folders_created: List[Dict[str, Any]] = Field(default_factory=list, description="Folders created during upload")
+    total_size: int = Field(0, description="Total size of uploaded files in bytes")
+
+
+class FolderUploadStatus(BaseModel):
+    """Schema for folder upload progress tracking."""
+    upload_id: str = Field(..., description="Unique upload session ID")
+    status: str = Field(..., description="Upload status")
+    progress: float = Field(0.0, ge=0.0, le=100.0, description="Upload progress percentage")
+    current_file: Optional[str] = Field(None, description="Currently processing file")
+    files_completed: int = Field(0, ge=0, description="Number of files completed")
+    files_total: int = Field(0, ge=0, description="Total number of files")
+    folders_created: int = Field(0, ge=0, description="Number of folders created")
+    bytes_uploaded: int = Field(0, ge=0, description="Total bytes uploaded")
+    bytes_total: int = Field(0, ge=0, description="Total bytes to upload")
+    error_message: Optional[str] = Field(None, description="Error message if failed")
+    started_at: datetime = Field(description="Upload start time")
+    estimated_completion: Optional[datetime] = Field(None, description="Estimated completion time")
+
+
 # Enable forward references for recursive types
 DocumentTree.update_forward_refs()

@@ -55,7 +55,12 @@ from ...schemas.document import (
     BulkDocumentResult,
     DocumentMoveRequest,
     DocumentCopyRequest,
-    DocumentStatistics
+    DocumentStatistics,
+    BulkFolderCreateRequest,
+    BulkFolderCreateResult,
+    BatchFileUploadRequest,
+    BatchFileUploadResult,
+    FolderUploadStatus
 )
 
 
@@ -1671,6 +1676,385 @@ async def apply_permission_inheritance(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to apply permission inheritance: {str(e)}"
+        )
+
+
+# Bulk Folder Operations
+@router.post("/bulk-create-folders", response_model=BulkFolderCreateResult)
+async def bulk_create_folders(
+    request: BulkFolderCreateRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Create multiple folders in a single transaction."""
+    if not has_permission(current_user, "documents:create", db):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Insufficient privileges to create folders"
+        )
+    
+    # Check parent folder permissions if specified
+    if request.parent_id:
+        parent_folder = db.query(Document).filter(
+            Document.id == request.parent_id,
+            Document.document_type == DocumentType.FOLDER,
+            Document.status == DocumentStatus.ACTIVE
+        ).first()
+        
+        if not parent_folder:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Parent folder not found"
+            )
+        
+        if not parent_folder.can_user_access(current_user, "write"):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Insufficient privileges for parent folder"
+            )
+    
+    successful = []
+    failed = []
+    skipped = []
+    created_folders = {}  # path -> document_id mapping
+    
+    try:
+        # Sort folders by path depth to ensure parents are created first
+        sorted_folders = sorted(request.folders, key=lambda f: f.path.count('/'))
+        
+        for folder_item in sorted_folders:
+            try:
+                # Determine parent_id for this folder
+                current_parent_id = request.parent_id
+                
+                if '/' in folder_item.path:
+                    # This is a nested folder, find its parent
+                    parent_path = '/'.join(folder_item.path.split('/')[:-1])
+                    if parent_path in created_folders:
+                        current_parent_id = created_folders[parent_path]
+                    else:
+                        # Parent should have been created earlier in sorted order
+                        failed.append({
+                            "path": folder_item.path,
+                            "name": folder_item.name,
+                            "error": f"Parent folder not found for path: {parent_path}"
+                        })
+                        continue
+                
+                # Check if folder already exists
+                existing_folder = db.query(Document).filter(
+                    Document.name == folder_item.name,
+                    Document.parent_id == current_parent_id,
+                    Document.document_type == DocumentType.FOLDER,
+                    Document.status == DocumentStatus.ACTIVE
+                ).first()
+                
+                if existing_folder:
+                    if request.conflict_resolution == "skip":
+                        skipped.append({
+                            "path": folder_item.path,
+                            "name": folder_item.name,
+                            "document_id": existing_folder.id,
+                            "reason": "Folder already exists"
+                        })
+                        created_folders[folder_item.path] = existing_folder.id
+                        continue
+                    elif request.conflict_resolution == "rename":
+                        # Find a unique name
+                        base_name = folder_item.name
+                        counter = 1
+                        while existing_folder:
+                            folder_item.name = f"{base_name} ({counter})"
+                            existing_folder = db.query(Document).filter(
+                                Document.name == folder_item.name,
+                                Document.parent_id == current_parent_id,
+                                Document.document_type == DocumentType.FOLDER,
+                                Document.status == DocumentStatus.ACTIVE
+                            ).first()
+                            counter += 1
+                    elif request.conflict_resolution == "error":
+                        failed.append({
+                            "path": folder_item.path,
+                            "name": folder_item.name,
+                            "error": "Folder already exists"
+                        })
+                        continue
+                
+                # Create the folder
+                new_folder = Document(
+                    name=folder_item.name,
+                    description=folder_item.description or "",
+                    document_type=DocumentType.FOLDER,
+                    parent_id=current_parent_id,
+                    owner_id=current_user.id,
+                    status=DocumentStatus.ACTIVE,
+                    tags=folder_item.tags,
+                    created_by=current_user.id
+                )
+                
+                db.add(new_folder)
+                db.flush()  # Get the ID without committing
+                
+                created_folders[folder_item.path] = new_folder.id
+                successful.append({
+                    "path": folder_item.path,
+                    "name": folder_item.name,
+                    "document_id": new_folder.id,
+                    "parent_id": current_parent_id
+                })
+                
+            except Exception as e:
+                failed.append({
+                    "path": folder_item.path,
+                    "name": folder_item.name,
+                    "error": str(e)
+                })
+        
+        # Commit all changes
+        db.commit()
+        
+        return BulkFolderCreateResult(
+            successful=successful,
+            failed=failed,
+            skipped=skipped,
+            total_requested=len(request.folders),
+            total_created=len(successful)
+        )
+        
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create folders: {str(e)}"
+        )
+
+
+@router.post("/batch-upload-files", response_model=BatchFileUploadResult)
+async def batch_upload_files(
+    files: List[UploadFile] = File(...),
+    metadata: str = Form(...),  # JSON string containing BatchFileUploadRequest
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Upload multiple files with folder structure in a single batch."""
+    if not has_permission(current_user, "documents:create", db):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Insufficient privileges to upload files"
+        )
+    
+    try:
+        import json
+        request_data = json.loads(metadata)
+        request = BatchFileUploadRequest(**request_data)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid metadata format: {str(e)}"
+        )
+    
+    if len(files) != len(request.files):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Number of files doesn't match metadata count"
+        )
+    
+    successful = []
+    failed = []
+    folders_created = []
+    created_folders = {}  # path -> document_id mapping
+    total_size = 0
+    
+    try:
+        # Check root folder permissions
+        if request.root_folder_id:
+            root_folder = db.query(Document).filter(
+                Document.id == request.root_folder_id,
+                Document.document_type == DocumentType.FOLDER,
+                Document.status == DocumentStatus.ACTIVE
+            ).first()
+            
+            if not root_folder or not root_folder.can_user_access(current_user, "write"):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Insufficient privileges for root folder"
+                )
+        
+        # Create folders if needed
+        if request.create_folders:
+            unique_folder_paths = set()
+            for file_meta in request.files:
+                if '/' in file_meta.folder_path:
+                    # Extract all parent paths
+                    parts = file_meta.folder_path.split('/')
+                    for i in range(1, len(parts) + 1):
+                        path = '/'.join(parts[:i])
+                        unique_folder_paths.add(path)
+                elif file_meta.folder_path:
+                    unique_folder_paths.add(file_meta.folder_path)
+            
+            # Sort by depth to create parents first
+            sorted_paths = sorted(unique_folder_paths, key=lambda p: p.count('/'))
+            
+            for folder_path in sorted_paths:
+                if folder_path in created_folders:
+                    continue
+                
+                folder_name = folder_path.split('/')[-1]
+                parent_path = '/'.join(folder_path.split('/')[:-1]) if '/' in folder_path else ''
+                parent_id = created_folders.get(parent_path) if parent_path else request.root_folder_id
+                
+                # Check if folder exists
+                existing_folder = db.query(Document).filter(
+                    Document.name == folder_name,
+                    Document.parent_id == parent_id,
+                    Document.document_type == DocumentType.FOLDER,
+                    Document.status == DocumentStatus.ACTIVE
+                ).first()
+                
+                if existing_folder:
+                    created_folders[folder_path] = existing_folder.id
+                    continue
+                
+                # Create folder
+                new_folder = Document(
+                    name=folder_name,
+                    document_type=DocumentType.FOLDER,
+                    parent_id=parent_id,
+                    owner_id=current_user.id,
+                    status=DocumentStatus.ACTIVE,
+                    created_by=current_user.id
+                )
+                
+                db.add(new_folder)
+                db.flush()
+                
+                created_folders[folder_path] = new_folder.id
+                folders_created.append({
+                    "path": folder_path,
+                    "name": folder_name,
+                    "document_id": new_folder.id
+                })
+        
+        # Upload files
+        for i, (upload_file, file_meta) in enumerate(zip(files, request.files)):
+            try:
+                # Determine target folder
+                target_parent_id = request.root_folder_id
+                if file_meta.folder_path:
+                    target_parent_id = created_folders.get(file_meta.folder_path)
+                    if target_parent_id is None and request.create_folders:
+                        failed.append({
+                            "filename": file_meta.filename,
+                            "folder_path": file_meta.folder_path,
+                            "error": "Target folder could not be created"
+                        })
+                        continue
+                
+                # Check for filename conflicts
+                existing_file = db.query(Document).filter(
+                    Document.name == file_meta.filename,
+                    Document.parent_id == target_parent_id,
+                    Document.document_type == DocumentType.DOCUMENT,
+                    Document.status == DocumentStatus.ACTIVE
+                ).first()
+                
+                final_filename = file_meta.filename
+                if existing_file:
+                    if request.conflict_resolution == "skip":
+                        continue
+                    elif request.conflict_resolution == "rename":
+                        # Generate unique filename
+                        base_name, ext = os.path.splitext(file_meta.filename)
+                        counter = 1
+                        while existing_file:
+                            final_filename = f"{base_name} ({counter}){ext}"
+                            existing_file = db.query(Document).filter(
+                                Document.name == final_filename,
+                                Document.parent_id == target_parent_id,
+                                Document.document_type == DocumentType.DOCUMENT,
+                                Document.status == DocumentStatus.ACTIVE
+                            ).first()
+                            counter += 1
+                    elif request.conflict_resolution == "error":
+                        failed.append({
+                            "filename": file_meta.filename,
+                            "folder_path": file_meta.folder_path,
+                            "error": "File already exists"
+                        })
+                        continue
+                
+                # Save file to storage
+                storage_path = os.path.join(settings.UPLOAD_DIR, f"{current_user.id}_{final_filename}_{int(datetime.now().timestamp())}")
+                os.makedirs(os.path.dirname(storage_path), exist_ok=True)
+                
+                with open(storage_path, "wb") as buffer:
+                    content = await upload_file.read()
+                    buffer.write(content)
+                
+                # Calculate file hash
+                hash_sha256 = hashlib.sha256(content).hexdigest()
+                
+                # Create document record
+                new_document = Document(
+                    name=final_filename,
+                    document_type=DocumentType.DOCUMENT,
+                    mime_type=file_meta.mime_type,
+                    file_size=len(content),
+                    file_hash_sha256=hash_sha256,
+                    storage_path=storage_path,
+                    parent_id=target_parent_id,
+                    owner_id=current_user.id,
+                    status=DocumentStatus.ACTIVE,
+                    tags=file_meta.tags,
+                    is_sensitive=file_meta.is_sensitive,
+                    created_by=current_user.id,
+                    doc_metadata=file_meta.encryption_metadata or {}
+                )
+                
+                db.add(new_document)
+                db.flush()
+                
+                total_size += len(content)
+                successful.append({
+                    "filename": final_filename,
+                    "original_filename": file_meta.filename,
+                    "folder_path": file_meta.folder_path,
+                    "document_id": new_document.id,
+                    "size": len(content)
+                })
+                
+            except Exception as e:
+                failed.append({
+                    "filename": file_meta.filename,
+                    "folder_path": file_meta.folder_path,
+                    "error": str(e)
+                })
+        
+        # Commit all changes
+        db.commit()
+        
+        return BatchFileUploadResult(
+            successful=successful,
+            failed=failed,
+            total_requested=len(request.files),
+            total_uploaded=len(successful),
+            folders_created=folders_created,
+            total_size=total_size
+        )
+        
+    except Exception as e:
+        db.rollback()
+        # Clean up any uploaded files on error
+        for result in successful:
+            try:
+                if 'storage_path' in result:
+                    os.remove(result['storage_path'])
+            except:
+                pass
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to upload files: {str(e)}"
         )
 
 

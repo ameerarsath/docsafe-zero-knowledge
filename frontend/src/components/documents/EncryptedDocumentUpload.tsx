@@ -19,12 +19,24 @@ import {
   Key,
   X,
   Shield,
-  Clock
+  Clock,
+  FolderOpen,
+  Folder
 } from 'lucide-react';
 import { encryptionApi } from '../../services/api/encryptionService';
 import { useSessionStatus } from '../security/SessionKeyManager';
 import SessionKeyManager from '../security/SessionKeyManager';
 import TagsInput from '../ui/TagsInput';
+import FolderUploadPreview, { UploadOptions } from './FolderUploadPreview';
+import { 
+  processFolderDrop, 
+  containsFolders, 
+  getFolderCreationOrder,
+  validateFolderStructure,
+  FolderUploadStructure,
+  FolderValidationResult
+} from '../../utils/folderTraversal';
+import { folderUploadApi } from '../../services/api/folderUpload';
 
 interface UploadedFile {
   id: string;
@@ -35,6 +47,18 @@ interface UploadedFile {
   progress: number;
   error?: string;
   encryptionMetadata?: any;
+  folderPath?: string; // For folder uploads
+}
+
+type UploadMode = 'files' | 'folder';
+
+interface FolderUploadSession {
+  structure: FolderUploadStructure;
+  validation: FolderValidationResult;
+  options?: UploadOptions;
+  totalFiles: number;
+  completedFiles: number;
+  isActive: boolean;
 }
 
 interface EncryptedDocumentUploadProps {
@@ -59,6 +83,12 @@ export default function EncryptedDocumentUpload({
   const [showSessionManager, setShowSessionManager] = useState(false);
   const [attemptedUploadWithoutSession, setAttemptedUploadWithoutSession] = useState(false);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  const [uploadMode, setUploadMode] = useState<UploadMode>('files');
+  
+  // Folder upload state
+  const [folderUploadSession, setFolderUploadSession] = useState<FolderUploadSession | null>(null);
+  const [showFolderPreview, setShowFolderPreview] = useState(false);
+  
   const sessionStatus = useSessionStatus();
 
   // Validation: if sessionStatus says active but no CryptoKey, clear session quietly
@@ -137,13 +167,50 @@ export default function EncryptedDocumentUpload({
     setIsDragOver(false);
   }, []);
 
-  const handleDrop = useCallback((e: React.DragEvent) => {
+  const handleDrop = useCallback(async (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragOver(false);
     
-    const files = Array.from(e.dataTransfer.files);
-    handleFiles(files);
-  }, [handleFiles]);
+    try {
+      // Check if drop contains folders
+      if (containsFolders(e.dataTransfer)) {
+        // Handle folder upload
+        const structure = await processFolderDrop(e.dataTransfer);
+        const validation = validateFolderStructure(structure, {
+          maxFiles: 1000,
+          maxTotalSize: 500 * 1024 * 1024, // 500MB
+          maxDepth: 10,
+          maxFileSize: maxFileSize * 1024 * 1024,
+          allowedTypes: allowedTypes
+        });
+        
+        setFolderUploadSession({
+          structure,
+          validation,
+          totalFiles: structure.totalFiles,
+          completedFiles: 0,
+          isActive: false
+        });
+        setUploadMode('folder');
+        setShowFolderPreview(true);
+      } else {
+        // Handle regular file upload
+        const files = Array.from(e.dataTransfer.files);
+        setUploadMode('files');
+        handleFiles(files);
+      }
+    } catch (error) {
+      setUploadedFiles(prev => [...prev, {
+        id: Date.now().toString(),
+        name: 'Folder Drop Error',
+        size: 0,
+        type: 'error',
+        status: 'error',
+        progress: 0,
+        error: error instanceof Error ? error.message : 'Failed to process folder drop'
+      }]);
+    }
+  }, [handleFiles, maxFileSize, allowedTypes]);
 
   const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
@@ -270,6 +337,156 @@ export default function EncryptedDocumentUpload({
       updateFileStatus(fileId, 'error', 0, error instanceof Error ? error.message : 'Upload failed');
     }
   };
+
+  /**
+   * Handle folder upload confirmation
+   */
+  const handleFolderUploadConfirm = useCallback(async (options: UploadOptions) => {
+    if (!folderUploadSession) return;
+
+    // Check session before starting upload
+    const sessionKey = encryptionApi.getSessionKey();
+    const hasValidEncryptionSession = sessionStatus.isActive && sessionKey && sessionKey.cryptoKey;
+    
+    if (!hasValidEncryptionSession) {
+      setAttemptedUploadWithoutSession(true);
+      setShowSessionManager(true);
+      return;
+    }
+
+    try {
+      setShowFolderPreview(false);
+      setFolderUploadSession(prev => prev ? {
+        ...prev,
+        options,
+        isActive: true
+      } : null);
+
+      // Process folder upload
+      await processFolderUpload(folderUploadSession.structure, options);
+      
+    } catch (error) {
+      setUploadedFiles(prev => [...prev, {
+        id: Date.now().toString(),
+        name: 'Folder Upload Error',
+        size: 0,
+        type: 'error',
+        status: 'error',
+        progress: 0,
+        error: error instanceof Error ? error.message : 'Failed to upload folder'
+      }]);
+    }
+  }, [folderUploadSession, sessionStatus.isActive]);
+
+  /**
+   * Process folder upload
+   */
+  const processFolderUpload = async (structure: FolderUploadStructure, options: UploadOptions) => {
+    try {
+      // Step 1: Create folder structure
+      const folderPaths = getFolderCreationOrder(structure);
+      const folderItems = folderPaths.map(path => ({
+        name: path.split('/').pop() || path,
+        path: path,
+        parent_path: path.includes('/') ? path.split('/').slice(0, -1).join('/') : undefined,
+        description: '',
+        tags: selectedTags
+      }));
+
+      let createdFolders: Record<string, number> = {};
+
+      if (folderItems.length > 0) {
+        const folderResult = await folderUploadApi.createFolders({
+          parent_id: parentFolderId,
+          folders: folderItems,
+          conflict_resolution: options.conflictResolution === 'rename' ? 'rename' : 'skip'
+        });
+
+        // Map folder paths to IDs
+        folderResult.successful.forEach(folder => {
+          createdFolders[folder.path] = folder.document_id;
+        });
+        folderResult.skipped.forEach(folder => {
+          createdFolders[folder.path] = folder.document_id;
+        });
+      }
+
+      // Step 2: Upload files
+      const selectedFiles = structure.files.filter(f => 
+        options.selectedFiles?.has(f.path) ?? true
+      );
+
+      if (selectedFiles.length === 0) {
+        return;
+      }
+
+      // Process files in batches for better performance
+      const batchSize = 5;
+      let completedCount = 0;
+
+      for (let i = 0; i < selectedFiles.length; i += batchSize) {
+        const batch = selectedFiles.slice(i, i + batchSize);
+        
+        const batchPromises = batch.map(async (fileEntry) => {
+          const fileId = `folder-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+          
+          const uploadedFile: UploadedFile = {
+            id: fileId,
+            name: fileEntry.file.name,
+            size: fileEntry.size,
+            type: fileEntry.type,
+            status: 'encrypting',
+            progress: 0,
+            folderPath: fileEntry.relativePath
+          };
+
+          setUploadedFiles(prev => [...prev, uploadedFile]);
+
+          try {
+            await processFileUpload(fileEntry.file, fileId);
+            completedCount++;
+            
+            // Update folder upload session progress
+            setFolderUploadSession(prev => prev ? {
+              ...prev,
+              completedFiles: completedCount
+            } : null);
+            
+          } catch (error) {
+            // Error handling is done in processFileUpload
+          }
+        });
+
+        await Promise.all(batchPromises);
+      }
+
+      // Mark folder upload as complete
+      setFolderUploadSession(prev => prev ? {
+        ...prev,
+        isActive: false
+      } : null);
+
+      // Auto-reset if enabled
+      if (autoResetAfterUpload) {
+        setTimeout(() => {
+          setFolderUploadSession(null);
+          setUploadMode('files');
+        }, 2000);
+      }
+
+    } catch (error) {
+      throw error;
+    }
+  };
+
+  /**
+   * Cancel folder upload
+   */
+  const handleFolderUploadCancel = useCallback(() => {
+    setShowFolderPreview(false);
+    setFolderUploadSession(null);
+    setUploadMode('files');
+  }, []);
 
 
   const updateFileStatus = (
@@ -427,8 +644,15 @@ export default function EncryptedDocumentUpload({
         />
         
         <div className="space-y-4">
-          <div className="flex justify-center">
-            <Upload className="w-12 h-12 text-gray-400" />
+          <div className="flex justify-center space-x-2">
+            {uploadMode === 'folder' ? (
+              <>
+                <Folder className="w-10 h-10 text-blue-500" />
+                <FolderOpen className="w-10 h-10 text-blue-600" />
+              </>
+            ) : (
+              <Upload className="w-12 h-12 text-gray-400" />
+            )}
           </div>
           
           <div>
@@ -436,21 +660,40 @@ export default function EncryptedDocumentUpload({
               htmlFor="file-upload"
               className="cursor-pointer font-medium text-blue-600 hover:text-blue-500"
             >
-              {sessionStatus.isActive ? 'Upload encrypted documents' : 'Click to upload (will prompt for encryption password)'}
+              {uploadMode === 'folder' 
+                ? 'Folder Upload Mode'
+                : sessionStatus.isActive 
+                  ? 'Upload encrypted documents & folders' 
+                  : 'Click to upload (will prompt for encryption password)'
+              }
             </label>
             <p className="text-gray-500 text-sm mt-1">
               {sessionStatus.isActive ? (
-                <>Drag and drop files here, or click to select</>
+                <>
+                  Drag and drop files or folders here, or click to select files
+                  {uploadMode === 'folder' && folderUploadSession && (
+                    <span className="block text-blue-600 mt-1">
+                      📁 {folderUploadSession.structure.rootFolder} ready to upload
+                    </span>
+                  )}
+                </>
               ) : (
                 <>Will prompt for your password to create encryption session</>
               )}
             </p>
           </div>
           
-          <p className="text-xs text-gray-400">
-            Max file size: {maxFileSize}MB | 
-            Supported: PDF, Images, Documents
-          </p>
+          <div className="text-xs text-gray-400 space-y-1">
+            <p>
+              Max file size: {maxFileSize}MB | 
+              Supported: PDF, Images, Documents
+            </p>
+            <p className="flex items-center space-x-4">
+              <span>✅ Individual files</span>
+              <span>✅ Entire folders</span>
+              <span>✅ Nested structure preserved</span>
+            </p>
+          </div>
         </div>
       </div>
 
@@ -505,6 +748,18 @@ export default function EncryptedDocumentUpload({
             ))}
           </div>
         </div>
+      )}
+
+      {/* Folder Upload Preview */}
+      {folderUploadSession && (
+        <FolderUploadPreview
+          structure={folderUploadSession.structure}
+          validation={folderUploadSession.validation}
+          isOpen={showFolderPreview}
+          onConfirm={handleFolderUploadConfirm}
+          onCancel={handleFolderUploadCancel}
+          isUploading={folderUploadSession.isActive}
+        />
       )}
     </div>
   );
