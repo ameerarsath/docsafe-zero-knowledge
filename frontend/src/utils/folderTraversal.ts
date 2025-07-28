@@ -36,17 +36,23 @@ export interface FolderUploadStructure {
  * Checks if drag-and-drop contains folders
  */
 export function containsFolders(dataTransfer: DataTransfer): boolean {
-  if (!dataTransfer.items) return false;
+  if (!dataTransfer || !dataTransfer.items) return false;
   
-  for (let i = 0; i < dataTransfer.items.length; i++) {
-    const item = dataTransfer.items[i];
-    if (item.kind === 'file') {
+  try {
+    for (let i = 0; i < dataTransfer.items.length; i++) {
+      const item = dataTransfer.items[i];
+      if (!item || item.kind !== 'file') continue;
+      
       const entry = item.webkitGetAsEntry?.();
       if (entry && entry.isDirectory) {
         return true;
       }
     }
+  } catch (error) {
+    console.warn('Error checking for folders in dataTransfer:', error);
+    return false;
   }
+  
   return false;
 }
 
@@ -72,45 +78,63 @@ async function traverseDirectoryEntry(
         }
 
         try {
+          // Check if entries is valid
+          if (!entries || !Array.isArray(entries)) {
+            reject(new Error('Invalid entries received from directory reader'));
+            return;
+          }
+
           // Process entries in batches
           for (const childEntry of entries) {
+            if (!childEntry) continue;
+            
             const relativePath = basePath ? `${basePath}/${childEntry.name}` : childEntry.name;
             
             if (childEntry.isFile) {
               // Handle file entry
               const fileEntry = childEntry as FileSystemFileEntry;
-              const file = await new Promise<File>((resolveFile, rejectFile) => {
-                fileEntry.file(resolveFile, rejectFile);
-              });
-              
-              files.push({
-                file,
-                path: `${entry.name}/${relativePath}`,
-                relativePath,
-                size: file.size,
-                type: file.type
-              });
+              try {
+                const file = await new Promise<File>((resolveFile, rejectFile) => {
+                  fileEntry.file(resolveFile, rejectFile);
+                });
+                
+                files.push({
+                  file,
+                  path: `${entry.name}/${relativePath}`,
+                  relativePath,
+                  size: file.size,
+                  type: file.type
+                });
+              } catch (fileError) {
+                console.warn(`Failed to read file ${childEntry.name}:`, fileError);
+                // Continue with other files instead of failing completely
+              }
             } else if (childEntry.isDirectory) {
               // Handle directory entry recursively
               const dirEntry = childEntry as FileSystemDirectoryEntry;
-              const { files: subFiles, folders: subFolders } = await traverseDirectoryEntry(
-                dirEntry,
-                relativePath,
-                depth + 1
-              );
-              
-              const folderEntry: FolderEntry = {
-                name: childEntry.name,
-                path: `${entry.name}/${relativePath}`,
-                relativePath,
-                files: subFiles,
-                subfolders: subFolders,
-                totalFiles: subFiles.length + subFolders.reduce((acc, f) => acc + f.totalFiles, 0),
-                totalSize: subFiles.reduce((acc, f) => acc + f.size, 0) + 
-                          subFolders.reduce((acc, f) => acc + f.totalSize, 0)
-              };
-              
-              folders.push(folderEntry);
+              try {
+                const { files: subFiles, folders: subFolders } = await traverseDirectoryEntry(
+                  dirEntry,
+                  relativePath,
+                  depth + 1
+                );
+                
+                const folderEntry: FolderEntry = {
+                  name: childEntry.name,
+                  path: `${entry.name}/${relativePath}`,
+                  relativePath,
+                  files: subFiles || [],
+                  subfolders: subFolders || [],
+                  totalFiles: (subFiles || []).length + (subFolders || []).reduce((acc, f) => acc + f.totalFiles, 0),
+                  totalSize: (subFiles || []).reduce((acc, f) => acc + f.size, 0) + 
+                            (subFolders || []).reduce((acc, f) => acc + f.totalSize, 0)
+                };
+                
+                folders.push(folderEntry);
+              } catch (dirError) {
+                console.warn(`Failed to read directory ${childEntry.name}:`, dirError);
+                // Continue with other directories instead of failing completely
+              }
             }
           }
           
@@ -130,65 +154,82 @@ async function traverseDirectoryEntry(
  * Processes DataTransfer items to extract folder structure
  */
 export async function processFolderDrop(dataTransfer: DataTransfer): Promise<FolderUploadStructure> {
-  if (!dataTransfer.items) {
-    throw new Error('DataTransfer items not supported');
+  if (!dataTransfer || !dataTransfer.items) {
+    throw new Error('DataTransfer items not supported or dataTransfer is null');
   }
 
   const rootFiles: FileEntry[] = [];
   const folders: FolderEntry[] = [];
   let maxDepth = 0;
 
-  for (let i = 0; i < dataTransfer.items.length; i++) {
-    const item = dataTransfer.items[i];
-    
-    if (item.kind !== 'file') continue;
-    
-    const entry = item.webkitGetAsEntry?.();
-    if (!entry) continue;
+  try {
+    for (let i = 0; i < dataTransfer.items.length; i++) {
+      const item = dataTransfer.items[i];
+      
+      if (!item || item.kind !== 'file') continue;
+      
+      const entry = item.webkitGetAsEntry?.();
+      if (!entry) {
+        console.warn(`Could not get entry for item ${i}`);
+        continue;
+      }
 
-    if (entry.isFile) {
-      // Handle individual files at root level
-      const fileEntry = entry as FileSystemFileEntry;
-      const file = await new Promise<File>((resolve, reject) => {
-        fileEntry.file(resolve, reject);
-      });
-      
-      rootFiles.push({
-        file,
-        path: entry.name,
-        relativePath: entry.name,
-        size: file.size,
-        type: file.type
-      });
-    } else if (entry.isDirectory) {
-      // Handle folder
-      const dirEntry = entry as FileSystemDirectoryEntry;
-      const { files: folderFiles, folders: subFolders } = await traverseDirectoryEntry(dirEntry);
-      
-      const folderEntry: FolderEntry = {
-        name: entry.name,
-        path: entry.name,
-        relativePath: entry.name,
-        files: folderFiles,
-        subfolders: subFolders,
-        totalFiles: folderFiles.length + subFolders.reduce((acc, f) => acc + f.totalFiles, 0),
-        totalSize: folderFiles.reduce((acc, f) => acc + f.size, 0) + 
-                  subFolders.reduce((acc, f) => acc + f.totalSize, 0)
-      };
-      
-      folders.push(folderEntry);
-      
-      // Calculate max depth
-      const calculateDepth = (folder: FolderEntry, currentDepth: number = 1): number => {
-        let depth = currentDepth;
-        for (const subfolder of folder.subfolders) {
-          depth = Math.max(depth, calculateDepth(subfolder, currentDepth + 1));
+      if (entry.isFile) {
+        // Handle individual files at root level
+        const fileEntry = entry as FileSystemFileEntry;
+        try {
+          const file = await new Promise<File>((resolve, reject) => {
+            fileEntry.file(resolve, reject);
+          });
+          
+          rootFiles.push({
+            file,
+            path: entry.name,
+            relativePath: entry.name,
+            size: file.size,
+            type: file.type
+          });
+        } catch (fileError) {
+          console.warn(`Failed to read root file ${entry.name}:`, fileError);
+          continue;
         }
-        return depth;
-      };
-      
-      maxDepth = Math.max(maxDepth, calculateDepth(folderEntry));
+      } else if (entry.isDirectory) {
+        // Handle folder
+        const dirEntry = entry as FileSystemDirectoryEntry;
+        try {
+          const { files: folderFiles, folders: subFolders } = await traverseDirectoryEntry(dirEntry);
+          
+          const folderEntry: FolderEntry = {
+            name: entry.name,
+            path: entry.name,
+            relativePath: entry.name,
+            files: folderFiles || [],
+            subfolders: subFolders || [],
+            totalFiles: (folderFiles || []).length + (subFolders || []).reduce((acc, f) => acc + f.totalFiles, 0),
+            totalSize: (folderFiles || []).reduce((acc, f) => acc + f.size, 0) + 
+                      (subFolders || []).reduce((acc, f) => acc + f.totalSize, 0)
+          };
+          
+          folders.push(folderEntry);
+          
+          // Calculate max depth
+          const calculateDepth = (folder: FolderEntry, currentDepth: number = 1): number => {
+            let depth = currentDepth;
+            for (const subfolder of folder.subfolders || []) {
+              depth = Math.max(depth, calculateDepth(subfolder, currentDepth + 1));
+            }
+            return depth;
+          };
+          
+          maxDepth = Math.max(maxDepth, calculateDepth(folderEntry));
+        } catch (dirError) {
+          console.warn(`Failed to read root directory ${entry.name}:`, dirError);
+          continue;
+        }
+      }
     }
+  } catch (error) {
+    throw new Error(`Failed to process folder drop: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
 
   // Flatten all files for easier processing

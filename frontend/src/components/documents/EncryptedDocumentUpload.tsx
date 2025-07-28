@@ -200,15 +200,37 @@ export default function EncryptedDocumentUpload({
         handleFiles(files);
       }
     } catch (error) {
-      setUploadedFiles(prev => [...prev, {
-        id: Date.now().toString(),
-        name: 'Folder Drop Error',
-        size: 0,
-        type: 'error',
-        status: 'error',
-        progress: 0,
-        error: error instanceof Error ? error.message : 'Failed to process folder drop'
-      }]);
+      // If folder processing fails, fallback to regular file upload
+      console.warn('Folder processing failed, falling back to file upload:', error);
+      
+      try {
+        const files = Array.from(e.dataTransfer.files);
+        if (files.length > 0) {
+          setUploadMode('files');
+          handleFiles(files);
+        } else {
+          // Show error if no files can be processed
+          setUploadedFiles(prev => [...prev, {
+            id: Date.now().toString(),
+            name: 'Upload Error',
+            size: 0,
+            type: 'error',
+            status: 'error',
+            progress: 0,
+            error: error instanceof Error ? error.message : 'Failed to process dropped items'
+          }]);
+        }
+      } catch (fallbackError) {
+        setUploadedFiles(prev => [...prev, {
+          id: Date.now().toString(),
+          name: 'Upload Error',
+          size: 0,
+          type: 'error',
+          status: 'error',
+          progress: 0,
+          error: 'Failed to process dropped items'
+        }]);
+      }
     }
   }, [handleFiles, maxFileSize, allowedTypes]);
 
