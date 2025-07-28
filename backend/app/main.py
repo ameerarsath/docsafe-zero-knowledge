@@ -17,6 +17,11 @@ from .core.config import settings
 from .core.database import get_db, create_tables
 from .core.redis import redis_manager
 from .api import api_router
+from .middleware.security_headers_middleware import (
+    SecurityHeadersMiddleware, 
+    SecurityAuditMiddleware
+)
+from .middleware.security_middleware import SecurityMonitoringMiddleware
 
 
 @asynccontextmanager
@@ -66,6 +71,11 @@ app = FastAPI(
     redoc_url="/redoc",
     lifespan=lifespan
 )
+
+# Security middleware (order matters - add before CORS)
+app.add_middleware(SecurityHeadersMiddleware)
+app.add_middleware(SecurityAuditMiddleware)
+app.add_middleware(SecurityMonitoringMiddleware)
 
 # CORS middleware
 app.add_middleware(

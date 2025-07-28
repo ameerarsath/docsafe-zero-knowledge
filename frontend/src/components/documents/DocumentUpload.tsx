@@ -37,6 +37,7 @@ interface DocumentUploadProps {
   maxFileSize?: number; // in bytes
   maxFiles?: number;
   className?: string;
+  autoResetAfterUpload?: boolean; // Auto-reset component state after successful upload
 }
 
 const DEFAULT_ACCEPTED_TYPES = [
@@ -65,7 +66,8 @@ export const DocumentUpload: React.FC<DocumentUploadProps> = ({
   acceptedFileTypes = DEFAULT_ACCEPTED_TYPES,
   maxFileSize = DEFAULT_MAX_FILE_SIZE,
   maxFiles = DEFAULT_MAX_FILES,
-  className = ''
+  className = '',
+  autoResetAfterUpload = true
 }) => {
   const user = useAuthStore((state) => state.user);
   const {
@@ -314,13 +316,25 @@ export const DocumentUpload: React.FC<DocumentUploadProps> = ({
         }
       }
 
-      // Notify parent component
-      if (uploadedDocuments.length > 0 && onUploadComplete) {
-        onUploadComplete(uploadedDocuments);
-      }
-
-      // Clear successful uploads
+      // Clear successful uploads first
       setUploadFiles(prev => prev.filter(f => f.status !== 'completed'));
+
+      // Notify parent component after clearing state
+      if (uploadedDocuments.length > 0 && onUploadComplete) {
+        // Small delay to ensure UI updates before callback
+        setTimeout(() => {
+          onUploadComplete(uploadedDocuments);
+          
+          // Auto-reset component state if enabled
+          if (autoResetAfterUpload) {
+            setTimeout(() => {
+              setUploadFiles([]);
+              setPassword('');
+              setGlobalError(null);
+            }, 1000); // Reset after 1 second
+          }
+        }, 100);
+      }
 
     } catch (error) {
       setGlobalError(error instanceof Error ? error.message : 'Upload failed');

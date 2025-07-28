@@ -7,6 +7,7 @@
 import React, { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
+import { useSecurityStatus } from '../../hooks/useSecurity';
 import { 
   FileText, 
   Settings, 
@@ -23,7 +24,14 @@ import {
   Users,
   Grid,
   RefreshCw,
-  FileText as AuditIcon
+  FileText as AuditIcon,
+  UserCog,
+  Lock,
+  Eye,
+  Activity,
+  AlertTriangle,
+  Database,
+  FileCheck
 } from 'lucide-react';
 
 interface AppLayoutProps {
@@ -44,19 +52,34 @@ interface NavigationItem {
 const navigation: NavigationItem[] = [
   { name: 'Dashboard', href: '/dashboard', icon: Home },
   { name: 'Documents', href: '/documents', icon: FileText },
-  { name: 'MFA Settings', href: '/settings/mfa', icon: Settings },
   { 
-    name: 'RBAC Management', 
-    href: '/admin', 
-    icon: Shield, 
+    name: 'User Management', 
+    href: '/admin/users', 
+    icon: UserCog, 
     adminOnly: true,
     children: [
-      { name: 'Overview', href: '/admin', icon: Home },
+      { name: 'Users Overview', href: '/admin/users', icon: Users },
       { name: 'Role Management', href: '/admin/rbac/roles', icon: Shield },
       { name: 'User Assignments', href: '/admin/rbac/assignments', icon: Users },
       { name: 'Permission Matrix', href: '/admin/rbac/matrix', icon: Grid },
-      { name: 'Role Hierarchy', href: '/admin/rbac/hierarchy', icon: RefreshCw },
-      { name: 'Audit Trail', href: '/admin/rbac/audit', icon: AuditIcon }
+      { name: 'Role Hierarchy', href: '/admin/rbac/hierarchy', icon: RefreshCw }
+    ]
+  },
+  { 
+    name: 'Security', 
+    href: '/security', 
+    icon: Lock, 
+    adminOnly: true,
+    children: [
+      { name: 'Security Dashboard', href: '/security/dashboard', icon: Activity },
+      { name: 'Security Headers', href: '/security/headers', icon: Shield },
+      { name: 'Event Monitoring', href: '/security/monitoring', icon: Eye },
+      { name: 'Key Management', href: '/security/keys', icon: Lock },
+      { name: 'Admin Dashboard', href: '/admin/dashboard', icon: Database },
+      { name: 'System Monitoring', href: '/admin/monitoring', icon: Database },
+      { name: 'Audit Logs', href: '/admin/audit', icon: AuditIcon },
+      { name: 'RBAC Audit Trail', href: '/admin/rbac/audit-trail', icon: Eye },
+      { name: 'MFA Settings', href: '/settings/mfa', icon: Settings }
     ]
   },
 ];
@@ -67,6 +90,7 @@ export default function AppLayout({ children, title, subtitle }: AppLayoutProps)
   const { user, logout, hasRole, getRoleName } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
+  const securityStatus = useSecurityStatus();
 
   const isActive = (href: string) => {
     return location.pathname === href || location.pathname.startsWith(href + '/');
@@ -125,7 +149,7 @@ export default function AppLayout({ children, title, subtitle }: AppLayoutProps)
       
       // Map segments to readable names
       const segmentMap: { [key: string]: string } = {
-        'admin': 'Administration',
+        'admin': 'User Management',
         'rbac': 'RBAC',
         'settings': 'Settings',
         'mfa': 'Multi-Factor Authentication',
@@ -134,7 +158,13 @@ export default function AppLayout({ children, title, subtitle }: AppLayoutProps)
         'assignments': 'User Assignments',
         'matrix': 'Permission Matrix',
         'hierarchy': 'Role Hierarchy',
-        'audit': 'Audit Trail'
+        'audit': 'Audit Trail',
+        'monitoring': 'System Monitoring',
+        'dashboard': 'Dashboard',
+        'users': 'Users Overview',
+        'security': 'Security',
+        'headers': 'Security Headers',
+        'keys': 'Key Management'
       };
 
       const name = segmentMap[segment] || segment.charAt(0).toUpperCase() + segment.slice(1);
@@ -192,9 +222,18 @@ export default function AppLayout({ children, title, subtitle }: AppLayoutProps)
 
         {/* Navigation */}
         <nav className="flex-1 mt-6 px-3">
-          <div className="space-y-1">
-            {filteredNavigation.map((item) => (
+          <div className="space-y-2">
+            {filteredNavigation.map((item, index) => (
               <div key={item.name}>
+                {/* Add section labels for better organization */}
+                {index === 2 && (
+                  <div className="pt-4 pb-2">
+                    <div className="border-t border-gray-200 mb-4"></div>
+                    <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider px-3">
+                      Administration
+                    </h3>
+                  </div>
+                )}
                 {/* Main navigation item */}
                 {item.children ? (
                   <button
@@ -324,6 +363,45 @@ export default function AppLayout({ children, title, subtitle }: AppLayoutProps)
                   MFA Disabled
                 </span>
               )}
+
+              {/* Security Status indicator */}
+              <div 
+                className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium cursor-pointer ${
+                  securityStatus.status === 'secure'
+                    ? 'bg-green-100 text-green-800 hover:bg-green-200'
+                    : securityStatus.status === 'warning'
+                    ? 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200'
+                    : 'bg-red-100 text-red-800 hover:bg-red-200'
+                }`}
+                title={`Security Status: ${securityStatus.message}${
+                  securityStatus.violationsCount > 0 
+                    ? ` (${securityStatus.violationsCount} violations)` 
+                    : ''
+                }${
+                  securityStatus.suspiciousActivitiesCount > 0 
+                    ? ` (${securityStatus.suspiciousActivitiesCount} suspicious activities)` 
+                    : ''
+                }`}
+                onClick={() => {
+                  if (user?.is_admin || ['super_admin', 'admin', '5', '4'].includes(user?.role || '')) {
+                    navigate('/security');
+                  }
+                }}
+              >
+                {securityStatus.status === 'secure' ? (
+                  <Shield className="h-3 w-3 mr-1" />
+                ) : securityStatus.status === 'warning' ? (
+                  <AlertTriangle className="h-3 w-3 mr-1" />
+                ) : (
+                  <AlertTriangle className="h-3 w-3 mr-1" />
+                )}
+                Security
+                {(securityStatus.violationsCount > 0 || securityStatus.suspiciousActivitiesCount > 0) && (
+                  <span className="ml-1 bg-white bg-opacity-50 rounded-full px-1">
+                    {securityStatus.violationsCount + securityStatus.suspiciousActivitiesCount}
+                  </span>
+                )}
+              </div>
             </div>
           </div>
 

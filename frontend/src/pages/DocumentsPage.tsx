@@ -22,6 +22,7 @@ import {
   DocumentVersionHistory,
   FolderManagementDialog
 } from '../components/documents';
+import EncryptedDocumentUpload from '../components/documents/EncryptedDocumentUpload';
 import { RequireAuth } from '../components/auth/ProtectedRoute';
 import AppLayout from '../components/layout/AppLayout';
 import {
@@ -812,15 +813,36 @@ function DocumentsContent() {
       {/* Upload Modal */}
       {showUpload && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-            <DocumentUpload
-              parentFolderId={currentFolder?.id || null}
-              onUploadComplete={() => {
-                setShowUpload(false);
-                refreshDocuments();
-              }}
-              onClose={() => setShowUpload(false)}
-            />
+          <div className="max-w-4xl w-full max-h-[90vh] overflow-y-auto bg-white rounded-lg">
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-xl font-semibold text-gray-900">Upload Documents</h2>
+                <button
+                  onClick={() => setShowUpload(false)}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
+              <EncryptedDocumentUpload
+                onUploadComplete={() => {
+                  setShowUpload(false);
+                  refreshDocuments();
+                }}
+                maxFileSize={100}
+                allowedTypes={[
+                  'application/pdf',
+                  'image/*',
+                  'text/*',
+                  'application/msword',
+                  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                  'application/vnd.ms-excel',
+                  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                ]}
+                autoResetAfterUpload={true}
+                parentFolderId={currentFolder?.id || null}
+              />
+            </div>
           </div>
         </div>
       )}

@@ -59,6 +59,17 @@ class Settings(BaseSettings):
     LOGIN_RATE_LIMIT_ATTEMPTS: int = 3
     LOGIN_RATE_LIMIT_WINDOW: int = 1800  # 30 minutes in seconds
     
+    # Security Headers Settings
+    HSTS_MAX_AGE: int = 31536000  # 1 year
+    HSTS_INCLUDE_SUBDOMAINS: bool = True
+    HSTS_PRELOAD: bool = True
+    CSP_REPORT_ONLY: bool = False
+    SECURITY_HEADERS_ENABLED: bool = True
+    
+    # Certificate Pinning Settings (for production)
+    CERTIFICATE_PINNING_ENABLED: bool = False
+    CERTIFICATE_PINS: List[str] = []
+    
     # File Storage Settings
     ENCRYPTED_FILES_PATH: str = "/app/encrypted-files"
     BACKUPS_PATH: str = "/app/backups"

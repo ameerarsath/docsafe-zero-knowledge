@@ -149,7 +149,8 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
           iv: document.encryption_iv,
           authTag: document.encryption_auth_tag,
           originalName: document.name,
-          mimeType: document.mime_type
+          mimeType: document.mime_type,
+          documentMetadata: document.doc_metadata // Include document metadata for salt/iterations
         };
 
         // Decrypt the document

@@ -28,6 +28,18 @@ import PermissionMatrixPage from './pages/rbac/PermissionMatrixPage';
 import RoleHierarchyPage from './pages/rbac/RoleHierarchyPage';
 import AuditTrailPage from './pages/rbac/AuditTrailPage';
 
+// Admin Pages
+import AdminDashboardPage from './pages/AdminDashboardPage';
+import AdminUsersPage from './pages/AdminUsersPage';
+import AdminMonitoringPage from './pages/AdminMonitoringPage';
+import AdminAuditPage from './pages/AdminAuditPage';
+
+// Security Pages
+import SecurityDashboardPage from './pages/SecurityDashboardPage';
+import SecurityHeadersPage from './pages/SecurityHeadersPage';
+import SecurityMonitoringPage from './pages/SecurityMonitoringPage';
+import KeyManagementPage from './pages/KeyManagementPage';
+
 // Styles
 import './App.css';
 
@@ -50,14 +62,27 @@ function App() {
             <Route path="/documents" element={<DocumentsPage />} />
             <Route path="/settings/mfa" element={<MFASettingsPageWrapper />} />
             
+            {/* Admin Routes */}
+            <Route path="/admin" element={<AdminDashboardPage />} />
+            <Route path="/admin/dashboard" element={<AdminDashboardPage />} />
+            <Route path="/admin/users" element={<AdminUsersPage />} />
+            <Route path="/admin/monitoring" element={<AdminMonitoringPage />} />
+            <Route path="/admin/audit" element={<AdminAuditPage />} />
+            
             {/* RBAC Admin Routes */}
-            <Route path="/admin" element={<RBACAdminPage />} />
-            <Route path="/admin/rbac" element={<RoleManagementPage />} />
+            <Route path="/admin/rbac" element={<RBACAdminPage />} />
             <Route path="/admin/rbac/roles" element={<RoleManagementPage />} />
             <Route path="/admin/rbac/assignments" element={<UserAssignmentsPage />} />
             <Route path="/admin/rbac/matrix" element={<PermissionMatrixPage />} />
             <Route path="/admin/rbac/hierarchy" element={<RoleHierarchyPage />} />
-            <Route path="/admin/rbac/audit" element={<AuditTrailPage />} />
+            <Route path="/admin/rbac/audit-trail" element={<AuditTrailPage />} />
+            
+            {/* Security Routes */}
+            <Route path="/security" element={<SecurityDashboardPage />} />
+            <Route path="/security/dashboard" element={<SecurityDashboardPage />} />
+            <Route path="/security/headers" element={<SecurityHeadersPage />} />
+            <Route path="/security/monitoring" element={<SecurityMonitoringPage />} />
+            <Route path="/security/keys" element={<KeyManagementPage />} />
             
             {/* Default redirect */}
             <Route path="/" element={<Navigate to="/login" replace />} />

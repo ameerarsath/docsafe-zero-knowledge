@@ -421,13 +421,44 @@ export function useEncryption(): UseEncryptionReturn {
     password: string
   ): Promise<File> => {
     try {
-      // Find the key used for encryption
-      const keyData = state.keys?.find(k => k.keyId === metadata.keyId);
-      if (!keyData) {
-        throw new Error('Encryption key not found');
+      console.log('🔍 Decrypting file with metadata:', metadata);
+      
+      // For session-based keys (generated during upload), derive key directly from password
+      // instead of looking it up in the backend keys array
+      let derivedKey: CryptoKey;
+      
+      if (metadata.keyId && metadata.keyId.startsWith('key_')) {
+        // This is a session-generated key, derive it directly from password and salt
+        console.log('🔑 Using session-based key derivation');
+        
+        // The salt should be stored in the document metadata from upload
+        if (metadata.encryptionSalt || (metadata.documentMetadata && metadata.documentMetadata.encryption_salt)) {
+          const saltBase64 = metadata.encryptionSalt || metadata.documentMetadata.encryption_salt;
+          const iterations = metadata.encryptionIterations || (metadata.documentMetadata && metadata.documentMetadata.encryption_iterations) || 100000;
+          
+          console.log('🧂 Using salt from document metadata:', { saltLength: saltBase64.length, iterations });
+          
+          // Convert salt from base64 to Uint8Array
+          const salt = new Uint8Array(atob(saltBase64).split('').map(c => c.charCodeAt(0)));
+          
+          derivedKey = await deriveKey({
+            password,
+            salt,
+            iterations
+          });
+          console.log('✅ Successfully derived key from document metadata');
+        } else {
+          throw new Error('Encryption salt not found in document metadata. Cannot decrypt this document.');
+        }
+      } else {
+        // This is a backend key, use the original lookup method
+        console.log('🔑 Using backend key lookup');
+        const keyData = state.keys?.find(k => k.keyId === metadata.keyId);
+        if (!keyData) {
+          throw new Error('Encryption key not found in backend keys');
+        }
+        derivedKey = await deriveUserKey(password, keyData);
       }
-
-      const derivedKey = await deriveUserKey(password, keyData);
       
       // Split encrypted data into ciphertext and auth tag
       const encryptedArray = new Uint8Array(encryptedData);
