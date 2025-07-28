@@ -103,10 +103,17 @@ class FolderUploadAPI {
    * Create multiple folders in bulk
    */
   async createFolders(request: BulkFolderCreateRequest): Promise<BulkFolderCreateResult> {
-    return await apiRequest('/documents/bulk-create-folders', {
-      method: 'POST',
-      body: JSON.stringify(request)
-    });
+    const response = await apiRequest<BulkFolderCreateResult>(
+      'POST',
+      '/documents/bulk-create-folders',
+      request
+    );
+    
+    if (!response.success) {
+      throw new Error(response.error?.message || 'Failed to create folders');
+    }
+    
+    return response.data;
   }
 
   /**
@@ -127,21 +134,33 @@ class FolderUploadAPI {
     // Add metadata as JSON string
     formData.append('metadata', JSON.stringify(metadata));
     
-    return await apiRequest('/documents/batch-upload-files', {
-      method: 'POST',
-      body: formData,
-      // Note: Progress tracking not supported with apiRequest
-      // Would need to extend apiRequest or use fetch directly
-    });
+    const response = await apiRequest<BatchFileUploadResult>(
+      'POST',
+      '/documents/batch-upload-files',
+      formData
+    );
+    
+    if (!response.success) {
+      throw new Error(response.error?.message || 'Failed to upload files');
+    }
+    
+    return response.data;
   }
 
   /**
    * Get upload status for tracking progress
    */
   async getUploadStatus(uploadId: string): Promise<FolderUploadStatus> {
-    return await apiRequest(`/documents/upload-status/${uploadId}`, {
-      method: 'GET'
-    });
+    const response = await apiRequest<FolderUploadStatus>(
+      'GET',
+      `/documents/upload-status/${uploadId}`
+    );
+    
+    if (!response.success) {
+      throw new Error(response.error?.message || 'Failed to get upload status');
+    }
+    
+    return response.data;
   }
 }
 

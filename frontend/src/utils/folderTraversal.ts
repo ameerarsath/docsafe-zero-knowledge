@@ -235,10 +235,16 @@ export async function processFolderDrop(dataTransfer: DataTransfer): Promise<Fol
   // Flatten all files for easier processing
   const allFiles: FileEntry[] = [...rootFiles];
   const flattenFiles = (folderEntry: FolderEntry) => {
-    allFiles.push(...folderEntry.files);
-    folderEntry.subfolders.forEach(flattenFiles);
+    if (folderEntry.files && Array.isArray(folderEntry.files)) {
+      allFiles.push(...folderEntry.files);
+    }
+    if (folderEntry.subfolders && Array.isArray(folderEntry.subfolders)) {
+      folderEntry.subfolders.forEach(flattenFiles);
+    }
   };
-  folders.forEach(flattenFiles);
+  if (folders && Array.isArray(folders)) {
+    folders.forEach(flattenFiles);
+  }
 
   return {
     rootFolder: folders.length === 1 ? folders[0].name : 'Multiple Items',
@@ -257,17 +263,23 @@ export function getFolderCreationOrder(structure: FolderUploadStructure): string
   const paths: string[] = [];
   
   const collectPaths = (folder: FolderEntry, parentPath: string = '') => {
+    if (!folder || !folder.name) return;
+    
     const currentPath = parentPath ? `${parentPath}/${folder.name}` : folder.name;
     paths.push(currentPath);
     
-    folder.subfolders.forEach(subfolder => {
-      collectPaths(subfolder, currentPath);
-    });
+    if (folder.subfolders && Array.isArray(folder.subfolders)) {
+      folder.subfolders.forEach(subfolder => {
+        collectPaths(subfolder, currentPath);
+      });
+    }
   };
   
-  structure.folders.forEach(folder => {
-    collectPaths(folder);
-  });
+  if (structure && structure.folders && Array.isArray(structure.folders)) {
+    structure.folders.forEach(folder => {
+      collectPaths(folder);
+    });
+  }
   
   // Sort by depth (shortest paths first) to ensure parent folders are created before children
   return paths.sort((a, b) => {

@@ -405,15 +405,29 @@ export default function EncryptedDocumentUpload({
    */
   const processFolderUpload = async (structure: FolderUploadStructure, options: UploadOptions) => {
     try {
+      if (!structure || typeof structure !== 'object') {
+        throw new Error('Invalid folder structure provided');
+      }
+      
       // Step 1: Create folder structure
       const folderPaths = getFolderCreationOrder(structure);
-      const folderItems = folderPaths.map(path => ({
-        name: path.split('/').pop() || path,
-        path: path,
-        parent_path: path.includes('/') ? path.split('/').slice(0, -1).join('/') : undefined,
-        description: '',
-        tags: selectedTags
-      }));
+      if (!Array.isArray(folderPaths)) {
+        throw new Error('Failed to get folder creation order');
+      }
+      
+      const folderItems = folderPaths.map(path => {
+        if (!path || typeof path !== 'string') {
+          throw new Error(`Invalid folder path: ${path}`);
+        }
+        
+        return {
+          name: path.split('/').pop() || path,
+          path: path,
+          parent_path: path.includes('/') ? path.split('/').slice(0, -1).join('/') : undefined,
+          description: '',
+          tags: selectedTags || []
+        };
+      });
 
       let createdFolders: Record<string, number> = {};
 
@@ -424,19 +438,35 @@ export default function EncryptedDocumentUpload({
           conflict_resolution: options.conflictResolution === 'rename' ? 'rename' : 'skip'
         });
 
-        // Map folder paths to IDs
-        folderResult.successful.forEach(folder => {
-          createdFolders[folder.path] = folder.document_id;
-        });
-        folderResult.skipped.forEach(folder => {
-          createdFolders[folder.path] = folder.document_id;
-        });
+        // Map folder paths to IDs with comprehensive safety checks
+        const successful = folderResult?.successful || [];
+        const skipped = folderResult?.skipped || [];
+        
+        if (Array.isArray(successful)) {
+          successful.forEach(folder => {
+            if (folder && typeof folder === 'object' && folder.path && folder.document_id) {
+              createdFolders[folder.path] = folder.document_id;
+            }
+          });
+        }
+        
+        if (Array.isArray(skipped)) {
+          skipped.forEach(folder => {
+            if (folder && typeof folder === 'object' && folder.path && folder.document_id) {
+              createdFolders[folder.path] = folder.document_id;
+            }
+          });
+        }
       }
 
       // Step 2: Upload files
-      const selectedFiles = structure.files.filter(f => 
-        options.selectedFiles?.has(f.path) ?? true
-      );
+      const allFiles = structure?.files || [];
+      const selectedFilesSet = options?.selectedFiles || new Set();
+      
+      const selectedFiles = allFiles.filter(f => {
+        if (!f || !f.path) return false;
+        return selectedFilesSet.size === 0 || selectedFilesSet.has(f.path);
+      });
 
       if (selectedFiles.length === 0) {
         return;
