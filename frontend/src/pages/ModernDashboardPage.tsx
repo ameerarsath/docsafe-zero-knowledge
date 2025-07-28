@@ -4,7 +4,7 @@
  * Redesigned dashboard with modern UI/UX patterns, metrics, and visual hierarchy
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { RequireAuth } from '../components/auth/ProtectedRoute';
@@ -13,8 +13,10 @@ import MetricCard from '../components/ui/MetricCard';
 import ActionCard from '../components/ui/ActionCard';
 import ActivityFeed, { ActivityItem } from '../components/ui/ActivityFeed';
 import { SkeletonGrid } from '../components/ui/SkeletonLoader';
+import TrashManagementCard from '../components/dashboard/TrashManagementCard';
 import { documentsApi } from '../services/api/documents';
 import { rbacService } from '../services/rbacService';
+import { dashboardApi } from '../services/api/dashboard';
 import { 
   FileText, 
   Shield, 
@@ -32,7 +34,11 @@ import {
   ArrowRight,
   Calendar,
   BarChart3,
-  Folder
+  Folder,
+  Trash2,
+  HardDrive,
+  Share2,
+  UserCheck
 } from 'lucide-react';
 
 interface DashboardStats {
@@ -44,6 +50,18 @@ interface DashboardStats {
   storageUsed: number;
   storageLimit: number;
   recentActivity: ActivityItem[];
+  // Enhanced statistics
+  activeDocuments: number;
+  documentsInTrash: number;
+  totalFolders: number;
+  activeStorageSize: number;
+  trashStorageSize: number;
+  encryptedDocuments: number;
+  sharedDocuments: number;
+  sensitiveDocuments: number;
+  documentsCreatedToday: number;
+  documentsModifiedToday: number;
+  usersLoggedInToday: number;
 }
 
 // Helper function to format relative time
@@ -84,25 +102,26 @@ function ModernDashboardContent() {
   const [isLoading, setIsLoading] = useState(true);
 
   // Load real dashboard data
-  useEffect(() => {
-    const loadDashboardData = async () => {
+  const loadDashboardData = useCallback(async () => {
       try {
         setIsLoading(true);
         
-        // Get document statistics from dedicated endpoint
-        const documentsStatsResponse = await documentsApi.getDocumentStatistics();
-        const totalDocuments = documentsStatsResponse.total_documents;
-        const totalFolders = documentsStatsResponse.total_folders;
-        const storageUsedBytes = documentsStatsResponse.total_size;
-        const storageUsedGB = storageUsedBytes / (1024 * 1024 * 1024); // Convert to GB
+        // Get enhanced dashboard statistics
+        const enhancedStats = await dashboardApi.getEnhancedDashboardStats();
         
-        // Calculate documents this month using recent activity count as approximation
-        const documentsThisMonth = documentsStatsResponse.recent_activity_count || 0;
+        // Calculate storage in GB
+        const storageUsedGB = enhancedStats.active_storage_size / (1024 * 1024 * 1024);
+        const trashStorageGB = enhancedStats.trash_storage_size / (1024 * 1024 * 1024);
         
-        // Get user statistics from RBAC if admin, otherwise use MFA stats
-        let activeUsers = 1; // At least current user
+        // Use enhanced statistics
+        const totalDocuments = enhancedStats.active_documents;
+        const totalFolders = enhancedStats.total_folders;
+        const documentsThisMonth = enhancedStats.documents_created_today;
+        
+        // Use enhanced user statistics
+        let activeUsers = enhancedStats.active_users || 1;
         let mfaAdoption = user?.mfa_enabled ? 100 : 0;
-        let securityAlerts = user?.mfa_enabled ? 0 : 1;
+        let securityAlerts = enhancedStats.sensitive_documents > 0 ? 1 : (user?.mfa_enabled ? 0 : 1);
         
         try {
           if (user?.is_admin || ['super_admin', 'admin'].includes(user?.role || '')) {
@@ -116,20 +135,14 @@ function ModernDashboardContent() {
             
             if (mfaStatsResponse.ok) {
               const mfaStats = await mfaStatsResponse.json();
-              activeUsers = mfaStats.total_users || 1;
+              activeUsers = mfaStats.total_users || enhancedStats.active_users || 1;
               mfaAdoption = mfaStats.mfa_enabled_percentage || (user?.mfa_enabled ? 100 : 0);
-              securityAlerts = mfaStats.backup_codes_exhausted || (user?.mfa_enabled ? 0 : 1);
-            }
-          } else {
-            // Non-admin users: try to get user count from roles
-            const roles = await rbacService.getRoles({ include_stats: true });
-            if (roles.roles.some(role => role.user_count !== undefined)) {
-              activeUsers = roles.roles.reduce((sum, role) => sum + (role.user_count || 0), 0);
+              securityAlerts = mfaStats.backup_codes_exhausted || (enhancedStats.sensitive_documents > 0 ? 1 : 0);
             }
           }
         } catch (error) {
-          // Could not fetch user/MFA statistics
-          // Use fallback values
+          // Could not fetch MFA statistics, use enhanced stats
+          activeUsers = enhancedStats.total_users || enhancedStats.active_users || 1;
         }
         
         // Get sample recent documents for activity feed
@@ -161,7 +174,19 @@ function ModernDashboardContent() {
           mfaAdoption,
           storageUsed: Math.round(storageUsedGB * 100) / 100, // Round to 2 decimals
           storageLimit: 50, // Default limit - could be made configurable
-          recentActivity
+          recentActivity,
+          // Enhanced statistics
+          activeDocuments: enhancedStats.active_documents,
+          documentsInTrash: enhancedStats.documents_in_trash,
+          totalFolders: enhancedStats.total_folders,
+          activeStorageSize: Math.round(storageUsedGB * 100) / 100,
+          trashStorageSize: Math.round(trashStorageGB * 100) / 100,
+          encryptedDocuments: enhancedStats.encrypted_documents,
+          sharedDocuments: enhancedStats.shared_documents,
+          sensitiveDocuments: enhancedStats.sensitive_documents,
+          documentsCreatedToday: enhancedStats.documents_created_today,
+          documentsModifiedToday: enhancedStats.documents_modified_today,
+          usersLoggedInToday: enhancedStats.users_logged_in_today
         });
         
       } catch (error) {
@@ -175,15 +200,28 @@ function ModernDashboardContent() {
           mfaAdoption: user?.mfa_enabled ? 100 : 0,
           storageUsed: 0,
           storageLimit: 50,
-          recentActivity: []
+          recentActivity: [],
+          // Enhanced statistics fallbacks
+          activeDocuments: 0,
+          documentsInTrash: 0,
+          totalFolders: 0,
+          activeStorageSize: 0,
+          trashStorageSize: 0,
+          encryptedDocuments: 0,
+          sharedDocuments: 0,
+          sensitiveDocuments: 0,
+          documentsCreatedToday: 0,
+          documentsModifiedToday: 0,
+          usersLoggedInToday: 0
         });
       } finally {
         setIsLoading(false);
       }
-    };
-
-    loadDashboardData();
   }, [user]);
+
+  useEffect(() => {
+    loadDashboardData();
+  }, [loadDashboardData]);
 
   // Helper functions removed - now handled by reusable components
 
@@ -208,44 +246,97 @@ function ModernDashboardContent() {
       {/* Key Metrics */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <MetricCard
-          title="Total Documents"
-          value={stats?.totalDocuments || 0}
+          title="Active Documents"
+          value={stats?.activeDocuments || 0}
           icon={FileText}
           iconColor="text-blue-600"
           iconBgColor="bg-blue-100"
           trend={{
-            value: stats?.documentsThisMonth || 0,
-            label: "this month",
+            value: stats?.documentsCreatedToday || 0,
+            label: "created today",
             positive: true
           }}
+        />
+
+        <TrashManagementCard
+          documentsInTrash={stats?.documentsInTrash || 0}
         />
 
         <MetricCard
           title="Active Users"
           value={stats?.activeUsers || 0}
-          subtitle="Online now"
-          icon={Users}
+          subtitle={`${stats?.usersLoggedInToday || 0} logged in today`}
+          icon={UserCheck}
           iconColor="text-green-600"
           iconBgColor="bg-green-100"
         />
 
         <MetricCard
-          title="Security Alerts"
-          value={stats?.securityAlerts || 0}
-          subtitle="Need attention"
-          icon={Shield}
+          title="Active Storage"
+          value={`${stats?.activeStorageSize || 0}GB`}
+          subtitle={`${stats?.trashStorageSize || 0}GB in trash`}
+          icon={HardDrive}
+          iconColor="text-purple-600"
+          iconBgColor="bg-purple-100"
+        />
+      </div>
+
+      {/* Additional Enhanced Metrics */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <MetricCard
+          title="Total Folders"
+          value={stats?.totalFolders || 0}
+          subtitle="Organization structure"
+          icon={Folder}
           iconColor="text-yellow-600"
           iconBgColor="bg-yellow-100"
         />
 
         <MetricCard
-          title="Storage Used"
-          value={`${stats?.storageUsed || 0}GB`}
-          subtitle={`of ${stats?.storageLimit || 0}GB limit`}
-          icon={BarChart3}
-          iconColor="text-purple-600"
-          iconBgColor="bg-purple-100"
+          title="Encrypted Files"
+          value={stats?.encryptedDocuments || 0}
+          subtitle="Protected documents"
+          icon={Lock}
+          iconColor="text-indigo-600"
+          iconBgColor="bg-indigo-100"
         />
+
+        <MetricCard
+          title="Shared Documents"
+          value={stats?.sharedDocuments || 0}
+          subtitle="Collaborative files"
+          icon={Share2}
+          iconColor="text-blue-600"
+          iconBgColor="bg-blue-100"
+        />
+
+        <MetricCard
+          title="Sensitive Files"
+          value={stats?.sensitiveDocuments || 0}
+          subtitle="High-security documents"
+          icon={Shield}
+          iconColor="text-orange-600"
+          iconBgColor="bg-orange-100"
+        />
+      </div>
+
+      {/* Today's Activity Summary */}
+      <div className="bg-white rounded-xl shadow-sm p-6">
+        <h3 className="text-lg font-semibold text-gray-900 mb-6">Today's Activity</h3>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="text-center">
+            <div className="text-2xl font-bold text-blue-600">{stats?.documentsCreatedToday || 0}</div>
+            <div className="text-sm text-gray-500">Documents Created</div>
+          </div>
+          <div className="text-center">
+            <div className="text-2xl font-bold text-green-600">{stats?.documentsModifiedToday || 0}</div>
+            <div className="text-sm text-gray-500">Documents Modified</div>
+          </div>
+          <div className="text-center">
+            <div className="text-2xl font-bold text-purple-600">{stats?.usersLoggedInToday || 0}</div>
+            <div className="text-sm text-gray-500">User Logins</div>
+          </div>
+        </div>
       </div>
 
       {/* Main Content Grid */}

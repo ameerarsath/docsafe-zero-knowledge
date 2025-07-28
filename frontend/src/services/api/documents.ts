@@ -57,13 +57,13 @@ export interface Document {
 export interface DocumentListParams {
   parent_id?: number | null;
   document_type?: 'document' | 'folder' | 'all';
+  status?: 'active' | 'archived' | 'deleted' | 'quarantined';
   search?: string;
   tags?: string[];
   sort_by?: 'name' | 'created_at' | 'updated_at' | 'file_size';
   sort_order?: 'asc' | 'desc';
   page?: number;
   size?: number;
-  include_deleted?: boolean;
 }
 
 export interface DocumentListResponse {
@@ -125,6 +125,7 @@ export class DocumentsApiService {
     const response = await apiRequest<DocumentListResponse>('GET', `/api/v1/documents?${searchParams}`);
     
     if (!response.success) {
+      console.error('Documents API error:', response.error);
       throw new Error(response.error?.detail || 'Failed to load documents');
     }
     
@@ -420,9 +421,7 @@ export class DocumentsApiService {
     }
     
     return {
-      folder_id: documentId,
-      path: path,
-      depth: path.length
+      path: path
     };
   }
 
@@ -507,6 +506,33 @@ export class DocumentsApiService {
     
     if (!response.success) {
       throw new Error(response.error?.detail || 'Failed to get document statistics');
+    }
+    
+    return response.data!;
+  }
+
+  /**
+   * List documents in trash (all hierarchy levels)
+   */
+  async listTrashItems(params: {
+    page?: number;
+    size?: number;
+    sort_by?: 'name' | 'created_at' | 'updated_at' | 'file_size';
+    sort_order?: 'asc' | 'desc';
+  } = {}): Promise<DocumentListResponse> {
+    const searchParams = new URLSearchParams();
+    
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== null) {
+        searchParams.append(key, value.toString());
+      }
+    });
+
+    const response = await apiRequest<DocumentListResponse>('GET', `/api/v1/documents/trash?${searchParams}`);
+    
+    if (!response.success) {
+      console.error('Trash API error:', response.error);
+      throw new Error(response.error?.detail || 'Failed to load trash items');
     }
     
     return response.data!;
@@ -619,6 +645,30 @@ export class DocumentsApiService {
     }
     
     return response.data!;
+  }
+
+  /**
+   * Recover a document from trash (individual recovery)
+   */
+  async recoverDocument(documentId: number): Promise<Document> {
+    const response = await apiRequest<Document>('POST', `/api/v1/documents/${documentId}/recover`);
+    
+    if (!response.success) {
+      throw new Error(response.error?.detail || 'Failed to recover document');
+    }
+    
+    return response.data!;
+  }
+
+  /**
+   * Permanently delete a document from trash
+   */
+  async permanentlyDeleteDocument(documentId: number): Promise<void> {
+    const response = await apiRequest<void>('DELETE', `/api/v1/documents/${documentId}/permanent`);
+    
+    if (!response.success) {
+      throw new Error(response.error?.detail || 'Failed to permanently delete document');
+    }
   }
 }
 

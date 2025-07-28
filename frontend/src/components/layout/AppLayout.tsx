@@ -31,7 +31,8 @@ import {
   Activity,
   AlertTriangle,
   Database,
-  FileCheck
+  FileCheck,
+  Trash2
 } from 'lucide-react';
 
 interface AppLayoutProps {
@@ -52,6 +53,16 @@ interface NavigationItem {
 const navigation: NavigationItem[] = [
   { name: 'Dashboard', href: '/dashboard', icon: Home },
   { name: 'Documents', href: '/documents', icon: FileText },
+  { 
+    name: 'Trash', 
+    href: '/trash', 
+    icon: Trash2,
+    children: [
+      { name: 'Manage Items', href: '/trash', icon: Settings },
+      { name: 'Empty Trash', href: '/trash?action=empty', icon: Trash2 },
+      { name: 'Recover All', href: '/trash?action=recover-all', icon: RefreshCw }
+    ]
+  },
   { 
     name: 'User Management', 
     href: '/admin/users', 
@@ -154,6 +165,7 @@ export default function AppLayout({ children, title, subtitle }: AppLayoutProps)
         'settings': 'Settings',
         'mfa': 'Multi-Factor Authentication',
         'documents': 'Documents',
+        'trash': 'Trash',
         'roles': 'Role Management',
         'assignments': 'User Assignments',
         'matrix': 'Permission Matrix',
@@ -226,7 +238,7 @@ export default function AppLayout({ children, title, subtitle }: AppLayoutProps)
             {filteredNavigation.map((item, index) => (
               <div key={item.name}>
                 {/* Add section labels for better organization */}
-                {index === 2 && (
+                {index === 3 && (
                   <div className="pt-4 pb-2">
                     <div className="border-t border-gray-200 mb-4"></div>
                     <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider px-3">

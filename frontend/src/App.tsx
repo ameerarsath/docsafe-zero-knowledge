@@ -15,6 +15,7 @@ import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import ResetPasswordPage from './pages/ResetPasswordPage';
 import ModernDashboardPage from './pages/ModernDashboardPage';
 import DocumentsPage from './pages/DocumentsPage';
+import TrashPage from './pages/TrashPage';
 import MFASettingsPageWrapper from './pages/MFASettingsPageWrapper';
 
 // RBAC Components
@@ -60,6 +61,7 @@ function App() {
             {/* Protected routes */}
             <Route path="/dashboard" element={<ModernDashboardPage />} />
             <Route path="/documents" element={<DocumentsPage />} />
+            <Route path="/trash" element={<TrashPage />} />
             <Route path="/settings/mfa" element={<MFASettingsPageWrapper />} />
             
             {/* Admin Routes */}

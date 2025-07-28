@@ -101,6 +101,7 @@ interface FolderManagementState {
   selectedUsers: number[];
   showTemplateSelection: boolean;
   appliedTemplate: any | null;
+  createdFolderId: number | null;
 }
 
 export const FolderManagementDialog: React.FC<FolderManagementDialogProps> = ({
@@ -134,7 +135,8 @@ export const FolderManagementDialog: React.FC<FolderManagementDialogProps> = ({
     newTag: '',
     selectedUsers: [],
     showTemplateSelection: false,
-    appliedTemplate: null
+    appliedTemplate: null,
+    createdFolderId: null
   });
 
   /**
@@ -277,6 +279,61 @@ export const FolderManagementDialog: React.FC<FolderManagementDialogProps> = ({
     }, 1500);
   }, [onComplete, updateState]);
 
+  /**
+   * Handle folder creation with template application
+   */
+  const createFolderWithTemplate = useCallback(async () => {
+    if (!state.formData.name.trim()) {
+      updateState({ error: 'Folder name is required' });
+      return;
+    }
+
+    updateState({ isProcessing: true, error: null });
+
+    try {
+      // First, create the folder with the user's custom name
+      const createParams: any = {
+        name: state.formData.name.trim(),
+        document_type: 'folder'
+      };
+      
+      // Add optional fields if they have values
+      if (state.formData.description && state.formData.description.trim()) {
+        createParams.description = state.formData.description.trim();
+      }
+      
+      if (state.formData.tags && state.formData.tags.length > 0) {
+        createParams.tags = state.formData.tags;
+      }
+      
+      // Add parent_id if creating a subfolder
+      if (parentFolderId !== null && parentFolderId !== undefined && !isNaN(parentFolderId) && parentFolderId > 0) {
+        createParams.parent_id = parentFolderId;
+      }
+      
+      // Create the folder first
+      const createdFolder = await documentsApi.createDocument(createParams);
+      
+      // Then show template selection dialog, passing the created folder's ID as targetFolderId
+      updateState({ 
+        createdFolderId: createdFolder.id,
+        showTemplateSelection: true,
+        isProcessing: false 
+      });
+      
+    } catch (error) {
+      let errorMessage = 'Failed to create folder';
+      if (error instanceof Error) {
+        errorMessage = error.message;
+      }
+      
+      updateState({ 
+        error: errorMessage,
+        isProcessing: false 
+      });
+    }
+  }, [state.formData, parentFolderId, updateState]);
+
 
   /**
    * Submit form
@@ -291,7 +348,7 @@ export const FolderManagementDialog: React.FC<FolderManagementDialogProps> = ({
 
     try {
       if (mode === 'create') {
-        // Create new folder - try minimal payload first
+        // Create new folder
         const createParams: any = {
           name: state.formData.name.trim(),
           document_type: 'folder'
@@ -306,26 +363,12 @@ export const FolderManagementDialog: React.FC<FolderManagementDialogProps> = ({
           createParams.tags = state.formData.tags;
         }
         
-        // Critical: Only include parent_id if we have a valid parent folder
-        // Omit the field entirely for root folders to avoid backend variable scoping issue
+        // Only include parent_id if we have a valid parent folder
         if (parentFolderId !== null && parentFolderId !== undefined && !isNaN(parentFolderId) && parentFolderId > 0) {
           createParams.parent_id = parentFolderId;
         }
-        // Note: Do NOT set parent_id to null - omit it entirely for root folders
         
-        // Creating folder with specified parameters
-        
-        try {
-          await documentsApi.createDocument(createParams);
-        } catch (apiError) {
-          // API testing confirms this is a backend bug that persists regardless of payload structure
-          // Folder creation failed - confirmed backend bug
-          throw new Error(
-            'Folder creation is currently broken due to a backend bug. ' +
-            'The error "cannot access local variable \'parent\'" indicates a Python variable scoping issue ' +
-            'in the document creation endpoint that needs to be fixed by the backend team.'
-          );
-        }
+        await documentsApi.createDocument(createParams);
         updateState({ successMessage: 'Folder created successfully!' });
       } else if (mode === 'edit' && folder) {
         // Update existing folder
@@ -416,7 +459,7 @@ export const FolderManagementDialog: React.FC<FolderManagementDialogProps> = ({
           name: folder.name,
           description: folder.description || '',
           tags: folder.tags || [],
-          is_sensitive: folder.is_sensitive || false,
+          is_sensitive: (folder as any).is_sensitive || false,
           inherit_permissions: true,
           auto_encrypt: false,
           share_type: 'private',
@@ -612,12 +655,12 @@ export const FolderManagementDialog: React.FC<FolderManagementDialogProps> = ({
                         </div>
                         <button
                           type="button"
-                          onClick={() => updateState({ showTemplateSelection: true })}
+                          onClick={createFolderWithTemplate}
                           className="w-full mt-3 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center"
-                          disabled={state.isProcessing}
+                          disabled={state.isProcessing || !state.formData.name.trim()}
                         >
                           <Star className="w-4 h-4 mr-2" />
-                          Choose Project Template
+                          {state.isProcessing ? 'Creating Folder...' : 'Create Folder & Apply Template'}
                         </button>
                         {state.appliedTemplate && (
                           <div className="mt-3 p-3 bg-green-50 border border-green-200 rounded-lg">
@@ -1030,9 +1073,10 @@ export const FolderManagementDialog: React.FC<FolderManagementDialogProps> = ({
       {/* Template Selection Dialog */}
       <TemplateSelectionDialog
         isOpen={state.showTemplateSelection}
-        onClose={() => updateState({ showTemplateSelection: false })}
+        onClose={() => updateState({ showTemplateSelection: false, createdFolderId: null })}
         onTemplateApplied={handleTemplateApplied}
         parentFolderId={parentFolderId}
+        targetFolderId={state.createdFolderId}
       />
     </div>
   );

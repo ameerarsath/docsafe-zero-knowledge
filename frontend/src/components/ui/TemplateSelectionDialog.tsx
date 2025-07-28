@@ -39,6 +39,7 @@ interface TemplateSelectionDialogProps {
   onClose: () => void;
   onTemplateApplied: (result: any) => void;
   parentFolderId?: number | null;
+  targetFolderId?: number | null; // Apply template to existing folder instead of creating new one
   className?: string;
 }
 
@@ -93,6 +94,7 @@ export const TemplateSelectionDialog: React.FC<TemplateSelectionDialogProps> = (
   onClose,
   onTemplateApplied,
   parentFolderId = null,
+  targetFolderId = null,
   className = ''
 }) => {
   const [state, setState] = useState<TemplateSelectionState>({
@@ -187,9 +189,10 @@ export const TemplateSelectionDialog: React.FC<TemplateSelectionDialogProps> = (
     try {
       const request: TemplateApplicationRequest = {
         template_id: state.selectedTemplate.id!,
-        parent_folder_id: parentFolderId,
+        parent_folder_id: targetFolderId ? undefined : parentFolderId,
+        target_folder_id: targetFolderId,
         variables: state.variables,
-        custom_name: state.applicationOptions.customName || undefined,
+        custom_name: targetFolderId ? undefined : (state.applicationOptions.customName || undefined),
         apply_permissions: state.applicationOptions.applyPermissions,
         apply_tags: state.applicationOptions.applyTags,
         create_documents: state.applicationOptions.createDocuments

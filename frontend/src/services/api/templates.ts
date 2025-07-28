@@ -67,8 +67,9 @@ export interface TemplateVariables {
 export interface TemplateApplicationRequest {
   template_id: string;
   parent_folder_id?: number | null;
+  target_folder_id?: number | null; // Apply template to existing folder
   variables: TemplateVariables;
-  custom_name?: string;
+  custom_name?: string; // For creating new folder (ignored if target_folder_id is provided)
   apply_permissions: boolean;
   apply_tags: boolean;
   create_documents: boolean;

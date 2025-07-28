@@ -8,7 +8,8 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { RequireAuth } from '../components/auth/ProtectedRoute';
-import { User, LogOut, Settings, FileText, Users, Shield } from 'lucide-react';
+import { User, LogOut, Settings, FileText, Users, Shield, BarChart3 } from 'lucide-react';
+import DashboardStats from '../components/dashboard/DashboardStats';
 
 export default function DashboardPage() {
   return (
@@ -187,28 +188,31 @@ function DashboardContent() {
             )}
           </div>
 
+          {/* Dashboard Statistics */}
+          <div className="mt-8">
+            <DashboardStats />
+          </div>
+
           {/* Development Info */}
           <div className="mt-8 bg-green-50 border border-green-200 rounded-lg p-4">
             <h3 className="text-sm font-medium text-green-800 mb-2">
-              ✅ Development Status
+              ✅ Enhanced Dashboard
             </h3>
             <p className="text-sm text-green-700">
-              Feature 3.2 (RBAC Frontend UI) is now complete! This includes:
+              The dashboard now includes comprehensive system metrics:
             </p>
             <ul className="mt-2 text-sm text-green-700 list-disc list-inside">
-              <li>Role management interface (admin)</li>
-              <li>User role assignment interface</li>
-              <li>Permission matrix display</li>
-              <li>Role-based UI element visibility</li>
-              <li>Access denied pages and error handling</li>
-              <li>User role indicators in UI</li>
-              <li>Bulk user role operations</li>
-              <li>Role inheritance visualization</li>
-              <li>Permission audit trail viewer</li>
-              <li>Mobile-responsive role management</li>
+              <li>Active documents and folders statistics</li>
+              <li>Documents in trash with storage breakdown</li>
+              <li>Active user counts and daily login tracking</li>
+              <li>Storage usage analytics by user and file type</li>
+              <li>Security metrics (encrypted, shared, sensitive files)</li>
+              <li>Real-time activity monitoring</li>
+              <li>Document creation and modification trends</li>
+              <li>Auto-refreshing statistics with manual refresh option</li>
             </ul>
             <p className="mt-3 text-sm text-green-700">
-              <strong>Access:</strong> Admin users can now access the RBAC Management panel above to manage roles and permissions.
+              <strong>Note:</strong> Some advanced metrics require admin privileges for full system visibility.
             </p>
           </div>
         </div>
