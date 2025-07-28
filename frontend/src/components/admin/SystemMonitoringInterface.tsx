@@ -117,7 +117,7 @@ export default function SystemMonitoringInterface({
         });
       }
     } catch (err: any) {
-      console.error('Failed to fetch monitoring data:', err);
+      // Failed to fetch monitoring data
       setError(err.message || 'Failed to load monitoring data');
     } finally {
       setIsLoading(false);

@@ -75,7 +75,6 @@ const PermissionMatrixDisplay: React.FC<PermissionMatrixProps> = ({
         isLoading: false
       }));
     } catch (error) {
-      console.error('Failed to load permission matrix:', error);
       setState(prev => ({
         ...prev,
         error: 'Failed to load permission matrix',

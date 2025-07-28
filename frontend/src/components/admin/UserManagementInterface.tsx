@@ -110,7 +110,7 @@ export default function UserManagementInterface({ onUserSelect, onBulkOperation 
       setUsers(response.users);
       setTotalUsers(response.total);
     } catch (err: any) {
-      console.error('Failed to fetch users:', err);
+      // Failed to fetch users
       setError(err.message || 'Failed to load users');
     } finally {
       setIsLoading(false);
@@ -175,7 +175,7 @@ export default function UserManagementInterface({ onUserSelect, onBulkOperation 
       });
       fetchUsers();
     } catch (err: any) {
-      console.error('Failed to create user:', err);
+      // Failed to create user
       // Handle different error formats
       let errorMessage = 'Failed to create user';
       if (err.message) {
@@ -198,7 +198,7 @@ export default function UserManagementInterface({ onUserSelect, onBulkOperation 
       setEditingUser(null);
       fetchUsers();
     } catch (err: any) {
-      console.error('Failed to update user:', err);
+      // Failed to update user
       setError(err.message || 'Failed to update user');
     }
   }, [fetchUsers]);
@@ -213,7 +213,7 @@ export default function UserManagementInterface({ onUserSelect, onBulkOperation 
       await adminService.deleteUser(userId);
       fetchUsers();
     } catch (err: any) {
-      console.error('Failed to delete user:', err);
+      // Failed to delete user
       setError(err.message || 'Failed to delete user');
     }
   }, [fetchUsers]);
@@ -230,13 +230,13 @@ export default function UserManagementInterface({ onUserSelect, onBulkOperation 
         user_ids: Array.from(selectedUsers)
       });
       
-      console.log('Bulk operation result:', result);
+      // Bulk operation completed
       setSelectedUsers(new Set());
       setSelectAll(false);
       fetchUsers();
       onBulkOperation?.(operation, Array.from(selectedUsers));
     } catch (err: any) {
-      console.error('Failed to perform bulk operation:', err);
+      // Failed to perform bulk operation
       setError(err.message || 'Failed to perform bulk operation');
     }
   }, [selectedUsers, fetchUsers, onBulkOperation]);
@@ -250,7 +250,7 @@ export default function UserManagementInterface({ onUserSelect, onBulkOperation 
       const activity = await adminService.getUserActivity(user.id);
       setUserActivity(activity);
     } catch (err: any) {
-      console.error('Failed to fetch user activity:', err);
+      // Failed to fetch user activity
       setError(err.message || 'Failed to load user activity');
     }
   }, []);

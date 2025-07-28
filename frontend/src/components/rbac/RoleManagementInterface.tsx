@@ -107,7 +107,6 @@ const RoleManagementInterface: React.FC<RoleManagementProps> = ({
         error: 'Failed to load roles',
         isLoading: false
       }));
-      console.error('Failed to load roles:', error);
     }
   }, [state.pagination.page, state.pagination.size, state.filters.active_only, showStats]);
 
@@ -117,7 +116,7 @@ const RoleManagementInterface: React.FC<RoleManagementProps> = ({
       const response = await rbacService.getPermissions({ size: 200 });
       setPermissions(response.permissions);
     } catch (error) {
-      console.error('Failed to load permissions:', error);
+      // Failed to load permissions
     }
   }, []);
 
@@ -154,7 +153,6 @@ const RoleManagementInterface: React.FC<RoleManagementProps> = ({
       loadRoles();
     } catch (error) {
       setFormErrors({ name: 'Failed to create role. Name may already exist.' });
-      console.error('Failed to create role:', error);
     }
   };
 
@@ -181,7 +179,6 @@ const RoleManagementInterface: React.FC<RoleManagementProps> = ({
       loadRoles();
     } catch (error) {
       setFormErrors({ name: 'Failed to update role' });
-      console.error('Failed to update role:', error);
     }
   };
 
@@ -195,7 +192,6 @@ const RoleManagementInterface: React.FC<RoleManagementProps> = ({
       loadRoles();
     } catch (error) {
       setState(prev => ({ ...prev, error: 'Failed to delete role' }));
-      console.error('Failed to delete role:', error);
     }
   };
 

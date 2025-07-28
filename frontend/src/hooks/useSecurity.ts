@@ -325,7 +325,7 @@ export function useSecurity(options: UseSecurityOptions = {}): UseSecurityReturn
   // Initial security check
   useEffect(() => {
     if (autoStart) {
-      checkHeaders().catch(console.error);
+      checkHeaders().catch(() => {}); // Silent error handling
     }
   }, [autoStart, checkHeaders]);
 

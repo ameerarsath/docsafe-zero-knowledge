@@ -68,6 +68,8 @@ async def list_documents(
     parent_id: Optional[int] = Query(None, description="Parent folder ID"),
     document_type: Optional[DocumentType] = Query(None, description="Document type filter"),
     status: Optional[DocumentStatus] = Query(DocumentStatus.ACTIVE, description="Document status"),
+    tags: Optional[str] = Query(None, description="Filter by tags (comma-separated)"),
+    search: Optional[str] = Query(None, description="Search in document names and descriptions"),
     page: int = Query(1, ge=1, description="Page number"),
     size: int = Query(20, ge=1, le=100, description="Page size"),
     sort_by: str = Query("updated_at", description="Sort field"),
@@ -89,12 +91,33 @@ async def list_documents(
     if document_type:
         query = query.filter(Document.document_type == document_type)
     
+    # Filter by search term
+    if search:
+        search_term = f"%{search}%"
+        query = query.filter(
+            or_(
+                Document.name.ilike(search_term),
+                Document.description.ilike(search_term)
+            )
+        )
+    
+    # Get all matching documents for tag and permission filtering
+    all_docs = query.all()
+    
+    # Apply tag filtering (done in Python because tags are stored as JSON)
+    if tags:
+        tag_list = [tag.strip().lower() for tag in tags.split(",") if tag.strip()]
+        filtered_docs = []
+        for doc in all_docs:
+            if doc.tags and isinstance(doc.tags, list):
+                doc_tags_lower = [tag.lower() for tag in doc.tags]
+                # Check if all requested tags are present (AND logic)
+                if all(tag in doc_tags_lower for tag in tag_list):
+                    filtered_docs.append(doc)
+        all_docs = filtered_docs
+    
     # Apply permission filtering - only show documents user can access
     accessible_docs = []
-    total_count = 0
-    
-    # Get all matching documents for permission checking
-    all_docs = query.all()
     
     for doc in all_docs:
         if doc.can_user_access(current_user, "read"):

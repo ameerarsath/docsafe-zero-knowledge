@@ -17,12 +17,12 @@ import { User } from '../components/admin';
 export default function AdminUsersPage() {
   
   const handleUserSelect = useCallback((user: User) => {
-    console.log('Selected user:', user);
+    // User selected
     // Could navigate to user detail page or open modal
   }, []);
 
   const handleBulkOperation = useCallback((operation: string, userIds: number[]) => {
-    console.log('Bulk operation:', operation, 'on users:', userIds);
+    // Bulk operation performed
     // Handle bulk operation completion
     // Could show notification or update UI
   }, []);

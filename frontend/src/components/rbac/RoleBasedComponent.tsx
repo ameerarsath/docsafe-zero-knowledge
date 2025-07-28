@@ -158,7 +158,6 @@ export const PermissionProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           setHierarchyLevel(summary.highest_hierarchy_level);
         } catch (apiError) {
           // Fallback to using auth context data if RBAC API not available
-          console.warn('RBAC API not available, using fallback permissions:', apiError);
           
           // Use basic role-based permissions from auth context
           const roleBasedPermissions = getRoleBasedPermissions(user.role);
@@ -169,7 +168,6 @@ export const PermissionProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
         setIsLoading(false);
       } catch (err) {
-        console.error('Failed to load user permissions:', err);
         setError('Failed to load permissions');
         setIsLoading(false);
       }

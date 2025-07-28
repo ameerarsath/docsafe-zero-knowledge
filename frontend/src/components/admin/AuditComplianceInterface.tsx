@@ -119,7 +119,7 @@ export default function AuditComplianceInterface({
       setTotalLogs(response.total);
       setLastRefresh(new Date());
     } catch (err: any) {
-      console.error('Failed to fetch audit logs:', err);
+      // Failed to fetch audit logs
       setError(err.message || 'Failed to load audit logs');
     } finally {
       setIsLoading(false);
@@ -178,7 +178,7 @@ export default function AuditComplianceInterface({
       URL.revokeObjectURL(url);
       
     } catch (err: any) {
-      console.error('Failed to generate report:', err);
+      // Failed to generate report
       setError(err.message || 'Failed to generate compliance report');
     } finally {
       setGeneratingReport(false);

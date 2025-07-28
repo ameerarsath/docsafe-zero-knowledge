@@ -17,7 +17,6 @@ const ComponentDemo: React.FC = () => {
   const steps = ['Upload', 'Encrypt', 'Validate', 'Store'];
 
   const handleUploadComplete = (documents: any[]) => {
-    console.log('Upload completed:', documents);
     setUploadedDocs(prev => [...prev, ...documents]);
   };
 

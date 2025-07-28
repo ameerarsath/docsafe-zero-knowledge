@@ -162,7 +162,6 @@ const useAuthStore = create<AuthStore>()(
             await authService.logout();
           } catch (error) {
             // Continue with logout even if API call fails
-            console.error('Logout API call failed:', error);
           }
           
           // Stop session timers

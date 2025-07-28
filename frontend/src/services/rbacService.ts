@@ -53,7 +53,6 @@ class RBACService implements RBACServiceInterface {
       const response = await api.get<RoleListResponse>(url);
       return response.data;
     } catch (error) {
-      console.warn('Roles API failed, using fallback data:', error);
       // Return fallback roles data
       return this.getFallbackRolesResponse(params);
     }
@@ -109,7 +108,6 @@ class RBACService implements RBACServiceInterface {
       const response = await api.post<Role>(`${this.baseUrl}/roles`, data);
       return response.data;
     } catch (error) {
-      console.warn('Create role API failed, simulating success:', error);
       return this.simulateRoleCreation(data);
     }
   }
@@ -119,7 +117,6 @@ class RBACService implements RBACServiceInterface {
       const response = await api.put<Role>(`${this.baseUrl}/roles/${roleId}`, data);
       return response.data;
     } catch (error) {
-      console.warn(`Update role API failed for role ${roleId}, simulating success:`, error);
       return this.simulateRoleUpdate(roleId, data);
     }
   }
@@ -128,7 +125,6 @@ class RBACService implements RBACServiceInterface {
     try {
       await api.delete(`${this.baseUrl}/roles/${roleId}`);
     } catch (error) {
-      console.warn(`Delete role API failed for role ${roleId}, simulating success:`, error);
       // Simulate successful deletion
     }
   }
@@ -195,7 +191,6 @@ class RBACService implements RBACServiceInterface {
       const response = await api.get<UserRoleListResponse>(`${this.baseUrl}/users/${userId}/roles`);
       return response.data;
     } catch (error) {
-      console.warn(`User roles API failed for user ${userId}, using fallback data:`, error);
       return this.getFallbackUserRoles(userId);
     }
   }
@@ -208,7 +203,6 @@ class RBACService implements RBACServiceInterface {
       );
       return response.data;
     } catch (error) {
-      console.warn(`Role assignment API failed for user ${userId}, simulating success:`, error);
       return this.simulateRoleAssignment(userId, assignment);
     }
   }
@@ -217,7 +211,6 @@ class RBACService implements RBACServiceInterface {
     try {
       await api.delete(`${this.baseUrl}/users/${userId}/roles/${roleId}`);
     } catch (error) {
-      console.warn(`Role revocation API failed for user ${userId}, role ${roleId}, simulating success:`, error);
       // Simulate successful revocation
     }
   }
@@ -326,7 +319,6 @@ class RBACService implements RBACServiceInterface {
       const response = await api.get<SystemPermissionMatrix>(`${this.baseUrl}/system/permission-matrix`);
       return response.data;
     } catch (error) {
-      console.warn('Permission matrix API failed, using fallback data:', error);
       // Return fallback mock data
       return this.getFallbackPermissionMatrix();
     }
@@ -579,7 +571,6 @@ class RBACService implements RBACServiceInterface {
       const response = await api.get<string[]>('/api/auth/me/permissions');
       return response.data;
     } catch (error) {
-      console.warn('Current user permissions API failed, using fallback:', error);
       return this.getFallbackCurrentUserPermissions();
     }
   }
@@ -589,7 +580,6 @@ class RBACService implements RBACServiceInterface {
       const permissions = await this.getCurrentUserPermissions();
       return permissions.includes(permission);
     } catch (error) {
-      console.error('Failed to check permission:', error);
       return false;
     }
   }

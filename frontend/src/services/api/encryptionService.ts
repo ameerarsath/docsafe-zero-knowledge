@@ -130,38 +130,33 @@ class SessionKeyManager {
     const keyData = sessionStorage.getItem(this.STORAGE_KEY);
     const expiry = sessionStorage.getItem(this.EXPIRY_KEY);
     
-    console.log('🔍 SessionKeyManager.getSessionKey() - Raw storage values:', {
-      keyData: keyData ? 'exists' : 'null',
-      expiry: expiry,
-      currentTime: Date.now(),
-      memoryKey: this.sessionKey ? 'exists' : 'null'
-    });
+    // Checking raw storage values
     
     if (!keyData || !expiry) {
-      console.log('❌ SessionKeyManager.getSessionKey() - Missing keyData or expiry');
+      // Missing keyData or expiry
       this.sessionKey = null;
       return null;
     }
     
     const expiryTime = parseInt(expiry, 10);
     if (Date.now() > expiryTime) {
-      console.log('⏰ SessionKeyManager.getSessionKey() - Session expired, clearing');
+      // Session expired, clearing
       this.clearSessionKey();
       return null;
     }
     
     // If we have it in memory and it's still valid, return it
     if (this.sessionKey && this.sessionKey.expiresAt === expiryTime) {
-      console.log('✅ SessionKeyManager.getSessionKey() - Valid session found in memory');
+      // Valid session found in memory
       return this.sessionKey;
     }
     
-    console.log('⚠️ SessionKeyManager.getSessionKey() - Session found in storage but not in memory (page refresh?)');
+    // Session found in storage but not in memory (page refresh?)
     return null; // CryptoKey is lost, need to re-initialize
   }
 
   static clearSessionKey(): void {
-    console.log('🧹 SessionKeyManager.clearSessionKey() - Clearing session storage');
+    // Clearing session storage
     this.sessionKey = null;
     sessionStorage.removeItem(this.STORAGE_KEY);
     sessionStorage.removeItem(this.EXPIRY_KEY);
@@ -169,7 +164,7 @@ class SessionKeyManager {
 
   static isSessionKeyValid(): boolean {
     const result = this.getSessionKey() !== null;
-    console.log('🔍 SessionKeyManager.isSessionKeyValid() result:', result);
+    // Session key validity checked
     return result;
   }
 
@@ -202,7 +197,7 @@ export const encryptionApi = {
       }
     } catch (error) {
       // If /keys/all doesn't exist, fall back to user keys
-      console.log('getAllKeys endpoint not available, falling back to getUserKeys');
+      // getAllKeys endpoint not available, falling back to getUserKeys
     }
     
     // Fall back to user keys
@@ -225,7 +220,7 @@ export const encryptionApi = {
         return response.data;
       }
     } catch (error) {
-      console.log('Key rotation endpoint not available, creating new key instead');
+      // Key rotation endpoint not available, creating new key instead
       // Fall back to creating a new key
       return this.createEncryptionKey({
         algorithm: 'AES-256-GCM',
@@ -296,7 +291,7 @@ export const encryptionApi = {
         return sessionData;
       } catch (derivationError) {
         // If key derivation fails, try a simpler approach
-        console.log('Key derivation endpoint not available, using local derivation');
+        // Key derivation endpoint not available, using local derivation
         
         // Create session with local key derivation
         const { deriveKey } = await import('../../utils/encryption');

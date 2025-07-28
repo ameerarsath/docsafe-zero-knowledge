@@ -81,7 +81,7 @@ export default function QRCodeDisplay({
         await navigator.clipboard.writeText(secret);
         // You might want to show a toast notification here
       } catch (err) {
-        console.error('Failed to copy secret to clipboard:', err);
+        // Copy failed - could show user feedback
       }
     }
   };
@@ -169,7 +169,6 @@ export default function QRCodeDisplay({
                   });
                 } catch (err) {
                   // Fallback if Web Share API is not available
-                  console.log('Web Share API not supported');
                 }
               }}
               className="inline-flex items-center px-3 py-2 text-xs font-medium text-green-600 bg-green-50 border border-green-200 rounded-md hover:bg-green-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 sm:hidden"

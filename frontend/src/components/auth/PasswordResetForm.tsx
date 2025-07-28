@@ -78,7 +78,6 @@ export function PasswordResetRequestForm() {
         setFormError('email', { message: error });
       }
     } catch (err) {
-      console.error('Password reset request error:', err);
       setFormError('root', { 
         message: 'An unexpected error occurred. Please try again.' 
       });
@@ -269,7 +268,6 @@ export function PasswordResetConfirmForm() {
         setFormError('root', { message: error });
       }
     } catch (err) {
-      console.error('Password reset confirm error:', err);
       setFormError('root', { 
         message: 'An unexpected error occurred. Please try again.' 
       });

@@ -111,7 +111,10 @@ export class DocumentsApiService {
     
     Object.entries(params).forEach(([key, value]) => {
       if (value !== undefined && value !== null) {
-        if (Array.isArray(value)) {
+        if (key === 'tags' && Array.isArray(value)) {
+          // Tags should be comma-separated string for backend
+          searchParams.append(key, value.join(','));
+        } else if (Array.isArray(value)) {
           searchParams.append(key, JSON.stringify(value));
         } else {
           searchParams.append(key, value.toString());
@@ -220,22 +223,14 @@ export class DocumentsApiService {
    * Download a document
    */
   async downloadDocument(documentId: number, password?: string): Promise<void> {
-    console.log('📥 Starting document download:', { documentId, hasPassword: !!password });
+    // Starting document download
     
     try {
       // First, get document metadata for encryption parameters
-      console.log('📋 Fetching document metadata...');
       const document = await this.getDocument(documentId);
-      console.log('📄 Document retrieved:', {
-        id: document.id,
-        name: document.name,
-        hasEncryptionKeyId: !!document.encryption_key_id,
-        hasEncryptionIv: !!document.encryption_iv,
-        hasEncryptionAuthTag: !!document.encryption_auth_tag
-      });
+      // Document retrieved successfully
       
       // Download the encrypted file
-      console.log('⬇️ Downloading encrypted file...');
       const params = password ? `?password=${encodeURIComponent(password)}` : '';
       const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8002'}/api/v1/documents/${documentId}/download${params}`, {
         method: 'GET',
@@ -254,25 +249,20 @@ export class DocumentsApiService {
       const contentDisposition = response.headers.get('Content-Disposition');
       const filename = contentDisposition?.split('filename=')[1]?.replace(/"/g, '') || document.name || `document-${documentId}`;
 
-      console.log('📦 Downloaded blob info:', {
-        size: encryptedBlob.size,
-        type: encryptedBlob.type,
-        filename: filename,
-        contentDisposition: contentDisposition
-      });
+      // Downloaded encrypted blob successfully
 
       // Check if the document has encryption metadata
       if (document.encryption_key_id && document.encryption_iv && document.encryption_auth_tag) {
-        console.log('🔐 Document is encrypted, starting decryption...');
+        // Document is encrypted, starting decryption
         // Document is encrypted, decrypt it
         await this.decryptAndDownload(encryptedBlob, document, filename);
       } else {
-        console.log('📁 Document is not encrypted, downloading as-is...');
+        // Document is not encrypted, downloading as-is
         // Document is not encrypted, download as-is
         this.downloadBlob(encryptedBlob, filename);
       }
     } catch (error) {
-      console.error('🚨 Download failed:', error);
+      // Download failed
       throw error;
     }
   }
@@ -286,25 +276,11 @@ export class DocumentsApiService {
     const { encryptionApi } = await import('./encryption');
 
     try {
-      console.log('🔐 Starting decryption process for document:', document.id);
-      console.log('📄 Document metadata:', {
-        id: document.id,
-        name: document.name,
-        fileSize: document.file_size,
-        mimeType: document.mime_type,
-        encryptionKeyId: document.encryption_key_id,
-        hasIV: !!document.encryption_iv,
-        hasAuthTag: !!document.encryption_auth_tag
-      });
+      // Starting decryption process for document
 
       // Get the encryption key
       const encryptionKey = await encryptionApi.getKey(document.encryption_key_id!);
-      console.log('🔑 Retrieved encryption key:', {
-        keyId: encryptionKey.keyId,
-        algorithm: encryptionKey.algorithm,
-        iterations: encryptionKey.iterations,
-        saltLength: encryptionKey.salt?.length
-      });
+      // Retrieved encryption key successfully
       
       // Prompt user for password to derive the decryption key
       const userPassword = window.prompt('Enter your encryption password to decrypt this document:');
@@ -314,23 +290,19 @@ export class DocumentsApiService {
 
       // Derive the decryption key
       const salt = base64ToUint8Array(encryptionKey.salt);
-      console.log('🧂 Salt details:', { saltLength: salt.length, saltPreview: Array.from(salt.slice(0, 8)) });
+      // Salt processed for key derivation
       
       const cryptoKey = await deriveKey({
         password: userPassword,
         salt,
         iterations: encryptionKey.iterations
       });
-      console.log('🔑 Derived crypto key successfully');
+      // Derived crypto key successfully
 
       // Convert blob to array buffer for decryption
       const arrayBuffer = await encryptedBlob.arrayBuffer();
       const uint8Array = new Uint8Array(arrayBuffer);
-      console.log('📦 Downloaded file details:', {
-        totalSize: uint8Array.length,
-        firstBytes: Array.from(uint8Array.slice(0, 16)),
-        lastBytes: Array.from(uint8Array.slice(-16))
-      });
+      // Downloaded file processed for decryption
       
       // Try both approaches: using auth tag from file vs database
       const authTagLength = 16; // 128 bits for AES-GCM
@@ -339,54 +311,45 @@ export class DocumentsApiService {
       const ciphertext = uint8Array.slice(0, ciphertextLength);
       const authTagFromFile = uint8Array.slice(ciphertextLength);
       
-      console.log('🔄 Split file data:', {
-        ciphertextLength: ciphertext.length,
-        authTagFromFileLength: authTagFromFile.length,
-        authTagFromFile: Array.from(authTagFromFile)
-      });
+      // Split file data into ciphertext and auth tag
 
       // Convert to base64 for the decryption function (handle large arrays safely)
       const ciphertextBase64 = btoa(Array.from(ciphertext).map(byte => String.fromCharCode(byte)).join(''));
       const authTagFromFileBase64 = btoa(String.fromCharCode(...authTagFromFile));
       
-      console.log('📝 Base64 conversions:', {
-        ciphertextBase64Length: ciphertextBase64.length,
-        authTagFromFileBase64: authTagFromFileBase64,
-        authTagFromDatabase: document.encryption_auth_tag,
-        ivFromDatabase: document.encryption_iv
-      });
+      // Base64 conversions completed
 
       let decryptedData;
       
       // Try with auth tag from file first
       try {
-        console.log('🎯 Attempting decryption with auth tag from file...');
+        // Attempting decryption with auth tag from file
         decryptedData = await decrypt({
           ciphertext: ciphertextBase64,
           iv: document.encryption_iv!,
           authTag: authTagFromFileBase64,
           key: cryptoKey
         });
-        console.log('✅ Decryption successful using auth tag from file');
+        // Decryption successful using auth tag from file
       } catch (fileAuthError) {
-        console.log('❌ Decryption failed with file auth tag:', fileAuthError);
+        // Decryption failed with file auth tag
         
         // Try with auth tag from database
         try {
-          console.log('🎯 Attempting decryption with auth tag from database...');
+          // Attempting decryption with auth tag from database
           decryptedData = await decrypt({
             ciphertext: ciphertextBase64,
             iv: document.encryption_iv!,
             authTag: document.encryption_auth_tag!,
             key: cryptoKey
           });
-          console.log('✅ Decryption successful using auth tag from database');
+          // Decryption successful using auth tag from database
         } catch (dbAuthError) {
-          console.log('❌ Decryption failed with database auth tag:', dbAuthError);
+          // Decryption failed with database auth tag
           
           // Try direct Web Crypto API decryption (entire file as-is)
           try {
-            console.log('🎯 Attempting direct Web Crypto API decryption...');
+            // Attempting direct Web Crypto API decryption
             const iv = base64ToUint8Array(document.encryption_iv!);
             const decryptParams = {
               name: 'AES-GCM',
@@ -398,33 +361,26 @@ export class DocumentsApiService {
               cryptoKey,
               uint8Array
             );
-            console.log('✅ Direct Web Crypto API decryption successful');
+            // Direct Web Crypto API decryption successful
           } catch (directError) {
-            console.log('❌ Direct Web Crypto API decryption failed:', directError);
+            // Direct Web Crypto API decryption failed
             throw new Error('All decryption methods failed');
           }
         }
       }
 
-      console.log('🎉 Decryption complete:', {
-        originalSize: document.file_size,
-        decryptedSize: decryptedData.byteLength,
-        sizeMismatch: document.file_size !== decryptedData.byteLength
-      });
+      // Decryption completed successfully
 
       // Create decrypted file blob
       const decryptedBlob = new Blob([decryptedData], { type: document.mime_type || 'application/octet-stream' });
-      console.log('📁 Created decrypted blob:', {
-        size: decryptedBlob.size,
-        type: decryptedBlob.type
-      });
+      // Created decrypted blob successfully
       
       // Download the decrypted file
       this.downloadBlob(decryptedBlob, filename);
-      console.log('📥 Download initiated for:', filename);
+      // Download initiated successfully
       
     } catch (error) {
-      console.error('🚨 Decryption failed:', error);
+      // Decryption failed
       throw new Error(`Failed to decrypt document: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
@@ -445,16 +401,29 @@ export class DocumentsApiService {
   }
 
   /**
-   * Get document path/breadcrumb
+   * Get document path/breadcrumb (client-side implementation)
    */
   async getDocumentPath(documentId: number): Promise<DocumentPathResponse> {
-    const response = await apiRequest<DocumentPathResponse>('GET', `/api/v1/documents/${documentId}/path`);
+    // Build path by walking up the folder hierarchy
+    const path: any[] = [];
+    let currentId: number | null = documentId;
     
-    if (!response.success) {
-      throw new Error(response.error?.detail || 'Failed to get document path');
+    while (currentId) {
+      try {
+        const doc = await this.getDocument(currentId);
+        path.unshift(doc); // Add to beginning of array
+        currentId = doc.parent_id;
+      } catch (error) {
+        // Failed to get document in path
+        break;
+      }
     }
     
-    return response.data!;
+    return {
+      folder_id: documentId,
+      path: path,
+      depth: path.length
+    };
   }
 
   /**

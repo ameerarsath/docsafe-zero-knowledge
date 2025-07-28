@@ -34,9 +34,9 @@ export default function SecurityHeadersStatus({
   const security = useSecurity({ 
     autoStart: true,
     onSecurityEvent: (event) => {
-      // Prevent recursion by only logging non-suspicious activity events
+      // Prevent recursion by only handling non-suspicious activity events
       if (event.type !== 'suspicious_activity') {
-        console.log('Security event:', event);
+        // Security event received
       }
     }
   });

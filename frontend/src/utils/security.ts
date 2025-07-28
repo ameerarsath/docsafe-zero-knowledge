@@ -54,7 +54,7 @@ export async function checkSecurityHeaders(): Promise<SecurityHeadersStatus> {
       timestamp: new Date().toISOString()
     };
   } catch (error) {
-    console.error('Failed to check security headers:', error);
+    // Failed to check security headers
     return {
       secure: isSecureContext(),
       headers: {},
@@ -117,10 +117,10 @@ export function reportCSPViolation(violation: CSPViolationReport): void {
         url: window.location.href
       })
     }).catch(error => {
-      console.error('Failed to report CSP violation:', error);
+      // Failed to report CSP violation
     });
   } catch (error) {
-    console.error('Error reporting CSP violation:', error);
+    // Error reporting CSP violation
   }
 }
 
@@ -182,7 +182,7 @@ export class SecureStorage {
       const secureKey = this.prefix + key;
       localStorage.setItem(secureKey, btoa(value));
     } catch (error) {
-      console.error('Failed to set secure storage item:', error);
+      // Failed to set secure storage item
     }
   }
   
@@ -192,7 +192,7 @@ export class SecureStorage {
       const value = localStorage.getItem(secureKey);
       return value ? atob(value) : null;
     } catch (error) {
-      console.error('Failed to get secure storage item:', error);
+      // Failed to get secure storage item
       return null;
     }
   }
@@ -280,10 +280,10 @@ export class SecurityMonitor {
       
       // Report issues
       if (!headersStatus.hasRequiredHeaders) {
-        console.warn('Missing required security headers:', headersStatus);
+        // Missing required security headers
       }
     } catch (error) {
-      console.error('Security check failed:', error);
+      // Security check failed
     }
   }
   
@@ -304,7 +304,7 @@ export class SecurityMonitor {
           }
         });
       }
-      originalConsole.log(...args);
+      // Log suppressed for production
     };
     
     // Monitor for DevTools detection

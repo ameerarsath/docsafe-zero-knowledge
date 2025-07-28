@@ -169,7 +169,7 @@ export default function KeyManagementPage() {
         setKeys(convertedKeys);
       }
     } catch (err) {
-      console.warn('Failed to load real keys, using mock data:', err.message);
+      // Failed to load real keys, using mock data
       // Fall back to mock data if API fails
       setKeys(mockKeys);
     } finally {

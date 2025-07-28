@@ -109,6 +109,7 @@ export interface DocumentsState {
   isLoading: boolean;
   error: string | null;
   searchQuery: string;
+  selectedTags: string[];
   selectedDocuments: Set<number>;
   viewMode: 'grid' | 'list';
   sortBy: string;
@@ -137,6 +138,8 @@ export interface DocumentsActions {
   // Search and filtering
   searchDocuments: (query: string) => Promise<void>;
   filterByTags: (tags: string[]) => Promise<void>;
+  toggleTag: (tag: string) => void;
+  clearTagFilters: () => void;
   setSortOrder: (sortBy: string, sortOrder: 'asc' | 'desc') => Promise<void>;
   
   // Selection and bulk operations
@@ -172,8 +175,9 @@ export function useDocuments(): UseDocumentsReturn {
     isLoading: false,
     error: null,
     searchQuery: '',
+    selectedTags: [],
     selectedDocuments: new Set(),
-    viewMode: 'grid',
+    viewMode: 'list',
     sortBy: 'name',
     sortOrder: 'asc'
   });
@@ -189,7 +193,7 @@ export function useDocuments(): UseDocumentsReturn {
    * Handle errors consistently
    */
   const handleError = useCallback((error: any, fallbackMessage: string) => {
-    console.error('Documents error:', error);
+    // Handle documents error silently
     const errorMessage = error instanceof Error ? error.message : fallbackMessage;
     updateState({ error: errorMessage, isLoading: false });
     throw error;
@@ -207,6 +211,7 @@ export function useDocuments(): UseDocumentsReturn {
         sort_by: state.sortBy as 'name' | 'created_at' | 'updated_at' | 'file_size',
         sort_order: state.sortOrder,
         search: state.searchQuery || undefined,
+        tags: state.selectedTags.length > 0 ? state.selectedTags : undefined,
         ...params
       };
 
@@ -220,19 +225,22 @@ export function useDocuments(): UseDocumentsReturn {
     } catch (error) {
       handleError(error, 'Failed to load documents');
     }
-  }, [state.currentFolder?.id, state.sortBy, state.sortOrder, state.searchQuery]);
+  }, [state.currentFolder?.id, state.sortBy, state.sortOrder, state.searchQuery, state.selectedTags]);
 
   /**
    * Build breadcrumb trail
    */
   const buildBreadcrumb = useCallback(async (folderId: number | null): Promise<Document[]> => {
-    if (!folderId) return [];
+    if (!folderId) {
+      return [];
+    }
 
     try {
       const pathResponse = await documentsApi.getDocumentPath(folderId);
-      return pathResponse.path;
+      // The API returns the complete path including the current folder
+      return pathResponse.path || [];
     } catch (error) {
-      console.error('Failed to build breadcrumb:', error);
+      // Handle breadcrumb error silently
       return [];
     }
   }, []);
@@ -531,6 +539,32 @@ export function useDocuments(): UseDocumentsReturn {
   /**
    * Reset state
    */
+  /**
+   * Toggle tag filter
+   */
+  const toggleTag = useCallback((tag: string) => {
+    setState(prev => {
+      const selectedTags = prev.selectedTags.includes(tag)
+        ? prev.selectedTags.filter(t => t !== tag)
+        : [...prev.selectedTags, tag];
+      
+      return {
+        ...prev,
+        selectedTags
+      };
+    });
+  }, []);
+
+  /**
+   * Clear all tag filters
+   */
+  const clearTagFilters = useCallback(() => {
+    updateState({ selectedTags: [] });
+  }, [updateState]);
+
+  /**
+   * Reset state
+   */
   const reset = useCallback(() => {
     setState({
       documents: [],
@@ -540,8 +574,9 @@ export function useDocuments(): UseDocumentsReturn {
       isLoading: false,
       error: null,
       searchQuery: '',
+      selectedTags: [],
       selectedDocuments: new Set(),
-      viewMode: 'grid',
+      viewMode: 'list',
       sortBy: 'name',
       sortOrder: 'asc'
     });
@@ -582,6 +617,8 @@ export function useDocuments(): UseDocumentsReturn {
     deleteFolder,
     searchDocuments,
     filterByTags,
+    toggleTag,
+    clearTagFilters,
     setSortOrder,
     selectDocument,
     selectAllDocuments,

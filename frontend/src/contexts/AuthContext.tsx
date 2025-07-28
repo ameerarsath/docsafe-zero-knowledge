@@ -106,7 +106,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
     try {
       return await storeLogin({ username, password, remember_me: rememberMe });
     } catch (error) {
-      console.error('Login error:', error);
       return false;
     }
   };
@@ -117,7 +116,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
       // Redirect to login page after logout
       window.location.href = '/login';
     } catch (error) {
-      console.error('Logout error:', error);
       // Force redirect even if logout fails
       window.location.href = '/login';
     }
@@ -127,7 +125,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
     try {
       return await storeRefreshToken();
     } catch (error) {
-      console.error('Token refresh error:', error);
       return false;
     }
   };
@@ -136,7 +133,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
     try {
       return await storeCreateUser(userData);
     } catch (error) {
-      console.error('Create user error:', error);
       return false;
     }
   };
@@ -145,7 +141,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
     try {
       return await storeUpdateUser(userId, userData);
     } catch (error) {
-      console.error('Update user error:', error);
       return false;
     }
   };
@@ -154,7 +149,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
     try {
       return await storeDeleteUser(userId);
     } catch (error) {
-      console.error('Delete user error:', error);
       return false;
     }
   };
@@ -163,7 +157,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
     try {
       return await storeRequestPasswordReset({ email });
     } catch (error) {
-      console.error('Password reset request error:', error);
       return false;
     }
   };
@@ -180,7 +173,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
         confirm_password: confirmPassword,
       });
     } catch (error) {
-      console.error('Password reset confirm error:', error);
       return false;
     }
   };
@@ -189,7 +181,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
     try {
       return await storeChangePassword(currentPassword, newPassword);
     } catch (error) {
-      console.error('Change password error:', error);
       return false;
     }
   };
@@ -198,7 +189,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     try {
       await storeExtendSession();
     } catch (error) {
-      console.error('Extend session error:', error);
+      // Failed to extend session
     }
   };
 

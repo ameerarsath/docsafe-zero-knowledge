@@ -120,7 +120,6 @@ const UserRoleAssignmentInterface: React.FC<UserRoleAssignmentProps> = ({
               roles: rolesResponse.user_roles || []
             };
           } catch (error) {
-            console.error(`Failed to load roles for user ${user.id}:`, error);
             return { 
               ...user,
               roles: [] 
@@ -140,7 +139,6 @@ const UserRoleAssignmentInterface: React.FC<UserRoleAssignmentProps> = ({
         error: 'Failed to load users',
         isLoading: false
       }));
-      console.error('Failed to load users:', error);
     }
   }, []);
 
@@ -150,7 +148,7 @@ const UserRoleAssignmentInterface: React.FC<UserRoleAssignmentProps> = ({
       const response = await rbacService.getRoles({ active_only: true });
       setState(prev => ({ ...prev, availableRoles: response.roles as Role[] }));
     } catch (error) {
-      console.error('Failed to load roles:', error);
+      // Failed to load roles
     }
   }, []);
 
@@ -182,7 +180,6 @@ const UserRoleAssignmentInterface: React.FC<UserRoleAssignmentProps> = ({
       onAssignmentChange?.();
     } catch (error) {
       setState(prev => ({ ...prev, error: 'Failed to assign role' }));
-      console.error('Failed to assign role:', error);
     }
   };
 
@@ -194,7 +191,6 @@ const UserRoleAssignmentInterface: React.FC<UserRoleAssignmentProps> = ({
       onAssignmentChange?.();
     } catch (error) {
       setState(prev => ({ ...prev, error: 'Failed to revoke role' }));
-      console.error('Failed to revoke role:', error);
     }
   };
 
@@ -230,7 +226,6 @@ const UserRoleAssignmentInterface: React.FC<UserRoleAssignmentProps> = ({
       onAssignmentChange?.();
     } catch (error) {
       setState(prev => ({ ...prev, error: 'Failed to perform bulk assignment' }));
-      console.error('Failed to perform bulk assignment:', error);
     }
   };
 

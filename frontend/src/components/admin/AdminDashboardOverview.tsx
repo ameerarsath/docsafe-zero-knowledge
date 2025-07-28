@@ -70,7 +70,7 @@ export default function AdminDashboardOverview({
       setData(dashboardData);
       setLastRefresh(new Date());
     } catch (err: any) {
-      console.error('Failed to fetch dashboard data:', err);
+      // Failed to fetch dashboard data
       setError(err.message || 'Failed to load dashboard data');
     } finally {
       setIsLoading(false);
@@ -421,7 +421,7 @@ export default function AdminDashboardOverview({
                 key={index}
                 onClick={(e) => {
                   e.preventDefault();
-                  console.log(`Quick action clicked: ${action.label}`);
+                  // Quick action clicked
                   action.onClick();
                 }}
                 className={`flex flex-col items-center space-y-2 p-4 rounded-lg text-white transition-all duration-200 transform hover:scale-105 active:scale-95 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 ${action.color}`}

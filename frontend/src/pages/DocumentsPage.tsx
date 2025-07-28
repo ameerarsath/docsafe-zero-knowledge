@@ -24,6 +24,7 @@ import {
 } from '../components/documents';
 import EncryptedDocumentUpload from '../components/documents/EncryptedDocumentUpload';
 import { RequireAuth } from '../components/auth/ProtectedRoute';
+import TagsDisplay, { TagFilter } from '../components/ui/TagsDisplay';
 import AppLayout from '../components/layout/AppLayout';
 import {
   FileText,
@@ -68,7 +69,7 @@ function DocumentsContent() {
     try {
       return useDocuments();
     } catch (error) {
-      console.error('Error in useDocuments hook:', error);
+      // Handle useDocuments hook error silently
       return {
         documents: [],
         currentFolder: null,
@@ -77,8 +78,9 @@ function DocumentsContent() {
         isLoading: false,
         error: 'Failed to initialize documents. Please refresh the page.',
         searchQuery: '',
+        selectedTags: [],
         selectedDocuments: new Set(),
-        viewMode: 'grid' as const,
+        viewMode: 'list' as const,
         sortBy: 'name',
         sortOrder: 'asc' as const,
         hasSelection: false,
@@ -90,6 +92,8 @@ function DocumentsContent() {
         deleteDocument: () => Promise.resolve(),
         createFolder: () => Promise.reject('Not available'),
         searchDocuments: () => Promise.resolve(),
+        toggleTag: () => {},
+        clearTagFilters: () => {},
         setSortOrder: () => Promise.resolve(),
         selectDocument: () => {},
         selectAllDocuments: () => {},
@@ -109,6 +113,7 @@ function DocumentsContent() {
     isLoading,
     error,
     searchQuery,
+    selectedTags,
     selectedDocuments,
     viewMode,
     sortBy,
@@ -122,6 +127,8 @@ function DocumentsContent() {
     deleteDocument,
     createFolder,
     searchDocuments,
+    toggleTag,
+    clearTagFilters,
     setSortOrder,
     selectDocument,
     selectAllDocuments,
@@ -189,7 +196,7 @@ function DocumentsContent() {
         setNewFolderName('');
         setShowCreateFolder(false);
       } catch (error) {
-        console.error('Failed to create folder:', error);
+        // Handle folder creation error silently
       }
     }
   }, [newFolderName, currentFolder?.id, createFolder]);
@@ -337,17 +344,30 @@ function DocumentsContent() {
             Root
           </button>
           
-          {breadcrumb && breadcrumb.length > 0 && breadcrumb.map((folder, index) => (
-            <React.Fragment key={folder.id}>
-              <ChevronRight className="w-4 h-4 text-gray-400" />
-              <button
-                onClick={() => navigateToFolder(folder.id)}
-                className="text-blue-600 hover:text-blue-800 transition-colors"
-              >
-                {folder.name}
-              </button>
-            </React.Fragment>
-          ))}
+          {breadcrumb && breadcrumb.length > 0 && breadcrumb.map((folder, index) => {
+            // Check if this is the last item (current folder)
+            const isCurrentFolder = index === breadcrumb.length - 1;
+            
+            return (
+              <React.Fragment key={folder.id}>
+                <ChevronRight className="w-4 h-4 text-gray-400" />
+                {isCurrentFolder ? (
+                  // Current folder - not clickable
+                  <span className="text-gray-900 font-medium">
+                    {folder.name}
+                  </span>
+                ) : (
+                  // Parent folders - clickable
+                  <button
+                    onClick={() => navigateToFolder(folder.id)}
+                    className="text-blue-600 hover:text-blue-800 transition-colors"
+                  >
+                    {folder.name}
+                  </button>
+                )}
+              </React.Fragment>
+            );
+          })}
           
           {/* Item count */}
           <span className="text-gray-500 ml-4">
@@ -487,6 +507,13 @@ function DocumentsContent() {
           </div>
         )}
 
+        {/* Tag Filter */}
+        <TagFilter
+          selectedTags={selectedTags}
+          onTagToggle={toggleTag}
+          onClearAll={clearTagFilters}
+        />
+
         {/* Error Message */}
         {error && (
           <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg flex items-center justify-between">
@@ -526,6 +553,17 @@ function DocumentsContent() {
                   {doc.document_type === 'document' && (
                     <div className="text-xs text-gray-500">
                       {formatFileSize(doc.file_size)}
+                    </div>
+                  )}
+                  {doc.tags && doc.tags.length > 0 && (
+                    <div className="mt-1">
+                      <TagsDisplay
+                        tags={doc.tags}
+                        onTagClick={toggleTag}
+                        maxVisible={2}
+                        size="sm"
+                        className="justify-center"
+                      />
                     </div>
                   )}
                 </div>
@@ -597,18 +635,30 @@ function DocumentsContent() {
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="flex items-center space-x-3">
                         {getFileIcon(doc)}
-                        <button
-                          onClick={() => {
-                            if (doc.document_type === 'folder') {
-                              navigateToFolder(doc.id);
-                            } else {
-                              handlePreview(doc);
-                            }
-                          }}
-                          className="text-sm font-medium text-gray-900 hover:text-blue-600 text-left"
-                        >
-                          {doc.name}
-                        </button>
+                        <div className="flex flex-col">
+                          <button
+                            onClick={() => {
+                              if (doc.document_type === 'folder') {
+                                navigateToFolder(doc.id);
+                              } else {
+                                handlePreview(doc);
+                              }
+                            }}
+                            className="text-sm font-medium text-gray-900 hover:text-blue-600 text-left"
+                          >
+                            {doc.name}
+                          </button>
+                          {doc.tags && doc.tags.length > 0 && (
+                            <div className="mt-1">
+                              <TagsDisplay
+                                tags={doc.tags}
+                                onTagClick={toggleTag}
+                                maxVisible={3}
+                                size="sm"
+                              />
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">

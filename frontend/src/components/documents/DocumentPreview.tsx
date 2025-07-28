@@ -115,7 +115,7 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
     updateState({ isDecrypting: true, error: null });
 
     try {
-      console.log('🔐 Starting document decryption for preview:', document.name);
+      // Starting document decryption for preview
 
       // Fetch the encrypted document data
       const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8002'}/api/v1/documents/${document.id}/download`, {
@@ -130,15 +130,11 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
       }
 
       const encryptedBlob = await response.blob();
-      console.log('📦 Downloaded encrypted blob:', { size: encryptedBlob.size, type: encryptedBlob.type });
+      // Downloaded encrypted blob successfully
 
       // Check if document has encryption metadata
       if (document.encryption_key_id && document.encryption_iv && document.encryption_auth_tag) {
-        console.log('🔑 Decrypting document with metadata:', {
-          keyId: document.encryption_key_id,
-          hasIv: !!document.encryption_iv,
-          hasAuthTag: !!document.encryption_auth_tag
-        });
+        // Decrypting document with metadata
 
         // Convert blob to ArrayBuffer for decryption
         const encryptedData = await encryptedBlob.arrayBuffer();
@@ -155,7 +151,7 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
 
         // Decrypt the document
         const decryptedFile = await decryptDownloadedFile(encryptedData, decryptionMetadata, encryptionPassword);
-        console.log('✅ Document decrypted successfully:', decryptedFile.name);
+        // Document decrypted successfully
 
         // Create blob URL for preview
         const blobUrl = URL.createObjectURL(decryptedFile);
@@ -169,7 +165,7 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
         });
         
       } else {
-        console.log('📄 Document not encrypted, using directly');
+        // Document not encrypted, using directly
         // Document is not encrypted, use directly
         const blobUrl = URL.createObjectURL(encryptedBlob);
         
@@ -185,7 +181,7 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
       setShowPasswordDialog(false);
 
     } catch (error) {
-      console.error('❌ Decryption failed:', error);
+      // Decryption failed
       updateState({ 
         error: error instanceof Error ? error.message : 'Failed to decrypt document',
         isDecrypting: false 
@@ -350,7 +346,7 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
             src={state.blobUrl}
             title={`PDF Preview: ${document.name}`}
             className="w-full h-full min-h-96 border-0"
-            style={{ height: 'calc(90vh - 200px)' }}
+            style={{ height: 'calc(98vh - 160px)' }}
           >
             <div className="flex items-center justify-center h-64">
               <div className="text-center">
@@ -374,7 +370,7 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
     if (document.mime_type?.startsWith('image/')) {
       if (state.blobUrl) {
         return (
-          <div className="flex items-center justify-center min-h-64 p-4">
+          <div className="flex items-center justify-center min-h-96 p-4">
             <div
               style={{
                 transform: `scale(${state.zoom / 100}) rotate(${state.rotation}deg)`,
@@ -384,7 +380,7 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
               <img
                 src={state.blobUrl}
                 alt={document.name}
-                className="max-w-full max-h-96 object-contain border border-gray-200 rounded-lg shadow-sm"
+                className="max-w-full max-h-[90vh] object-contain border border-gray-200 rounded-lg shadow-sm"
                 onError={() => {
                   updateState({ error: 'Failed to display image' });
                 }}
@@ -394,7 +390,7 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
         );
       } else {
         return (
-          <div className="flex items-center justify-center min-h-64 p-4">
+          <div className="flex items-center justify-center min-h-96 p-4">
             <div
               style={{
                 transform: `scale(${state.zoom / 100}) rotate(${state.rotation}deg)`,
@@ -436,7 +432,7 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
       
       return (
         <div className="p-6">
-          <div className="bg-gray-50 rounded-lg p-4 font-mono text-sm max-h-96 overflow-y-auto">
+          <div className="bg-gray-50 rounded-lg p-4 font-mono text-sm max-h-[85vh] overflow-y-auto">
             <pre className="whitespace-pre-wrap">{textContent || 'No content available'}</pre>
           </div>
         </div>
@@ -499,8 +495,8 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
   }
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
-      <div className={`bg-white rounded-lg shadow-xl max-w-6xl max-h-[90vh] w-full flex flex-col ${className}`}>
+    <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-2">
+      <div className={`bg-white rounded-lg shadow-xl max-w-[75vw] h-[98vh] w-full flex flex-col ${className}`}>
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-gray-200">
           <div className="flex items-center space-x-3 flex-1 min-w-0">

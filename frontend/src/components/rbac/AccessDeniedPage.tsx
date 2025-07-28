@@ -409,7 +409,6 @@ export class RBACErrorBoundary extends React.Component<
   }
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
-    console.error('RBAC Error Boundary caught an error:', error, errorInfo);
     this.setState({ error, errorInfo });
   }
 

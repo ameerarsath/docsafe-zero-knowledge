@@ -29,6 +29,7 @@ import {
 } from 'lucide-react';
 import { Document } from '../../hooks/useDocuments';
 import { documentsApi } from '../../services/api/documents';
+import TemplateSelectionDialog from '../ui/TemplateSelectionDialog';
 
 interface FolderManagementDialogProps {
   folder?: Document | null; // null for new folder creation
@@ -98,6 +99,8 @@ interface FolderManagementState {
   activeTab: 'general' | 'permissions' | 'advanced';
   newTag: string;
   selectedUsers: number[];
+  showTemplateSelection: boolean;
+  appliedTemplate: any | null;
 }
 
 export const FolderManagementDialog: React.FC<FolderManagementDialogProps> = ({
@@ -129,7 +132,9 @@ export const FolderManagementDialog: React.FC<FolderManagementDialogProps> = ({
     successMessage: null,
     activeTab: 'general',
     newTag: '',
-    selectedUsers: []
+    selectedUsers: [],
+    showTemplateSelection: false,
+    appliedTemplate: null
   });
 
   /**
@@ -199,7 +204,7 @@ export const FolderManagementDialog: React.FC<FolderManagementDialogProps> = ({
 
       updateState({ templates: mockTemplates });
     } catch (error) {
-      console.error('Failed to load templates:', error);
+      // Failed to load templates
     }
   }, [updateState]);
 
@@ -229,7 +234,7 @@ export const FolderManagementDialog: React.FC<FolderManagementDialogProps> = ({
 
       updateState({ permissions: folderPermissions, isLoading: false });
     } catch (error) {
-      console.warn('Failed to load permissions, using empty list:', error);
+      // Failed to load permissions, using empty list
       // Don't show error for permissions that might not exist yet
       updateState({ permissions: [], isLoading: false });
     }
@@ -257,17 +262,20 @@ export const FolderManagementDialog: React.FC<FolderManagementDialogProps> = ({
   }, [state.formData.tags, updateFormData]);
 
   /**
-   * Apply template
+   * Handle template application result
    */
-  const applyTemplate = useCallback((templateId: string) => {
-    const template = state.templates.find(t => t.id === templateId);
-    if (template) {
-      updateFormData({
-        template_id: templateId,
-        tags: [...new Set([...state.formData.tags, ...template.tags])]
-      });
-    }
-  }, [state.templates, state.formData.tags, updateFormData]);
+  const handleTemplateApplied = useCallback((result: any) => {
+    updateState({ 
+      appliedTemplate: result,
+      showTemplateSelection: false,
+      successMessage: `Template applied successfully! Created ${result.created_folders.length} folders.`
+    });
+    
+    // Close dialog and refresh
+    setTimeout(() => {
+      onComplete();
+    }, 1500);
+  }, [onComplete, updateState]);
 
 
   /**
@@ -305,16 +313,13 @@ export const FolderManagementDialog: React.FC<FolderManagementDialogProps> = ({
         }
         // Note: Do NOT set parent_id to null - omit it entirely for root folders
         
-        console.log('Creating folder with params:', createParams);
-        console.log('Parent folder ID being passed:', parentFolderId);
-        
-        console.log('Attempting folder creation with params:', createParams);
+        // Creating folder with specified parameters
         
         try {
           await documentsApi.createDocument(createParams);
         } catch (apiError) {
           // API testing confirms this is a backend bug that persists regardless of payload structure
-          console.error('Folder creation failed - confirmed backend bug:', apiError);
+          // Folder creation failed - confirmed backend bug
           throw new Error(
             'Folder creation is currently broken due to a backend bug. ' +
             'The error "cannot access local variable \'parent\'" indicates a Python variable scoping issue ' +
@@ -341,7 +346,7 @@ export const FolderManagementDialog: React.FC<FolderManagementDialogProps> = ({
       }, 1000);
 
     } catch (error) {
-      console.error('Folder operation failed:', error);
+      // Folder operation failed
       
       let errorMessage = 'Operation failed';
       if (error instanceof Error) {
@@ -591,32 +596,39 @@ export const FolderManagementDialog: React.FC<FolderManagementDialogProps> = ({
                     />
                   </div>
 
-                  {/* Templates (for create mode only) */}
-                  {mode === 'create' && state.templates.length > 0 && (
+                  {/* Project Templates (for create mode only) */}
+                  {mode === 'create' && (
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Folder Template
+                        Project Template
                       </label>
-                      <div className="grid grid-cols-1 gap-2">
-                        {state.templates.map(template => (
-                          <label key={template.id} className="flex items-center p-3 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50">
-                            <input
-                              type="radio"
-                              name="template"
-                              value={template.id}
-                              checked={state.formData.template_id === template.id}
-                              onChange={() => applyTemplate(template.id)}
-                              className="mr-3 text-blue-600 focus:ring-blue-500"
-                            />
-                            <div className="flex items-center space-x-2 mr-3">
-                              <Star className="w-4 h-4 text-yellow-500" />
+                      <div className="p-4 border border-gray-200 rounded-lg bg-gray-50">
+                        <div className="flex items-center justify-between mb-2">
+                          <div>
+                            <p className="text-sm text-gray-600">
+                              Use a project template to create an organized folder structure with predefined tags and permissions.
+                            </p>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => updateState({ showTemplateSelection: true })}
+                          className="w-full mt-3 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center"
+                          disabled={state.isProcessing}
+                        >
+                          <Star className="w-4 h-4 mr-2" />
+                          Choose Project Template
+                        </button>
+                        {state.appliedTemplate && (
+                          <div className="mt-3 p-3 bg-green-50 border border-green-200 rounded-lg">
+                            <div className="flex items-center">
+                              <CheckCircle className="w-4 h-4 text-green-600 mr-2" />
+                              <span className="text-sm text-green-800">
+                                Template will create {state.appliedTemplate.created_folders?.length || 0} folders
+                              </span>
                             </div>
-                            <div>
-                              <div className="font-medium text-gray-900">{template.name}</div>
-                              <div className="text-sm text-gray-500">{template.description}</div>
-                            </div>
-                          </label>
-                        ))}
+                          </div>
+                        )}
                       </div>
                     </div>
                   )}
@@ -1014,6 +1026,14 @@ export const FolderManagementDialog: React.FC<FolderManagementDialogProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Template Selection Dialog */}
+      <TemplateSelectionDialog
+        isOpen={state.showTemplateSelection}
+        onClose={() => updateState({ showTemplateSelection: false })}
+        onTemplateApplied={handleTemplateApplied}
+        parentFolderId={parentFolderId}
+      />
     </div>
   );
 };

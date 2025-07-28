@@ -59,7 +59,6 @@ export default function SessionTimeoutWarning({ className }: SessionTimeoutWarni
     try {
       await extendSession();
     } catch (error) {
-      console.error('Failed to extend session:', error);
       // If extend fails, show error but don't logout immediately
     }
   };

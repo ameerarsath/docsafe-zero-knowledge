@@ -121,7 +121,6 @@ export default function LoginForm({
         }
       }
     } catch (err) {
-      console.error('Login error:', err);
       setFormError('root', { 
         message: 'An unexpected error occurred. Please try again.' 
       });

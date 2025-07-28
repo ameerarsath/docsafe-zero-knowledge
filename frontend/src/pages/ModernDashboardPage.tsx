@@ -128,7 +128,7 @@ function ModernDashboardContent() {
             }
           }
         } catch (error) {
-          console.warn('Could not fetch user/MFA statistics:', error);
+          // Could not fetch user/MFA statistics
           // Use fallback values
         }
         
@@ -165,7 +165,7 @@ function ModernDashboardContent() {
         });
         
       } catch (error) {
-        console.error('Failed to load dashboard data:', error);
+        // Failed to load dashboard data
         // Fallback to basic data
         setStats({
           totalDocuments: 0,

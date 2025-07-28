@@ -173,7 +173,6 @@ Important:
       await navigator.clipboard.writeText(content);
       return true;
     } catch (error) {
-      console.error('Failed to copy backup codes to clipboard:', error);
       return false;
     }
   }

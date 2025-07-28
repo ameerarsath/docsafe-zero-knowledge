@@ -164,7 +164,6 @@ export default function MFALoginFlow({
         handleLoginFailure(response.error?.detail || 'Login failed');
       }
     } catch (err) {
-      console.error('Login error:', err);
       handleLoginFailure('An unexpected error occurred. Please try again.');
     }
   };
@@ -307,7 +306,6 @@ export default function MFALoginFlow({
       navigate(from, { replace: true });
       
     } catch (error) {
-      console.error('Login success handling error:', error);
       // Fallback navigation - force redirect if navigation fails
       window.location.href = from;
     }

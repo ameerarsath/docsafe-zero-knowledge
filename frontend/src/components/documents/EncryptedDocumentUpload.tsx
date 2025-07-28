@@ -24,6 +24,7 @@ import {
 import { encryptionApi } from '../../services/api/encryptionService';
 import { useSessionStatus } from '../security/SessionKeyManager';
 import SessionKeyManager from '../security/SessionKeyManager';
+import TagsInput from '../ui/TagsInput';
 
 interface UploadedFile {
   id: string;
@@ -57,30 +58,13 @@ export default function EncryptedDocumentUpload({
   const [isDragOver, setIsDragOver] = useState(false);
   const [showSessionManager, setShowSessionManager] = useState(false);
   const [attemptedUploadWithoutSession, setAttemptedUploadWithoutSession] = useState(false);
+  const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const sessionStatus = useSessionStatus();
 
-  // Debug logging for session status
+  // Validation: if sessionStatus says active but no CryptoKey, clear session quietly
   useEffect(() => {
-    console.log('=== SESSION STATUS DEBUG ===');
-    console.log('sessionStatus.isActive:', sessionStatus.isActive);
-    console.log('encryptionApi.isSessionActive():', encryptionApi.isSessionActive());
     const sessionKey = encryptionApi.getSessionKey();
-    console.log('encryptionApi.getSessionKey():', sessionKey);
-    console.log('showSessionManager:', showSessionManager);
-    console.log('attemptedUploadWithoutSession:', attemptedUploadWithoutSession);
-    console.log('Should show session manager:', showSessionManager || !sessionStatus.isActive);
-    console.log('SessionStorage keys:');
-    console.log('  session_encryption_key:', sessionStorage.getItem('session_encryption_key'));
-    console.log('  session_key_expiry:', sessionStorage.getItem('session_key_expiry'));
-    console.log('  Current time:', Date.now());
-    if (sessionStorage.getItem('session_key_expiry')) {
-      console.log('  Expiry time:', parseInt(sessionStorage.getItem('session_key_expiry')!, 10));
-      console.log('  Time until expiry:', parseInt(sessionStorage.getItem('session_key_expiry')!, 10) - Date.now());
-    }
-    
-    // Validation: if sessionStatus says active but no CryptoKey, clear session quietly
     if (sessionStatus.isActive && (!sessionKey || !sessionKey.cryptoKey)) {
-      console.log('⚠️ Session marked as active but no valid CryptoKey found - clearing session');
       encryptionApi.clearSession();
       sessionStatus.refreshStatus?.();
     }
@@ -112,28 +96,18 @@ export default function EncryptedDocumentUpload({
   };
 
   const handleFiles = useCallback(async (files: File[]) => {
-    console.log('=== UPLOAD DEBUG ===');
-    console.log('handleFiles called with:', files.length, 'files');
-    console.log('Session status:', sessionStatus.isActive);
-    
     // Check if we need to prompt for encryption password
     const sessionKey = encryptionApi.getSessionKey();
     const hasValidEncryptionSession = sessionStatus.isActive && sessionKey && sessionKey.cryptoKey;
     
     if (!hasValidEncryptionSession) {
-      console.log('🔐 No valid encryption session - prompting for password');
       setAttemptedUploadWithoutSession(true);
       setShowSessionManager(true);
       return;
     }
-    
-    console.log('Session check passed, processing files...');
 
     for (const file of files) {
-      console.log('Processing file:', file.name, file.size, 'bytes');
-      
       const validationError = validateFile(file);
-      console.log('Validation result:', validationError || 'Valid');
       
       const uploadedFile: UploadedFile = {
         id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
@@ -145,14 +119,10 @@ export default function EncryptedDocumentUpload({
         error: validationError || undefined
       };
 
-      console.log('Created uploadedFile object:', uploadedFile);
       setUploadedFiles(prev => [...prev, uploadedFile]);
 
       if (!validationError) {
-        console.log('No validation error, calling processFileUpload...');
         await processFileUpload(file, uploadedFile.id);
-      } else {
-        console.log('Validation error, skipping processFileUpload');
       }
     }
   }, [sessionStatus.isActive, parentFolderId]);
@@ -171,30 +141,20 @@ export default function EncryptedDocumentUpload({
     e.preventDefault();
     setIsDragOver(false);
     
-    console.log('🎯 handleDrop triggered');
     const files = Array.from(e.dataTransfer.files);
-    console.log('🎯 Dropped files:', files.map(f => ({ name: f.name, size: f.size })));
     handleFiles(files);
   }, [handleFiles]);
 
   const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    console.log('🎯 handleFileSelect triggered');
     if (e.target.files) {
       const files = Array.from(e.target.files);
-      console.log('🎯 Files selected:', files.map(f => ({ name: f.name, size: f.size })));
       handleFiles(files);
-    } else {
-      console.log('🎯 No files selected');
     }
   }, [handleFiles]);
 
   const processFileUpload = async (file: File, fileId: string) => {
-    console.log('=== PROCESS FILE UPLOAD ===');
-    console.log('Processing file:', file.name, 'ID:', fileId);
-    
     try {
       // Update status to encrypting
-      console.log('Setting status to encrypting...');
       updateFileStatus(fileId, 'encrypting', 10);
 
       // Get session key for encryption
@@ -202,8 +162,6 @@ export default function EncryptedDocumentUpload({
       if (!sessionKey) {
         throw new Error('No active session key for encryption');
       }
-
-      console.log('Encrypting file with client-side encryption...');
       
       // Use client-side encryption utilities
       const { encryptFile } = await import('../../utils/encryption');
@@ -217,7 +175,6 @@ export default function EncryptedDocumentUpload({
         }
       );
       
-      console.log('Client-side encryption completed');
       updateFileStatus(fileId, 'uploading', 50);
 
       // Create FormData for upload
@@ -246,7 +203,7 @@ export default function EncryptedDocumentUpload({
         name: file.name,
         parent_id: parentFolderId,
         description: '',
-        tags: [],
+        tags: selectedTags,
         doc_metadata: {
           encryption_salt: sessionKey.salt, // Store salt for decryption
           encryption_algorithm: sessionKey.algorithm,
@@ -263,7 +220,6 @@ export default function EncryptedDocumentUpload({
       
       formData.append('upload_data', JSON.stringify(uploadMetadata));
 
-      console.log('Starting file upload...');
       
       // Import documents API dynamically to avoid circular imports
       const { documentsApi } = await import('../../services/api/documents');
@@ -276,7 +232,6 @@ export default function EncryptedDocumentUpload({
         }
       );
 
-      console.log('Upload completed successfully:', document);
       updateFileStatus(fileId, 'completed', 100);
 
       // Extend session on successful upload
@@ -312,8 +267,6 @@ export default function EncryptedDocumentUpload({
       }, 3000); // Remove after 3 seconds if not already cleared
 
     } catch (error) {
-      console.log('=== UPLOAD ERROR ===');
-      console.error('Upload failed for file ID:', fileId, 'Error:', error);
       updateFileStatus(fileId, 'error', 0, error instanceof Error ? error.message : 'Upload failed');
     }
   };
@@ -395,30 +348,17 @@ export default function EncryptedDocumentUpload({
           </h3>
           <div className="flex space-x-2">
             <button
-              onClick={() => {
-                console.log('=== TOGGLE SESSION MANAGER ===');
-                console.log('Current state:', { showSessionManager, sessionActive: sessionStatus.isActive });
-                setShowSessionManager(!showSessionManager);
-              }}
+              onClick={() => setShowSessionManager(!showSessionManager)}
               className="text-sm text-blue-600 hover:text-blue-800"
             >
               {showSessionManager ? 'Hide' : 'Show'} Session Manager
             </button>
             <button
               onClick={() => {
-                console.log('=== CLEARING SESSION FOR DEBUG ===');
-                console.log('Before clear - sessionStorage contents:');
-                console.log('  session_encryption_key:', sessionStorage.getItem('session_encryption_key'));
-                console.log('  session_key_expiry:', sessionStorage.getItem('session_key_expiry'));
-                
                 // Clear both via API and directly
                 encryptionApi.clearSession();
                 sessionStorage.removeItem('session_encryption_key');
                 sessionStorage.removeItem('session_key_expiry');
-                
-                console.log('After clear - sessionStorage contents:');
-                console.log('  session_encryption_key:', sessionStorage.getItem('session_encryption_key'));
-                console.log('  session_key_expiry:', sessionStorage.getItem('session_key_expiry'));
                 
                 sessionStatus.refreshStatus?.();
                 setAttemptedUploadWithoutSession(false);
@@ -449,6 +389,22 @@ export default function EncryptedDocumentUpload({
         )}
       </div>
 
+      {/* Tags Input */}
+      <div className="mb-6">
+        <label className="block text-sm font-medium text-gray-700 mb-2">
+          Tags (optional)
+        </label>
+        <TagsInput
+          tags={selectedTags}
+          onChange={setSelectedTags}
+          placeholder="Add tags to organize your documents..."
+          maxTags={10}
+        />
+        <p className="mt-1 text-xs text-gray-500">
+          Tags help organize and find your documents later
+        </p>
+      </div>
+
       {/* Upload Area */}
       <div
         className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
@@ -464,7 +420,6 @@ export default function EncryptedDocumentUpload({
           type="file"
           multiple
           onChange={handleFileSelect}
-          onClick={() => console.log('🎯 File input clicked')}
           className="hidden"
           id="file-upload"
           disabled={false}
@@ -479,7 +434,6 @@ export default function EncryptedDocumentUpload({
           <div>
             <label
               htmlFor="file-upload"
-              onClick={() => console.log('🎯 Upload label clicked', { sessionActive: sessionStatus.isActive })}
               className="cursor-pointer font-medium text-blue-600 hover:text-blue-500"
             >
               {sessionStatus.isActive ? 'Upload encrypted documents' : 'Click to upload (will prompt for encryption password)'}

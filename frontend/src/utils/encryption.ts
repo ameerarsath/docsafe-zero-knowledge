@@ -288,23 +288,11 @@ export async function encrypt(
     // For AES-GCM, Web Crypto API returns the full encrypted data
     // We need to determine the actual auth tag length from the result
     const encryptedArray = new Uint8Array(encryptedData);
-    console.log('🔒 Raw encryption result:', {
-      totalLength: encryptedArray.length,
-      originalDataLength: data.byteLength,
-      expectedAuthTagLength: ENCRYPTION_CONFIG.AUTH_TAG_LENGTH,
-      actualAuthTagLength: encryptedArray.length - data.byteLength
-    });
 
     // Calculate actual auth tag length from the difference
     const actualAuthTagLength = encryptedArray.length - data.byteLength;
     const ciphertext = encryptedArray.slice(0, data.byteLength);
     const authTag = encryptedArray.slice(data.byteLength);
-
-    console.log('🔐 Split encryption data:', {
-      ciphertextLength: ciphertext.length,
-      authTagLength: authTag.length,
-      authTagBytes: Array.from(authTag)
-    });
 
     return {
       ciphertext: uint8ArrayToBase64(ciphertext),

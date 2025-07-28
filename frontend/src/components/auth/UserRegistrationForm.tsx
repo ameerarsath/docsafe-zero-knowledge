@@ -193,7 +193,6 @@ export default function UserRegistrationForm({
         }
       }
     } catch (err) {
-      console.error('User creation error:', err);
       setFormError('root', { 
         message: 'An unexpected error occurred. Please try again.' 
       });

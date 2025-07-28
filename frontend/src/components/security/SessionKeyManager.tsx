@@ -288,9 +288,9 @@ export function useSessionStatus() {
   const [isActive, setIsActive] = useState(false);
 
   const checkStatus = useCallback(() => {
-    console.log('🔍 useSessionStatus.checkStatus() - Checking session status');
+    // Checking session status
     const active = encryptionApi.isSessionActive();
-    console.log('🔍 useSessionStatus.checkStatus() - Session active:', active);
+    // Session status checked
     setIsActive(active);
   }, []);
 

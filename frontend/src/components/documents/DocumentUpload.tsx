@@ -290,9 +290,9 @@ export const DocumentUpload: React.FC<DocumentUploadProps> = ({
             replaceExisting: false
           });
           activeKey = newKey;
-          console.log('Created new encryption key:', newKey.keyId);
+          // Created new encryption key successfully
         } catch (error) {
-          console.error('Failed to create encryption key:', error);
+          // Failed to create encryption key
           setGlobalError('Failed to create encryption key. Please try again.');
           return;
         }
@@ -312,7 +312,7 @@ export const DocumentUpload: React.FC<DocumentUploadProps> = ({
             uploadedDocuments.push(document);
           }
         } catch (error) {
-          console.error(`Failed to upload ${uploadFile.file.name}:`, error);
+          // Failed to upload file
         }
       }
 

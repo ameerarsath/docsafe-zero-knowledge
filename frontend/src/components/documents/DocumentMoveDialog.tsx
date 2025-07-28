@@ -133,7 +133,7 @@ export const DocumentMoveDialog: React.FC<DocumentMoveDialogProps> = ({
 
       return [rootNode];
     } catch (error) {
-      console.error('Failed to build folder tree:', error);
+      // Failed to build folder tree
       throw error;
     }
   }, []);

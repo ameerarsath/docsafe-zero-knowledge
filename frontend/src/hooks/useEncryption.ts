@@ -126,7 +126,7 @@ export function useEncryption(): UseEncryptionReturn {
    * Handle errors consistently
    */
   const handleError = useCallback((error: any, fallbackMessage: string) => {
-    console.error('Encryption error:', error);
+    // Encryption error occurred
     const errorMessage = error instanceof Error ? error.message : fallbackMessage;
     updateState({ error: errorMessage, isLoading: false });
     throw error;
@@ -278,12 +278,7 @@ export function useEncryption(): UseEncryptionReturn {
         throw new Error('Invalid iterations in key data');
       }
       
-      console.log('Deriving key with data:', {
-        keyId: keyData.keyId,
-        saltLength: keyData.salt?.length,
-        iterations: keyData.iterations,
-        salt: keyData.salt?.substring(0, 20) + '...'
-      });
+      // Deriving key with provided data
       
       const salt = base64ToUint8Array(keyData.salt);
       const derivedKey = await deriveKey({
@@ -294,7 +289,7 @@ export function useEncryption(): UseEncryptionReturn {
       
       return derivedKey;
     } catch (error) {
-      console.error('Key derivation error:', error);
+      // Key derivation error
       throw new KeyDerivationError(`Failed to derive key: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }, []);
@@ -326,7 +321,7 @@ export function useEncryption(): UseEncryptionReturn {
       const result = await encryptionApi.validateEncryption(validationRequest);
       return result.valid;
     } catch (error) {
-      console.error('Password validation failed:', error);
+      // Password validation failed
       return false;
     }
   }, [user, deriveUserKey]);
@@ -346,47 +341,25 @@ export function useEncryption(): UseEncryptionReturn {
     }
 
     try {
-      console.log('🔐 Starting file encryption for upload:', {
-        fileName: file.name,
-        fileSize: file.size,
-        fileType: file.type,
-        keyId: keyToUse.keyId
-      });
+      // Starting file encryption for upload
 
       const derivedKey = await deriveUserKey(password, keyToUse);
-      console.log('🔑 Derived encryption key successfully');
+      // Derived encryption key successfully
       
       const encryptionResult = await encryptFile(file, derivedKey, onProgress);
-      console.log('🔒 File encrypted:', {
-        algorithm: encryptionResult.algorithm,
-        originalSize: encryptionResult.originalSize,
-        encryptedSize: encryptionResult.encryptedSize,
-        ivLength: encryptionResult.iv.length,
-        authTagLength: encryptionResult.authTag.length,
-        ciphertextLength: encryptionResult.ciphertext.length
-      });
+      // File encrypted successfully
       
       const ciphertextBytes = base64ToUint8Array(encryptionResult.ciphertext);
       const authTagBytes = base64ToUint8Array(encryptionResult.authTag);
       
-      console.log('📦 Creating encrypted blob:', {
-        ciphertextBytesLength: ciphertextBytes.length,
-        authTagBytesLength: authTagBytes.length,
-        totalSize: ciphertextBytes.length + authTagBytes.length,
-        ciphertextPreview: Array.from(ciphertextBytes.slice(0, 8)),
-        authTagPreview: Array.from(authTagBytes)
-      });
+      // Creating encrypted blob
       
       const encryptedBlob = new Blob([ciphertextBytes, authTagBytes]);
       const encryptedFile = new File([encryptedBlob], `${file.name}.enc`, {
         type: 'application/octet-stream'
       });
 
-      console.log('📄 Final encrypted file:', {
-        size: encryptedFile.size,
-        name: encryptedFile.name,
-        type: encryptedFile.type
-      });
+      // Final encrypted file created
 
       const metadata = {
         keyId: keyToUse.keyId,
@@ -397,14 +370,14 @@ export function useEncryption(): UseEncryptionReturn {
         encryptedSize: encryptionResult.encryptedSize
       };
 
-      console.log('📋 Encryption metadata:', metadata);
+      // Encryption metadata prepared
 
       return {
         encryptedFile,
         encryptionMetadata: metadata
       };
     } catch (error) {
-      console.error('🚨 File encryption failed:', error);
+      // File encryption failed
       throw new EncryptionError(
         `File encryption failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
         'FILE_ENCRYPTION_FAILED'
@@ -421,7 +394,7 @@ export function useEncryption(): UseEncryptionReturn {
     password: string
   ): Promise<File> => {
     try {
-      console.log('🔍 Decrypting file with metadata:', metadata);
+      // Decrypting file with metadata
       
       // For session-based keys (generated during upload), derive key directly from password
       // instead of looking it up in the backend keys array
@@ -429,14 +402,14 @@ export function useEncryption(): UseEncryptionReturn {
       
       if (metadata.keyId && metadata.keyId.startsWith('key_')) {
         // This is a session-generated key, derive it directly from password and salt
-        console.log('🔑 Using session-based key derivation');
+        // Using session-based key derivation
         
         // The salt should be stored in the document metadata from upload
         if (metadata.encryptionSalt || (metadata.documentMetadata && metadata.documentMetadata.encryption_salt)) {
           const saltBase64 = metadata.encryptionSalt || metadata.documentMetadata.encryption_salt;
           const iterations = metadata.encryptionIterations || (metadata.documentMetadata && metadata.documentMetadata.encryption_iterations) || 100000;
           
-          console.log('🧂 Using salt from document metadata:', { saltLength: saltBase64.length, iterations });
+          // Using salt from document metadata
           
           // Convert salt from base64 to Uint8Array
           const salt = new Uint8Array(atob(saltBase64).split('').map(c => c.charCodeAt(0)));
@@ -446,13 +419,13 @@ export function useEncryption(): UseEncryptionReturn {
             salt,
             iterations
           });
-          console.log('✅ Successfully derived key from document metadata');
+          // Successfully derived key from document metadata
         } else {
           throw new Error('Encryption salt not found in document metadata. Cannot decrypt this document.');
         }
       } else {
         // This is a backend key, use the original lookup method
-        console.log('🔑 Using backend key lookup');
+        // Using backend key lookup
         const keyData = state.keys?.find(k => k.keyId === metadata.keyId);
         if (!keyData) {
           throw new Error('Encryption key not found in backend keys');
@@ -492,7 +465,7 @@ export function useEncryption(): UseEncryptionReturn {
     try {
       return await testCryptoFunctionality();
     } catch (error) {
-      console.error('Encryption test failed:', error);
+      // Encryption test failed
       return false;
     }
   }, []);

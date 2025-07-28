@@ -96,7 +96,7 @@ export default function SecurityEventsInterface({
       setTotalEvents(response.total);
       setLastRefresh(new Date());
     } catch (err: any) {
-      console.error('Failed to fetch security events:', err);
+      // Failed to fetch security events
       setError(err.message || 'Failed to load security events');
     } finally {
       setIsLoading(false);
@@ -142,7 +142,7 @@ export default function SecurityEventsInterface({
       await securityApi.updateSecurityEvent(eventId, updates);
       await fetchEvents(); // Refresh the list
     } catch (err: any) {
-      console.error('Failed to update event:', err);
+      // Failed to update event
       setError(err.message || 'Failed to update event');
     }
   }, [fetchEvents]);
@@ -204,7 +204,7 @@ export default function SecurityEventsInterface({
       await fetchEvents();
       clearSelections();
     } catch (err: any) {
-      console.error('Failed to bulk update events:', err);
+      // Failed to bulk update events
       setError(err.message || 'Failed to bulk update events');
     }
   }, [selectedEvents, fetchEvents, clearSelections]);
