@@ -502,27 +502,15 @@ export default function EncryptedDocumentUpload({
           setUploadedFiles(prev => [...prev, uploadedFile]);
 
           try {
-            // Find the folder for this file using a more robust approach
+            // Extract folder path from the file's full path (not relativePath!)
             let fileParentId = parentFolderId; // Default to root
             
-            // Get the directory path of the file (everything except the filename)
-            const pathParts = fileEntry.relativePath.split('/');
-            if (pathParts.length > 1) {
-              // File is in a subfolder, find the parent folder ID
-              const folderPath = pathParts.slice(0, -1).join('/');
+            if (fileEntry.path.includes('/')) {
+              // File is in a subfolder, extract the folder path
+              const folderPath = fileEntry.path.split('/').slice(0, -1).join('/');
               
-              // Try different path variations to find matching folder
-              const possiblePaths = [
-                folderPath,
-                pathParts[0], // Just the first folder name
-                fileEntry.path.split('/').slice(0, -1).join('/') // From full path
-              ];
-              
-              for (const possiblePath of possiblePaths) {
-                if (createdFolders[possiblePath]) {
-                  fileParentId = createdFolders[possiblePath];
-                  break;
-                }
+              if (createdFolders[folderPath]) {
+                fileParentId = createdFolders[folderPath];
               }
             }
             
