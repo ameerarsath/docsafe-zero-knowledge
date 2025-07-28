@@ -199,9 +199,38 @@ async def get_document_statistics(
                 )
             )
         
-        # Get document counts by type
-        total_documents = base_query.filter(Document.document_type == DocumentType.DOCUMENT).count()
-        total_folders = base_query.filter(Document.document_type == DocumentType.FOLDER).count()
+        # For non-admin users, count only documents that are logically accessible:
+        # 1. Root level folders
+        # 2. Documents within root level folders (not nested deeper)
+        if not current_user.is_admin:
+            # Get root level folders first
+            root_folders = base_query.filter(
+                Document.document_type == DocumentType.FOLDER,
+                Document.parent_id.is_(None)
+            ).all()
+            
+            # Count documents in root level folders only (not nested deeper)
+            document_count = 0
+            for folder in root_folders:
+                docs_in_folder = base_query.filter(
+                    Document.document_type == DocumentType.DOCUMENT,
+                    Document.parent_id == folder.id
+                ).count()
+                document_count += docs_in_folder
+            
+            # Add any root level documents (not in folders)
+            root_documents = base_query.filter(
+                Document.document_type == DocumentType.DOCUMENT,
+                Document.parent_id.is_(None)
+            ).count()
+            document_count += root_documents
+            
+            total_documents = document_count
+            total_folders = len(root_folders)
+        else:
+            # Admin users see all documents across all levels
+            total_documents = base_query.filter(Document.document_type == DocumentType.DOCUMENT).count()
+            total_folders = base_query.filter(Document.document_type == DocumentType.FOLDER).count()
         
         # Get size aggregation
         total_size_result = base_query.with_entities(func.coalesce(func.sum(Document.file_size), 0)).scalar()
@@ -244,6 +273,79 @@ async def get_document_statistics(
         thirty_days_ago = datetime.now() - timedelta(days=30)
         recent_activity_count = base_query.filter(Document.updated_at >= thirty_days_ago).count()
         
+        # Enhanced statistics calculations - use actual document counts with proper filtering
+        active_documents = total_documents + total_folders  # All active documents and folders
+        
+        # Calculate storage breakdown by status with proper user filtering
+        active_query = base_query.filter(Document.status == DocumentStatus.ACTIVE)
+        
+        # Apply same user filtering to archived and deleted queries
+        archived_query = db.query(Document).filter(Document.status == DocumentStatus.ARCHIVED)
+        deleted_query = db.query(Document).filter(Document.status == DocumentStatus.DELETED)
+        
+        if not current_user.is_admin:
+            # Apply user filtering to archived documents
+            archived_query = archived_query.filter(
+                or_(
+                    Document.owner_id == current_user.id,
+                    db.query(DocumentPermission).filter(
+                        and_(
+                            DocumentPermission.document_id == Document.id,
+                            DocumentPermission.user_id == current_user.id,
+                            DocumentPermission.granted == True
+                        )
+                    ).exists()
+                )
+            )
+            
+            # Apply user filtering to deleted documents
+            deleted_query = deleted_query.filter(
+                or_(
+                    Document.owner_id == current_user.id,
+                    db.query(DocumentPermission).filter(
+                        and_(
+                            DocumentPermission.document_id == Document.id,
+                            DocumentPermission.user_id == current_user.id,
+                            DocumentPermission.granted == True
+                        )
+                    ).exists()
+                )
+            )
+        
+        # Calculate document counts for each status
+        archived_documents = archived_query.count()
+        deleted_documents = deleted_query.count()
+        
+        active_storage_size = int(active_query.with_entities(func.coalesce(func.sum(Document.file_size), 0)).scalar() or 0)
+        archived_storage_size = int(archived_query.with_entities(func.coalesce(func.sum(Document.file_size), 0)).scalar() or 0)
+        deleted_storage_size = int(deleted_query.with_entities(func.coalesce(func.sum(Document.file_size), 0)).scalar() or 0)
+        
+        # Today's activity (documents created/modified today)
+        today = datetime.now().date()
+        today_start = datetime.combine(today, datetime.min.time())
+        today_end = datetime.combine(today, datetime.max.time())
+        
+        documents_created_today = base_query.filter(
+            Document.created_at >= today_start,
+            Document.created_at <= today_end
+        ).count()
+        
+        documents_modified_today = base_query.filter(
+            Document.updated_at >= today_start,
+            Document.updated_at <= today_end,
+            Document.created_at < today_start  # Exclude newly created docs
+        ).count()
+        
+        # Calculate average and largest document size
+        if total_documents > 0:
+            avg_size_result = base_query.with_entities(func.avg(Document.file_size)).scalar()
+            avg_document_size = float(avg_size_result) if avg_size_result else 0.0
+            largest_size_result = base_query.with_entities(func.max(Document.file_size)).scalar()
+            largest_document_size = int(largest_size_result) if largest_size_result else 0
+        else:
+            avg_document_size = 0.0
+            largest_document_size = 0
+        
         result = DocumentStatistics(
             total_documents=total_documents,
             total_folders=total_folders,
@@ -253,7 +355,18 @@ async def get_document_statistics(
             sensitive_documents=sensitive_documents,
             documents_by_type=docs_by_type,
             documents_by_status=docs_by_status,
-            recent_activity_count=recent_activity_count
+            recent_activity_count=recent_activity_count,
+            # Enhanced statistics
+            active_documents=active_documents,
+            archived_documents=archived_documents,
+            deleted_documents=deleted_documents,
+            active_storage_size=active_storage_size,
+            archived_storage_size=archived_storage_size,
+            deleted_storage_size=deleted_storage_size,
+            documents_created_today=documents_created_today,
+            documents_modified_today=documents_modified_today,
+            avg_document_size=avg_document_size,
+            largest_document_size=largest_document_size
         )
         print(f"🚀 STATISTICS SUCCESS: {result}")
         return result
@@ -272,10 +385,94 @@ async def get_document_statistics(
             sensitive_documents=0,
             documents_by_type={},
             documents_by_status={},
-            recent_activity_count=0
+            recent_activity_count=0,
+            # Enhanced fallback values
+            active_documents=0,
+            archived_documents=0,
+            deleted_documents=0,
+            active_storage_size=0,
+            archived_storage_size=0,
+            deleted_storage_size=0,
+            documents_created_today=0,
+            documents_modified_today=0,
+            avg_document_size=0.0,
+            largest_document_size=0
         )
         print(f"🚨 RETURNING FALLBACK: {fallback}")
         return fallback
+
+
+# Trash Management Endpoints (must come before /{document_id} to avoid route conflicts)
+@router.get("/trash", response_model=DocumentList)
+async def list_trash_items(
+    page: int = Query(1, ge=1, description="Page number"),
+    size: int = Query(20, ge=1, le=100, description="Page size"),
+    sort_by: str = Query("updated_at", description="Sort field"),
+    sort_order: str = Query("desc", description="Sort order"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """List all documents in trash for the current user (all hierarchy levels)."""
+    # Check user permissions
+    if not has_permission(current_user, "documents:read", db):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Insufficient privileges to view trash"
+        )
+
+    try:
+        # Get all deleted documents for the user (regardless of parent_id)
+        query = db.query(Document).filter(
+            Document.owner_id == current_user.id,
+            Document.status == DocumentStatus.DELETED
+        )
+
+        # Apply sorting
+        if sort_by == "name":
+            order_func = Document.name.asc() if sort_order == "asc" else Document.name.desc()
+        elif sort_by == "created_at":
+            order_func = Document.created_at.asc() if sort_order == "asc" else Document.created_at.desc()
+        elif sort_by == "updated_at":
+            order_func = Document.updated_at.asc() if sort_order == "asc" else Document.updated_at.desc()
+        elif sort_by == "file_size":
+            order_func = Document.file_size.asc() if sort_order == "asc" else Document.file_size.desc()
+        else:
+            order_func = Document.updated_at.desc()
+
+        query = query.order_by(order_func)
+
+        # Get total count
+        total = query.count()
+
+        # Apply pagination
+        documents = query.offset((page - 1) * size).limit(size).all()
+
+        # Convert to response format with permissions
+        document_responses = []
+        for doc in documents:
+            doc_dict = doc.to_dict()
+            
+            # Add computed permission flags
+            doc_dict["can_read"] = doc.can_user_access(current_user, "read")
+            doc_dict["can_write"] = doc.can_user_access(current_user, "write") 
+            doc_dict["can_delete"] = doc.can_user_access(current_user, "delete")
+            doc_dict["can_share"] = doc.can_user_access(current_user, "share")
+            
+            document_responses.append(DocumentSchema(**doc_dict))
+
+        return DocumentList(
+            documents=document_responses,
+            total=total,
+            page=page,
+            size=size,
+            has_next=total > page * size
+        )
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to list trash items: {str(e)}"
+        )
 
 
 @router.get("/{document_id}", response_model=DocumentSchema)
@@ -2076,4 +2273,243 @@ async def documents_health_check(db: Session = Depends(get_db)):
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=f"Document system unhealthy: {str(e)}"
+        )
+
+
+@router.post("/trash/empty", status_code=status.HTTP_200_OK)
+async def empty_trash(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Permanently delete all documents in trash for the current user."""
+    if not has_permission(current_user, "documents:delete", db):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Insufficient privileges to empty trash"
+        )
+    
+    try:
+        # Get all deleted documents for the user
+        deleted_docs = db.query(Document).filter(
+            Document.owner_id == current_user.id,
+            Document.status == DocumentStatus.DELETED
+        ).all()
+        
+        deleted_count = len(deleted_docs)
+        
+        # Delete associated access logs first
+        doc_ids = [doc.id for doc in deleted_docs]
+        if doc_ids:
+            db.query(DocumentAccessLog).filter(DocumentAccessLog.document_id.in_(doc_ids)).delete(synchronize_session=False)
+        
+        # Delete files from filesystem
+        files_deleted = 0
+        for doc in deleted_docs:
+            if doc.storage_path and os.path.exists(doc.storage_path):
+                try:
+                    os.remove(doc.storage_path)
+                    files_deleted += 1
+                except Exception as e:
+                    print(f"Could not delete file {doc.storage_path}: {e}")
+        
+        # Permanently delete documents from database
+        db.query(Document).filter(
+            Document.owner_id == current_user.id,
+            Document.status == DocumentStatus.DELETED
+        ).delete(synchronize_session=False)
+        
+        db.commit()
+        
+        return {
+            "message": "Trash emptied successfully",
+            "deleted_count": deleted_count,
+            "files_deleted": files_deleted
+        }
+        
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to empty trash: {str(e)}"
+        )
+
+
+@router.post("/trash/recover-all", status_code=status.HTTP_200_OK)
+async def recover_all_from_trash(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Recover all documents from trash for the current user."""
+    if not has_permission(current_user, "documents:write", db):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Insufficient privileges to recover documents"
+        )
+    
+    try:
+        # Get all deleted documents for the user
+        deleted_docs = db.query(Document).filter(
+            Document.owner_id == current_user.id,
+            Document.status == DocumentStatus.DELETED
+        ).all()
+        
+        recovered_count = 0
+        
+        for doc in deleted_docs:
+            # Check if parent folder still exists and is active
+            if doc.parent_id:
+                parent = db.query(Document).filter(Document.id == doc.parent_id).first()
+                if not parent or parent.status != DocumentStatus.ACTIVE:
+                    # Parent doesn't exist or is deleted, move to root level
+                    doc.parent_id = None
+                    doc.path = doc.name
+            
+            # Restore document
+            doc.status = DocumentStatus.ACTIVE
+            doc.deleted_at = None
+            recovered_count += 1
+            
+            # Create access log
+            access_log = DocumentAccessLog(
+                document_id=doc.id,
+                user_id=current_user.id,
+                action="recover",
+                access_method="api",
+                success=True
+            )
+            db.add(access_log)
+        
+        db.commit()
+        
+        return {
+            "message": "All items recovered from trash successfully",
+            "recovered_count": recovered_count
+        }
+        
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to recover from trash: {str(e)}"
+        )
+
+
+@router.post("/{document_id}/recover", status_code=status.HTTP_200_OK)
+async def recover_document(
+    document_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Recover a single document from trash."""
+    document = db.query(Document).filter(Document.id == document_id).first()
+    if not document:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document not found"
+        )
+    
+    if document.owner_id != current_user.id and not current_user.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Insufficient privileges to recover this document"
+        )
+    
+    if document.status != DocumentStatus.DELETED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Document is not in trash"
+        )
+    
+    try:
+        # Check if parent folder still exists and is active
+        if document.parent_id:
+            parent = db.query(Document).filter(Document.id == document.parent_id).first()
+            if not parent or parent.status != DocumentStatus.ACTIVE:
+                # Parent doesn't exist or is deleted, move to root level
+                document.parent_id = None
+                document.path = document.name
+        
+        # Restore document
+        document.status = DocumentStatus.ACTIVE
+        document.deleted_at = None
+        
+        # Create access log
+        access_log = DocumentAccessLog(
+            document_id=document.id,
+            user_id=current_user.id,
+            action="recover",
+            access_method="api",
+            success=True
+        )
+        db.add(access_log)
+        db.commit()
+        
+        return {
+            "message": f"Successfully recovered '{document.name}'",
+            "document_id": document.id
+        }
+        
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to recover document: {str(e)}"
+        )
+
+
+@router.delete("/{document_id}/permanent", status_code=status.HTTP_200_OK)
+async def permanently_delete_document(
+    document_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Permanently delete a document from trash."""
+    document = db.query(Document).filter(Document.id == document_id).first()
+    if not document:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document not found"
+        )
+    
+    if document.owner_id != current_user.id and not current_user.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Insufficient privileges to delete this document"
+        )
+    
+    if document.status != DocumentStatus.DELETED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Document is not in trash"
+        )
+    
+    try:
+        # Delete associated access logs first
+        db.query(DocumentAccessLog).filter(DocumentAccessLog.document_id == document.id).delete(synchronize_session=False)
+        
+        # Delete file from filesystem
+        file_deleted = False
+        if document.storage_path and os.path.exists(document.storage_path):
+            try:
+                os.remove(document.storage_path)
+                file_deleted = True
+            except Exception as e:
+                print(f"Could not delete file {document.storage_path}: {e}")
+        
+        document_name = document.name
+        
+        # Permanently delete document from database
+        db.delete(document)
+        db.commit()
+        
+        return {
+            "message": f"Permanently deleted '{document_name}'",
+            "file_deleted": file_deleted
+        }
+        
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to permanently delete document: {str(e)}"
         )

@@ -515,6 +515,18 @@ class DocumentStatistics(BaseModel):
     documents_by_status: Dict[str, int] = Field(default_factory=dict)
     storage_usage_by_user: Dict[str, int] = Field(default_factory=dict)
     recent_activity_count: int = 0
+    
+    # Enhanced statistics for better dashboard insights
+    active_documents: int = 0
+    archived_documents: int = 0
+    deleted_documents: int = 0
+    active_storage_size: int = 0
+    archived_storage_size: int = 0
+    deleted_storage_size: int = 0
+    documents_created_today: int = 0
+    documents_modified_today: int = 0
+    avg_document_size: float = 0.0
+    largest_document_size: int = 0
 
 
 # Bulk folder operation schemas

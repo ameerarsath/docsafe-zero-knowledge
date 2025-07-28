@@ -250,7 +250,7 @@ class TemplateService:
                                           document_template="# System Architecture\n\n## High-Level Architecture\n\n## Components\n\n## Data Flow\n\n## Technology Decisions"),
                         FolderStructureItem(name="Database Design", type="folder", description="Database schemas and ERDs", tags=["database"]),
                         FolderStructureItem(name="API Design", type="folder", description="API specifications and documentation", tags=["api"]),
-                        FolderStructureItem(name="UI/UX Design", type="folder", description="User interface designs and mockups", tags=["ui", "ux"])
+                        FolderStructureItem(name="UI-UX Design", type="folder", description="User interface designs and mockups", tags=["ui", "ux"])
                     ]
                 ),
                 FolderStructureItem(
@@ -581,32 +581,71 @@ class TemplateService:
             if not variables.month:
                 variables.month = datetime.now().strftime("%m")
 
-            # Create root folder
-            root_name = request.custom_name or self.resolve_variables(template.name, variables)
-            
-            # Create root folder directly
-            root_folder = Document(
-                name=root_name,
-                description=f"Created from template: {template.name}",
-                document_type="folder",
-                parent_id=request.parent_folder_id,
-                owner_id=user_id,
-                created_by=user_id,
-                tags=template.default_tags if request.apply_tags else [],
-                doc_metadata={
+            # Handle root folder - either use existing or create new
+            if request.target_folder_id:
+                # Apply template to existing folder
+                root_folder = db.query(Document).filter(Document.id == request.target_folder_id).first()
+                if not root_folder:
+                    return TemplateApplicationResult(
+                        success=False,
+                        errors=[f"Target folder with ID {request.target_folder_id} not found"]
+                    )
+                
+                # Verify ownership
+                if root_folder.owner_id != user_id:
+                    return TemplateApplicationResult(
+                        success=False,
+                        errors=["You don't have permission to apply template to this folder"]
+                    )
+                
+                # Update folder metadata to indicate template was applied
+                if not root_folder.doc_metadata:
+                    root_folder.doc_metadata = {}
+                root_folder.doc_metadata.update({
                     "template_id": template.id,
                     "template_name": template.name,
                     "created_from_template": True,
-                    "template_version": template.version
-                }
-            )
-            
-            db.add(root_folder)
-            db.commit()
-            db.refresh(root_folder)
-            
-            # Track created items
-            created_folders = [root_folder.id]
+                    "template_version": template.version,
+                    "template_applied_at": datetime.utcnow().isoformat()
+                })
+                
+                # Apply tags if requested
+                if request.apply_tags and template.default_tags:
+                    existing_tags = set(root_folder.tags or [])
+                    new_tags = set(template.default_tags)
+                    root_folder.tags = list(existing_tags.union(new_tags))
+                
+                db.commit()
+                db.refresh(root_folder)
+                
+                # Track created items (existing folder is not counted as created)
+                created_folders = []
+            else:
+                # Create new root folder
+                root_name = request.custom_name or self.resolve_variables(template.name, variables)
+                
+                root_folder = Document(
+                    name=root_name,
+                    description=f"Created from template: {template.name}",
+                    document_type="folder",
+                    parent_id=request.parent_folder_id,
+                    owner_id=user_id,
+                    created_by=user_id,
+                    tags=template.default_tags if request.apply_tags else [],
+                    doc_metadata={
+                        "template_id": template.id,
+                        "template_name": template.name,
+                        "created_from_template": True,
+                        "template_version": template.version
+                    }
+                )
+                
+                db.add(root_folder)
+                db.commit()
+                db.refresh(root_folder)
+                
+                # Track created items
+                created_folders = [root_folder.id]
             created_documents = []
             errors = []
             warnings = []

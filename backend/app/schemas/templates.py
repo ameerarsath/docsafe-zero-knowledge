@@ -169,8 +169,9 @@ class TemplateApplicationRequest(BaseModel):
     """Request to apply a template to create folder structure"""
     template_id: str = Field(..., description="Template ID to apply")
     parent_folder_id: Optional[int] = Field(None, description="Parent folder ID (null for root)")
+    target_folder_id: Optional[int] = Field(None, description="Apply template to existing folder (alternative to creating new folder)")
     variables: TemplateVariables = Field(default_factory=TemplateVariables, description="Variable values")
-    custom_name: Optional[str] = Field(None, description="Custom name for root folder")
+    custom_name: Optional[str] = Field(None, description="Custom name for root folder (ignored if target_folder_id is provided)")
     apply_permissions: bool = Field(True, description="Apply template permissions")
     apply_tags: bool = Field(True, description="Apply template tags")
     create_documents: bool = Field(False, description="Create placeholder documents")

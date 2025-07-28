@@ -222,10 +222,11 @@ class Document(Base):
         if not name or not name.strip():
             raise ValueError("Document name cannot be empty")
         
-        # Check for invalid characters
-        invalid_chars = ['/', '\\', ':', '*', '?', '"', '<', '>', '|']
-        if any(char in name for char in invalid_chars):
-            raise ValueError(f"Document name contains invalid characters: {invalid_chars}")
+        # Check for invalid characters - remove colon from the list as it's commonly used in document names
+        invalid_chars = ['/', '\\', '*', '?', '"', '<', '>', '|']
+        found_invalid = [char for char in invalid_chars if char in name]
+        if found_invalid:
+            raise ValueError(f"Document name '{name}' contains invalid characters: {found_invalid}")
         
         return name.strip()
 
@@ -338,9 +339,9 @@ class Document(Base):
             "updated_by": self.updated_by,  # Added missing field
             "status": self.status,
             "share_type": self.share_type,
-            "created_at": self.created_at.isoformat() if self.created_at else None,
-            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
-            "accessed_at": self.accessed_at.isoformat() if self.accessed_at else None,
+            "created_at": self.created_at,
+            "updated_at": self.updated_at,
+            "accessed_at": self.accessed_at,
             "is_encrypted": self.is_encrypted,
             "is_shared": self.is_shared,
             "version_number": self.version_number,
@@ -541,7 +542,7 @@ class DocumentAccessLog(Base):
     user = relationship("User", foreign_keys=[user_id])
 
     __table_args__ = (
-        CheckConstraint("action IN ('read', 'write', 'delete', 'share', 'download', 'preview', 'move', 'copy')", 
+        CheckConstraint("action IN ('read', 'write', 'delete', 'share', 'download', 'preview', 'move', 'copy', 'recover')", 
                        name="check_action_type"),
         Index("idx_doc_access_logs_doc_action", "document_id", "action"),
         Index("idx_doc_access_logs_user_accessed", "user_id", "accessed_at"),
