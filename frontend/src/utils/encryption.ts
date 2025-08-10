@@ -505,6 +505,23 @@ export function validateEncryptionParameters(params: Partial<EncryptionParameter
 }
 
 /**
+ * Verify key validation using stored verification payload (for login)
+ */
+export async function verifyKeyValidation(
+  username: string,
+  key: CryptoKey,
+  storedPayload: string
+): Promise<boolean> {
+  try {
+    // Parse the stored JSON payload
+    const payload: ValidationPayload = JSON.parse(storedPayload);
+    return await verifyValidationPayload(username, payload, key);
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Test crypto functionality
  */
 export async function testCryptoFunctionality(): Promise<boolean> {

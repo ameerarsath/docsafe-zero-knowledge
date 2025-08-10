@@ -33,7 +33,10 @@ from ...schemas.auth import (
     TokenRefreshResponse,
     MFAVerificationRequest,
     SessionData,
-    ErrorResponse
+    ErrorResponse,
+    ZeroKnowledgeRegistrationRequest,
+    ZeroKnowledgeRegistrationResponse,
+    SimpleRegistrationRequest
 )
 
 router = APIRouter()
@@ -265,7 +268,12 @@ async def login(
             username=user.username,
             role=user.role,
             must_change_password=user.must_change_password,
-            mfa_required=False
+            mfa_required=False,
+            # Zero-Knowledge encryption parameters (returned after successful stage 1 login)
+            encryption_salt=user.encryption_salt,
+            key_verification_payload=user.key_verification_payload,
+            encryption_method=user.encryption_method,
+            key_derivation_iterations=user.key_derivation_iterations
         )
         
     except Exception as e:
@@ -467,6 +475,88 @@ async def refresh_token(
         )
 
 
+@router.post("/register", response_model=ZeroKnowledgeRegistrationResponse)
+async def zero_knowledge_register(
+    registration_data: ZeroKnowledgeRegistrationRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    redis: RedisManager = Depends(get_redis)
+):
+    """
+    Register a new user with zero-knowledge encryption setup.
+    
+    This endpoint creates a new user account with separate login and encryption credentials.
+    The server stores the encryption salt and verification payload but never sees the 
+    encryption password or derived keys.
+    
+    Args:
+        registration_data: Registration request with login and encryption parameters
+        request: FastAPI request object
+        db: Database session
+        redis: Redis manager
+        
+    Returns:
+        Registration success response
+        
+    Raises:
+        HTTPException: If registration fails
+    """
+    try:
+        # Check if username already exists
+        existing_user = await get_user_by_username(db, registration_data.username)
+        if existing_user:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Username already exists"
+            )
+        
+        # Check if email already exists
+        existing_email = db.query(User).filter(User.email == registration_data.email).first()
+        if existing_email:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Email already exists"
+            )
+        
+        # Create new user with zero-knowledge encryption parameters
+        new_user = User(
+            username=registration_data.username,
+            email=registration_data.email,
+            password=registration_data.password,  # This gets hashed by User.__init__
+            full_name=registration_data.full_name,
+            role="user",
+            is_active=True,
+            is_verified=True,  # Auto-verify for now
+            must_change_password=False,
+            # Zero-Knowledge encryption fields
+            encryption_salt=registration_data.encryption_salt,
+            key_verification_payload=registration_data.key_verification_payload,
+            encryption_method=registration_data.encryption_method,
+            key_derivation_iterations=registration_data.key_derivation_iterations
+        )
+        
+        db.add(new_user)
+        db.commit()
+        db.refresh(new_user)
+        
+        return ZeroKnowledgeRegistrationResponse(
+            message="User registered successfully with zero-knowledge encryption",
+            user_id=new_user.id,
+            username=new_user.username,
+            encryption_configured=True
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        print(f"Registration error: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Registration failed"
+        )
+
+
 @router.get("/me", response_model=dict)
 async def get_current_user_info(
     current_user: User = Depends(get_current_user)
@@ -489,5 +579,135 @@ async def get_current_user_info(
         "mfa_enabled": current_user.mfa_enabled,
         "must_change_password": current_user.must_change_password,
         "last_login": current_user.last_login,
-        "created_at": current_user.created_at
+        "created_at": current_user.created_at,
+        # Zero-Knowledge encryption status
+        "encryption_configured": bool(current_user.encryption_salt and current_user.key_verification_payload),
+        "encryption_method": current_user.encryption_method,
+        "key_derivation_iterations": current_user.key_derivation_iterations,
+        # Zero-Knowledge encryption parameters (needed for key derivation)
+        "encryption_salt": current_user.encryption_salt,
+        "key_verification_payload": current_user.key_verification_payload
     }
+
+
+@router.post("/register/simple", response_model=ZeroKnowledgeRegistrationResponse)
+async def simple_register(
+    request: SimpleRegistrationRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Simplified registration endpoint that generates encryption parameters on server side.
+    This is primarily for testing and backwards compatibility.
+    
+    Args:
+        username: Username for login
+        email: Email address
+        password: Login password
+        encryption_password: Separate password for encryption
+        full_name: Optional full name
+        db: Database session
+        
+    Returns:
+        Registration response
+    """
+    import base64
+    import secrets
+    import json
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+    from cryptography.hazmat.backends import default_backend
+    
+    def derive_key_pbkdf2(password: str, salt: bytes, iterations: int) -> bytes:
+        """Derive key using PBKDF2-SHA256."""
+        kdf = PBKDF2HMAC(
+            algorithm=hashes.SHA256(),
+            length=32,
+            salt=salt,
+            iterations=iterations,
+            backend=default_backend()
+        )
+        return kdf.derive(password.encode('utf-8'))
+    
+    def create_validation_payload(username: str, master_key: bytes) -> dict:
+        """Create validation payload for key verification matching frontend format."""
+        # Create a simple validation string
+        validation_string = f"validation_{username}_{secrets.token_hex(16)}"
+        
+        # Encrypt the validation string with the master key using AES-GCM
+        aesgcm = AESGCM(master_key)
+        iv = secrets.token_bytes(12)  # 12 bytes for GCM
+        ciphertext_with_tag = aesgcm.encrypt(iv, validation_string.encode('utf-8'), None)
+        
+        # AES-GCM returns ciphertext + auth tag combined
+        # Split them: last 16 bytes are auth tag, rest is ciphertext
+        ciphertext = ciphertext_with_tag[:-16]
+        auth_tag = ciphertext_with_tag[-16:]
+        
+        return {
+            'ciphertext': base64.b64encode(ciphertext).decode('utf-8'),
+            'iv': base64.b64encode(iv).decode('utf-8'),
+            'authTag': base64.b64encode(auth_tag).decode('utf-8')
+        }
+    
+    try:
+        # Check if user already exists
+        existing_user = await get_user_by_username(db, request.username)
+        if existing_user:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Username already exists"
+            )
+        
+        existing_email = db.query(User).filter(User.email == request.email).first()
+        if existing_email:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Email already registered"
+            )
+        
+        # Generate encryption parameters server-side
+        salt = secrets.token_bytes(32)
+        salt_base64 = base64.b64encode(salt).decode('utf-8')
+        
+        # Derive key and create validation payload
+        master_key = derive_key_pbkdf2(request.encryption_password, salt, 500000)
+        validation_payload = create_validation_payload(request.username, master_key)
+        
+        # Create new user with generated encryption parameters
+        new_user = User(
+            username=request.username,
+            email=request.email,
+            password=request.password,  # This gets hashed by User.__init__
+            full_name=request.full_name,
+            role="user",
+            is_active=True,
+            is_verified=True,
+            must_change_password=False,
+            # Server-generated zero-knowledge encryption fields
+            encryption_salt=salt_base64,
+            key_verification_payload=json.dumps(validation_payload),
+            encryption_method="PBKDF2-SHA256",
+            key_derivation_iterations=500000
+        )
+        
+        db.add(new_user)
+        db.commit()
+        db.refresh(new_user)
+        
+        return ZeroKnowledgeRegistrationResponse(
+            message="User registered successfully with server-generated encryption parameters",
+            user_id=new_user.id,
+            username=new_user.username,
+            encryption_configured=True
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        print(f"Simple registration error: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Registration failed: {str(e)}"
+        )

@@ -8,8 +8,9 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { RequireAuth } from '../components/auth/ProtectedRoute';
-import { User, LogOut, Settings, FileText, Users, Shield, BarChart3 } from 'lucide-react';
+import { User, LogOut, Settings, FileText, Users, Shield, BarChart3, Key } from 'lucide-react';
 import DashboardStats from '../components/dashboard/DashboardStats';
+import { documentEncryptionService } from '../services/documentEncryption';
 
 export default function DashboardPage() {
   return (
@@ -21,6 +22,9 @@ export default function DashboardPage() {
 
 function DashboardContent() {
   const { user, logout, getRoleName } = useAuth();
+  
+  // Check encryption status
+  const hasZeroKnowledgeKey = documentEncryptionService.hasMasterKey();
 
   const handleLogout = async () => {
     await logout();
@@ -47,6 +51,14 @@ function DashboardContent() {
                     <p className="font-medium text-gray-900">{user?.username}</p>
                     <p className="text-gray-500">{user?.role && getRoleName(user.role)}</p>
                   </div>
+                </div>
+                
+                {/* Encryption Status Indicator */}
+                <div className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                  hasZeroKnowledgeKey ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
+                }`}>
+                  <Key className="h-3 w-3 mr-1" />
+                  {hasZeroKnowledgeKey ? 'Zero-Knowledge Active' : 'No Master Key'}
                 </div>
                 
                 {/* Logout Button */}

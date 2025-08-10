@@ -1,0 +1,4 @@
+This is a test document for upload and preview testing.
+Created at: 2025-08-01T20:11:07.744Z
+File size: Small test file for validation
+Content: Lorem ipsum dolor sit amet, consectetur adipiscing elit.

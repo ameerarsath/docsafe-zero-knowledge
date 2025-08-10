@@ -11,6 +11,8 @@ import { SessionTimeoutManager } from './components/auth/SessionTimeoutWarning';
 
 // Pages
 import LoginPage from './pages/LoginPage';
+import ZeroKnowledgeLoginPage from './pages/ZeroKnowledgeLoginPage';
+import RegisterPage from './pages/RegisterPage';
 import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import ResetPasswordPage from './pages/ResetPasswordPage';
 import ModernDashboardPage from './pages/ModernDashboardPage';
@@ -54,7 +56,9 @@ function App() {
             {/* Main application routes */}
             <Routes>
             {/* Public routes */}
-            <Route path="/login" element={<LoginPage />} />
+            <Route path="/login" element={<ZeroKnowledgeLoginPage />} />
+            <Route path="/login/legacy" element={<LoginPage />} />
+            <Route path="/register" element={<RegisterPage />} />
             <Route path="/forgot-password" element={<ForgotPasswordPage />} />
             <Route path="/reset-password" element={<ResetPasswordPage />} />
             

@@ -1,0 +1,242 @@
+# Page snapshot
+
+```yaml
+- link "SecureVault":
+  - /url: /dashboard
+  - img
+  - text: SecureVault
+- img
+- paragraph: rahumana
+- paragraph: User
+- navigation:
+  - link "Dashboard":
+    - /url: /dashboard
+    - img
+    - text: Dashboard
+  - link "Documents":
+    - /url: /documents
+    - img
+    - text: Documents
+  - button "Trash":
+    - img
+    - text: Trash
+    - img
+- button "Sign Out":
+  - img
+  - text: Sign Out
+- navigation:
+  - link "Dashboard":
+    - /url: /dashboard
+  - img
+  - link "Documents":
+    - /url: /documents
+- button:
+  - img
+- button:
+  - img
+- img
+- text: MFA Disabled
+- img
+- text: Security 50
+- main:
+  - navigation:
+    - button "Root":
+      - img
+      - text: Root
+    - text: 7 items
+  - button "New Folder":
+    - img
+    - text: New Folder
+  - button "Upload Files":
+    - img
+    - text: Upload Files
+  - img
+  - heading "Advanced Search" [level=3]
+  - text: Smart filters • Tag suggestions • Content search
+  - img
+  - textbox "Search by name, content, description, or keywords..."
+  - button "Filters":
+    - img
+    - text: Filters
+    - img
+  - button "Search":
+    - img
+    - text: Search
+  - img
+  - textbox "Quick search (or use advanced search above)..."
+  - combobox:
+    - option "Name A-Z" [selected]
+    - option "Name Z-A"
+    - option "Newest"
+    - option "Oldest"
+    - option "Largest"
+    - option "Smallest"
+  - button:
+    - img
+  - button:
+    - img
+  - button:
+    - img
+  - table:
+    - rowgroup:
+      - row "Name Size Modified Actions":
+        - cell:
+          - checkbox
+        - cell "Name"
+        - cell "Size"
+        - cell "Modified"
+        - cell "Actions"
+    - rowgroup:
+      - row "Data Movement to Data Warehouse.docx 32.35 KB Aug 1, 2025, 10:19 AM":
+        - cell:
+          - checkbox
+        - cell "Data Movement to Data Warehouse.docx":
+          - img
+          - button "Data Movement to Data Warehouse.docx"
+        - cell "32.35 KB"
+        - cell "Aug 1, 2025, 10:19 AM"
+        - cell:
+          - button "Preview":
+            - img
+          - button "Download":
+            - img
+          - button "Share":
+            - img
+          - button "Version History":
+            - img
+          - button "More Actions":
+            - img
+      - row "IMG_0098.JPG 251.91 KB Aug 1, 2025, 08:40 AM":
+        - cell:
+          - checkbox
+        - cell "IMG_0098.JPG":
+          - img
+          - button "IMG_0098.JPG"
+        - cell "251.91 KB"
+        - cell "Aug 1, 2025, 08:40 AM"
+        - cell:
+          - button "Preview":
+            - img
+          - button "Download":
+            - img
+          - button "Share":
+            - img
+          - button "Version History":
+            - img
+          - button "More Actions":
+            - img
+      - row "IMG_0105.JPG 266.45 KB Aug 1, 2025, 08:44 AM":
+        - cell:
+          - checkbox
+        - cell "IMG_0105.JPG":
+          - img
+          - button "IMG_0105.JPG"
+        - cell "266.45 KB"
+        - cell "Aug 1, 2025, 08:44 AM"
+        - cell:
+          - button "Preview":
+            - img
+          - button "Download":
+            - img
+          - button "Share":
+            - img
+          - button "Version History":
+            - img
+          - button "More Actions":
+            - img
+      - row "IMG_0111.JPG 187.44 KB Aug 1, 2025, 12:25 PM":
+        - cell:
+          - checkbox
+        - cell "IMG_0111.JPG":
+          - img
+          - button "IMG_0111.JPG"
+        - cell "187.44 KB"
+        - cell "Aug 1, 2025, 12:25 PM"
+        - cell:
+          - button "Preview":
+            - img
+          - button "Download":
+            - img
+          - button "Share":
+            - img
+          - button "Version History":
+            - img
+          - button "More Actions":
+            - img
+      - row "Pathiram software development project - Aug 1, 2025, 10:21 AM":
+        - cell:
+          - checkbox
+        - cell "Pathiram software development project":
+          - img
+          - button "Pathiram"
+          - img
+          - text: software
+          - img
+          - text: development
+          - img
+          - text: project
+        - cell "-"
+        - cell "Aug 1, 2025, 10:21 AM"
+        - cell:
+          - button "Edit Folder":
+            - img
+          - button "More Actions":
+            - img
+      - row "test - Aug 1, 2025, 08:43 AM":
+        - cell:
+          - checkbox
+        - cell "test":
+          - img
+          - button "test"
+        - cell "-"
+        - cell "Aug 1, 2025, 08:43 AM"
+        - cell:
+          - button "Edit Folder":
+            - img
+          - button "More Actions":
+            - img
+      - row "test-document.txt 200 Bytes Aug 1, 2025, 12:50 PM":
+        - cell:
+          - checkbox
+        - cell "test-document.txt":
+          - img
+          - button "test-document.txt"
+        - cell "200 Bytes"
+        - cell "Aug 1, 2025, 12:50 PM"
+        - cell:
+          - button "Preview":
+            - img
+          - button "Download":
+            - img
+          - button "Share":
+            - img
+          - button "Version History":
+            - img
+          - button "More Actions":
+            - img
+  - heading "Upload Documents" [level=2]
+  - button:
+    - img
+  - heading "Encrypted Document Upload" [level=3]:
+    - img
+    - text: Encrypted Document Upload
+  - button "Hide Session Manager"
+  - button "Force Clear Session"
+  - button "Test Session"
+  - button "Refresh State"
+  - text: Your encryption key needs to be restored. Please enter your encryption password to access your encrypted documents.
+  - img
+  - text: Encryption Key Not Loaded
+  - button "Initialize Encryption Session":
+    - img
+    - text: Initialize Encryption Session
+  - text: Tags (optional)
+  - textbox "Add tags to organize your documents..."
+  - text: Type to add tags, press Enter to confirm
+  - paragraph: Tags help organize and find your documents later
+  - img
+  - text: Click to upload (will prompt for encryption password)
+  - paragraph: Click to upload - will prompt for encryption password if needed
+  - paragraph: "Max file size: 100MB | Supported: PDF, Images, Documents"
+  - paragraph: ✅ Individual files ✅ Entire folders ✅ Nested structure preserved
+```

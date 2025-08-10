@@ -44,6 +44,12 @@ class LoginResponse(BaseModel):
     must_change_password: bool = Field(default=False, description="Whether user must change password")
     mfa_required: Optional[bool] = Field(None, description="Whether MFA is required")
     temp_token: Optional[str] = Field(None, description="Temporary token for MFA completion")
+    
+    # Zero-Knowledge specific fields (returned after stage 1 login)
+    encryption_salt: Optional[str] = Field(None, description="Base64 encoded salt for key derivation")
+    key_verification_payload: Optional[str] = Field(None, description="Encrypted payload for key verification")
+    encryption_method: Optional[str] = Field(None, description="Key derivation method")
+    key_derivation_iterations: Optional[int] = Field(None, description="PBKDF2 iterations count")
 
 
 class TokenData(BaseModel):
@@ -132,6 +138,51 @@ class UserCreate(BaseModel):
         return v
 
 
+class ZeroKnowledgeRegistrationRequest(BaseModel):
+    """Schema for zero-knowledge registration request."""
+    
+    # Standard login credentials
+    username: str = Field(..., min_length=3, max_length=50, description="Username")
+    email: EmailStr = Field(..., description="Email address")
+    password: str = Field(..., min_length=10, description="Login password")
+    full_name: Optional[str] = Field(None, max_length=100, description="Full name")
+    
+    # Zero-Knowledge encryption fields
+    encryption_salt: str = Field(..., description="Base64 encoded salt for PBKDF2 (32 bytes)")
+    key_verification_payload: str = Field(..., description="Encrypted verification payload")
+    encryption_method: str = Field(default="PBKDF2-SHA256", description="Key derivation method")
+    key_derivation_iterations: int = Field(default=500000, ge=100000, description="PBKDF2 iterations")
+    
+    @validator('encryption_salt')
+    def validate_salt(cls, v):
+        """Validate salt format and length."""
+        import base64
+        try:
+            decoded = base64.b64decode(v)
+            if len(decoded) != 32:
+                raise ValueError('Salt must be exactly 32 bytes when base64 decoded')
+            return v
+        except Exception:
+            raise ValueError('Salt must be valid base64 encoded 32 bytes')
+    
+    @validator('encryption_method')
+    def validate_encryption_method(cls, v):
+        """Validate encryption method."""
+        allowed_methods = {'PBKDF2-SHA256'}
+        if v not in allowed_methods:
+            raise ValueError(f'Encryption method must be one of: {allowed_methods}')
+        return v
+
+
+class ZeroKnowledgeRegistrationResponse(BaseModel):
+    """Schema for zero-knowledge registration response."""
+    
+    message: str = Field(..., description="Success message")
+    user_id: int = Field(..., description="Created user ID")
+    username: str = Field(..., description="Username")
+    encryption_configured: bool = Field(default=True, description="Whether encryption is configured")
+
+
 class UserResponse(BaseModel):
     """Schema for user data response."""
     
@@ -151,6 +202,16 @@ class UserResponse(BaseModel):
     class Config:
         """Pydantic configuration."""
         from_attributes = True
+
+
+class SimpleRegistrationRequest(BaseModel):
+    """Schema for simplified registration request."""
+    
+    username: str = Field(..., min_length=3, max_length=50, description="Username")
+    email: EmailStr = Field(..., description="Email address")
+    password: str = Field(..., min_length=10, description="Login password")
+    encryption_password: str = Field(..., min_length=10, description="Encryption password")
+    full_name: Optional[str] = Field(None, max_length=100, description="Full name")
 
 
 class ErrorResponse(BaseModel):

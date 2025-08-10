@@ -203,7 +203,7 @@ export default function AppLayout({ children, title, subtitle }: AppLayoutProps)
       {/* Sidebar */}
       <div className={`fixed inset-y-0 left-0 z-50 w-64 bg-white shadow-lg transform ${
         sidebarOpen ? 'translate-x-0' : '-translate-x-full'
-      } transition-transform duration-300 ease-in-out lg:translate-x-0 lg:relative lg:flex lg:flex-col`}>
+      } transition-transform duration-300 ease-in-out lg:translate-x-0 lg:relative lg:flex lg:flex-col lg:h-screen`}>
         
         {/* Logo/Brand */}
         <div className="flex items-center justify-between h-16 px-6 bg-blue-600">
@@ -233,8 +233,8 @@ export default function AppLayout({ children, title, subtitle }: AppLayoutProps)
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 mt-6 px-3">
-          <div className="space-y-2">
+        <nav className="flex-1 mt-6 px-3 overflow-y-auto">
+          <div className="space-y-2 pb-4">
             {filteredNavigation.map((item, index) => (
               <div key={item.name}>
                 {/* Add section labels for better organization */}
@@ -306,8 +306,8 @@ export default function AppLayout({ children, title, subtitle }: AppLayoutProps)
           </div>
         </nav>
 
-        {/* Logout button at bottom */}
-        <div className="p-3 border-t border-gray-200">
+        {/* Logout button at bottom - always visible */}
+        <div className="flex-shrink-0 p-3 border-t border-gray-200 bg-white">
           <button
             onClick={handleLogout}
             className="w-full flex items-center px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 hover:text-gray-900 rounded-md transition-colors"

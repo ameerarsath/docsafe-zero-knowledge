@@ -84,7 +84,19 @@ const useAuthStore = create<AuthStore>()(
             const response = await authService.login(credentials);
             
             if (response.success && response.data) {
-              const { user_id, username, role, access_token, refresh_token, expires_in, must_change_password } = response.data;
+              const { 
+                user_id, 
+                username, 
+                role, 
+                access_token, 
+                refresh_token, 
+                expires_in, 
+                must_change_password,
+                encryption_salt,
+                key_verification_payload,
+                encryption_method,
+                key_derivation_iterations
+              } = response.data;
               
               // Construct user object from login response
               const user: User = {
@@ -100,7 +112,12 @@ const useAuthStore = create<AuthStore>()(
                 failed_login_attempts: 0,
                 last_login: null,
                 created_at: '',
-                updated_at: ''
+                updated_at: '',
+                // Zero-knowledge encryption fields from login response
+                encryption_salt,
+                key_verification_payload,
+                encryption_method,
+                key_derivation_iterations
               };
               
               set({
@@ -114,6 +131,57 @@ const useAuthStore = create<AuthStore>()(
                 },
                 rememberMe: credentials.remember_me || false,
               });
+              
+              // Try to automatically restore master key if user has encryption configured
+              // This handles the case where login password = encryption password
+              if (encryption_salt && key_verification_payload) {
+                console.log('🔑 Attempting automatic master key restoration during login');
+                try {
+                  // Store encryption parameters for later use
+                  sessionStorage.setItem('user_has_encryption', 'true');
+                  sessionStorage.setItem('encryption_salt', encryption_salt);
+                  sessionStorage.setItem('key_verification_payload', key_verification_payload);
+                  sessionStorage.setItem('key_derivation_iterations', key_derivation_iterations?.toString() || '500000');
+                  sessionStorage.setItem('encryption_method', encryption_method || 'PBKDF2-SHA256');
+                  
+                  // Try to derive master key using login password (in case they're the same)
+                  const { documentEncryptionService } = await import('../services/documentEncryption');
+                  const { 
+                    deriveKey, 
+                    verifyKeyValidation,
+                    base64ToUint8Array
+                  } = await import('../utils/encryption');
+                  
+                  const salt = base64ToUint8Array(encryption_salt);
+                  const masterKey = await deriveKey({
+                    password: credentials.password, // Use login password
+                    salt,
+                    iterations: key_derivation_iterations || 500000
+                  });
+                  
+                  // Verify if this derived key is correct
+                  const isValidKey = await verifyKeyValidation(
+                    username,
+                    masterKey,
+                    key_verification_payload
+                  );
+                  
+                  if (isValidKey) {
+                    console.log('✅ Master key automatically restored using login password');
+                    await documentEncryptionService.setMasterKey(masterKey);
+                    // Clear the prompt flag since we successfully restored the key
+                    sessionStorage.removeItem('prompt_encryption_password');
+                  } else {
+                    console.log('❌ Login password is different from encryption password - will prompt later');
+                    // Set a flag to prompt for encryption password later
+                    sessionStorage.setItem('prompt_encryption_password', 'true');
+                  }
+                } catch (error) {
+                  console.log('⚠️ Failed to automatically restore master key:', error);
+                  // Set a flag to prompt for encryption password later
+                  sessionStorage.setItem('prompt_encryption_password', 'true');
+                }
+              }
               
               // Start session management
               get().startSessionTimer();
@@ -166,6 +234,25 @@ const useAuthStore = create<AuthStore>()(
           
           // Stop session timers
           get().stopSessionTimer();
+          
+          // Clear encryption restoration flags
+          sessionStorage.removeItem('user_has_encryption');
+          sessionStorage.removeItem('encryption_salt');
+          sessionStorage.removeItem('key_verification_payload');
+          sessionStorage.removeItem('key_derivation_iterations');
+          sessionStorage.removeItem('encryption_method');
+          sessionStorage.removeItem('has_master_key');
+          sessionStorage.removeItem('master_key_set_at');
+          sessionStorage.removeItem('prompt_encryption_password');
+          sessionStorage.removeItem('temp_master_key_data'); // Clear persistent master key data
+          
+          // Clear master key from document encryption service
+          try {
+            const { documentEncryptionService } = await import('../services/documentEncryption');
+            documentEncryptionService.clearMasterKey();
+          } catch (error) {
+            // Service might not be loaded yet
+          }
           
           // Clear state
           set({
@@ -402,6 +489,29 @@ const useAuthStore = create<AuthStore>()(
               isAuthenticated: true,
               isLoading: false,
             });
+            
+            // Check if user has encryption configured but master key is missing
+            const { documentEncryptionService } = await import('../services/documentEncryption');
+            const hasUserData = authStatus.user.encryption_salt && authStatus.user.key_verification_payload;
+            const hasMasterKey = documentEncryptionService.hasMasterKey();
+            
+            if (hasUserData && !hasMasterKey) {
+              console.log('🔑 User has encryption configured but master key missing from memory');
+              // Store encryption parameters for later restoration
+              sessionStorage.setItem('user_has_encryption', 'true');
+              sessionStorage.setItem('encryption_salt', authStatus.user.encryption_salt);
+              sessionStorage.setItem('key_verification_payload', authStatus.user.key_verification_payload);
+              sessionStorage.setItem('key_derivation_iterations', authStatus.user.key_derivation_iterations?.toString() || '500000');
+              sessionStorage.setItem('encryption_method', authStatus.user.encryption_method || 'PBKDF2-SHA256');
+              
+              // Set a flag to show encryption password prompt after login
+              sessionStorage.setItem('prompt_encryption_password', 'true');
+            } else if (hasMasterKey) {
+              // Master key is already loaded, user has zero-knowledge encryption working
+              // Keep the user_has_encryption flag but we don't need restoration prompts
+              console.log('🔑 Master key already loaded, zero-knowledge encryption is active');
+              sessionStorage.setItem('user_has_encryption', 'true');
+            }
             
             // Start session timer if not already running
             if (!sessionTimer) {

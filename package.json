@@ -1,0 +1,30 @@
+{
+  "name": "ai-docsafe-e2e-tests",
+  "version": "1.0.0",
+  "description": "End-to-end testing for AI DocSafe upload and preview functionality",
+  "scripts": {
+    "test": "playwright test",
+    "test:headed": "playwright test --headed",
+    "test:debug": "playwright test --debug",
+    "test:ui": "playwright test --ui",
+    "test:report": "playwright show-report",
+    "test:install": "playwright install",
+    "test:upload-flow": "playwright test test-upload-preview.spec.js",
+    "test:hmr": "playwright test test-hmr-resilience.spec.js",
+    "test:quick": "playwright test --workers=1 --project=chromium"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.40.0"
+  },
+  "keywords": [
+    "e2e",
+    "testing",
+    "playwright",
+    "zero-knowledge",
+    "encryption",
+    "upload",
+    "preview"
+  ],
+  "author": "AI DocSafe Team",
+  "license": "MIT"
+}

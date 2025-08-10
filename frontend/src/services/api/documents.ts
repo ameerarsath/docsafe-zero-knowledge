@@ -46,12 +46,28 @@ export interface Document {
   doc_metadata: Record<string, any>;
   
   encryption_key_id?: string;
+  encrypted_dek?: string; // Document Encryption Key encrypted with user's master key
   encryption_iv?: string;
   encryption_auth_tag?: string;
   
   path?: string;
   depth?: number;
   children?: Document[];
+  
+  // Enhanced search fields
+  author_name?: string;
+  author_email?: string;
+  file_category?: string;
+  
+  // Permission flags
+  can_read?: boolean;
+  can_write?: boolean;
+  can_delete?: boolean;
+  can_share?: boolean;
+  
+  // Security flags
+  is_sensitive?: boolean;
+  is_shared?: boolean;
 }
 
 export interface DocumentListParams {
@@ -64,6 +80,56 @@ export interface DocumentListParams {
   sort_order?: 'asc' | 'desc';
   page?: number;
   size?: number;
+}
+
+export interface DocumentSearchFilters {
+  document_type?: 'document' | 'folder';
+  status?: 'active' | 'archived' | 'deleted' | 'quarantined';
+  owner_id?: number;
+  parent_id?: number | null;
+  mime_type?: string;
+  is_shared?: boolean;
+  is_sensitive?: boolean;
+  tags?: string[];
+  created_after?: string;
+  created_before?: string;
+  updated_after?: string;
+  updated_before?: string;
+  min_size?: number;
+  max_size?: number;
+  
+  // Enhanced search filters
+  author_id?: number;
+  file_category?: 'document' | 'spreadsheet' | 'presentation' | 'image' | 'video' | 'audio' | 'archive' | 'code' | 'other';
+  size_range?: 'small' | 'medium' | 'large' | 'huge';
+  date_range?: 'today' | 'week' | 'month' | 'quarter' | 'year' | 'older';
+}
+
+export interface DocumentSearchParams {
+  query?: string;
+  filters?: DocumentSearchFilters;
+  sort_by?: string;
+  sort_order?: 'asc' | 'desc';
+  page?: number;
+  size?: number;
+}
+
+export interface TagSuggestion {
+  tag: string;
+  count?: number;
+}
+
+export interface AuthorSuggestion {
+  id: number;
+  full_name: string;
+  email: string;
+  document_count: number;
+}
+
+export interface FileCategory {
+  name: string;
+  label: string;
+  count: number;
 }
 
 export interface DocumentListResponse {
@@ -252,13 +318,11 @@ export class DocumentsApiService {
 
       // Downloaded encrypted blob successfully
 
-      // Check if the document has encryption metadata
-      if (document.encryption_key_id && document.encryption_iv && document.encryption_auth_tag) {
-        // Document is encrypted, starting decryption
-        // Document is encrypted, decrypt it
+      // Check if the document has DEK encryption metadata
+      if (document.encrypted_dek && document.encryption_iv) {
+        // Document is encrypted with DEK architecture, decrypt it
         await this.decryptAndDownload(encryptedBlob, document, filename);
       } else {
-        // Document is not encrypted, downloading as-is
         // Document is not encrypted, download as-is
         this.downloadBlob(encryptedBlob, filename);
       }
@@ -269,119 +333,44 @@ export class DocumentsApiService {
   }
 
   /**
-   * Decrypt and download an encrypted document
+   * Decrypt and download an encrypted document using DEK architecture
    */
   private async decryptAndDownload(encryptedBlob: Blob, document: Document, filename: string): Promise<void> {
     // Dynamic import to avoid circular dependencies
-    const { decrypt, deriveKey, base64ToArrayBuffer, base64ToUint8Array } = await import('../../utils/encryption');
-    const { encryptionApi } = await import('./encryption');
+    const { documentEncryptionService } = await import('../documentEncryption');
 
     try {
-      // Starting decryption process for document
-
-      // Get the encryption key
-      const encryptionKey = await encryptionApi.getKey(document.encryption_key_id!);
-      // Retrieved encryption key successfully
-      
-      // Prompt user for password to derive the decryption key
-      const userPassword = window.prompt('Enter your encryption password to decrypt this document:');
-      if (!userPassword) {
-        throw new Error('Password required for decryption');
+      // Check if document has DEK information
+      if (!document.encrypted_dek) {
+        throw new Error('Document does not have encryption key information');
       }
 
-      // Derive the decryption key
-      const salt = base64ToUint8Array(encryptionKey.salt);
-      // Salt processed for key derivation
-      
-      const cryptoKey = await deriveKey({
-        password: userPassword,
-        salt,
-        iterations: encryptionKey.iterations
-      });
-      // Derived crypto key successfully
+      // Check if master key is available in the encryption service
+      if (!documentEncryptionService.hasMasterKey()) {
+        throw new Error('Master key not available. Please log in with your encryption password.');
+      }
 
       // Convert blob to array buffer for decryption
       const arrayBuffer = await encryptedBlob.arrayBuffer();
-      const uint8Array = new Uint8Array(arrayBuffer);
-      // Downloaded file processed for decryption
       
-      // Try both approaches: using auth tag from file vs database
-      const authTagLength = 16; // 128 bits for AES-GCM
-      const ciphertextLength = uint8Array.length - authTagLength;
-      
-      const ciphertext = uint8Array.slice(0, ciphertextLength);
-      const authTagFromFile = uint8Array.slice(ciphertextLength);
-      
-      // Split file data into ciphertext and auth tag
-
-      // Convert to base64 for the decryption function (handle large arrays safely)
-      const ciphertextBase64 = btoa(Array.from(ciphertext).map(byte => String.fromCharCode(byte)).join(''));
-      const authTagFromFileBase64 = btoa(String.fromCharCode(...authTagFromFile));
-      
-      // Base64 conversions completed
-
-      let decryptedData;
-      
-      // Try with auth tag from file first
-      try {
-        // Attempting decryption with auth tag from file
-        decryptedData = await decrypt({
-          ciphertext: ciphertextBase64,
-          iv: document.encryption_iv!,
-          authTag: authTagFromFileBase64,
-          key: cryptoKey
-        });
-        // Decryption successful using auth tag from file
-      } catch (fileAuthError) {
-        // Decryption failed with file auth tag
-        
-        // Try with auth tag from database
-        try {
-          // Attempting decryption with auth tag from database
-          decryptedData = await decrypt({
-            ciphertext: ciphertextBase64,
-            iv: document.encryption_iv!,
-            authTag: document.encryption_auth_tag!,
-            key: cryptoKey
-          });
-          // Decryption successful using auth tag from database
-        } catch (dbAuthError) {
-          // Decryption failed with database auth tag
-          
-          // Try direct Web Crypto API decryption (entire file as-is)
-          try {
-            // Attempting direct Web Crypto API decryption
-            const iv = base64ToUint8Array(document.encryption_iv!);
-            const decryptParams = {
-              name: 'AES-GCM',
-              iv: iv
-            };
-            
-            decryptedData = await window.crypto.subtle.decrypt(
-              decryptParams,
-              cryptoKey,
-              uint8Array
-            );
-            // Direct Web Crypto API decryption successful
-          } catch (directError) {
-            // Direct Web Crypto API decryption failed
-            throw new Error('All decryption methods failed');
-          }
+      // Decrypt the document using the DEK architecture
+      const decryptionResult = await documentEncryptionService.decryptDocument(
+        document,
+        arrayBuffer,
+        (progress) => {
+          console.log(`Decryption progress: ${progress.stage} - ${progress.progress}% - ${progress.message}`);
         }
-      }
-
-      // Decryption completed successfully
+      );
 
       // Create decrypted file blob
-      const decryptedBlob = new Blob([decryptedData], { type: document.mime_type || 'application/octet-stream' });
-      // Created decrypted blob successfully
+      const decryptedBlob = new Blob([decryptionResult.decryptedData], { 
+        type: decryptionResult.mimeType 
+      });
       
       // Download the decrypted file
       this.downloadBlob(decryptedBlob, filename);
-      // Download initiated successfully
       
     } catch (error) {
-      // Decryption failed
       throw new Error(`Failed to decrypt document: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
@@ -482,10 +471,85 @@ export class DocumentsApiService {
   }
 
   /**
-   * Search documents
+   * Search documents (legacy method - uses simple list search)
    */
   async searchDocuments(query: string, filters?: Partial<DocumentListParams>): Promise<DocumentListResponse> {
     return this.listDocuments({ ...filters, search: query });
+  }
+
+  /**
+   * Enhanced search documents with advanced filtering
+   */
+  async searchDocumentsAdvanced(params: DocumentSearchParams): Promise<DocumentListResponse> {
+    const searchPayload = {
+      query: params.query || '',
+      filters: params.filters || {},
+      sort_by: params.sort_by || 'updated_at',
+      sort_order: params.sort_order || 'desc',
+      page: params.page || 1,
+      size: params.size || 20
+    };
+
+    const response = await apiRequest<DocumentListResponse>('POST', '/api/v1/documents/search', searchPayload);
+    
+    if (!response.success) {
+      console.error('Enhanced search API error:', response.error);
+      throw new Error(response.error?.detail || 'Failed to search documents');
+    }
+    
+    return response.data!;
+  }
+
+  /**
+   * Get tag suggestions for search
+   */
+  async getTagSuggestions(query: string = '', limit: number = 10): Promise<string[]> {
+    const searchParams = new URLSearchParams({
+      query,
+      limit: limit.toString()
+    });
+
+    const response = await apiRequest<string[]>('GET', `/api/v1/documents/search/suggestions/tags?${searchParams}`);
+    
+    if (!response.success) {
+      console.error('Tag suggestions API error:', response.error);
+      throw new Error(response.error?.detail || 'Failed to get tag suggestions');
+    }
+    
+    return response.data!;
+  }
+
+  /**
+   * Get author suggestions for search (admin only)
+   */
+  async getAuthorSuggestions(query: string = '', limit: number = 10): Promise<AuthorSuggestion[]> {
+    const searchParams = new URLSearchParams({
+      query,
+      limit: limit.toString()
+    });
+
+    const response = await apiRequest<AuthorSuggestion[]>('GET', `/api/v1/documents/search/suggestions/authors?${searchParams}`);
+    
+    if (!response.success) {
+      console.error('Author suggestions API error:', response.error);
+      throw new Error(response.error?.detail || 'Failed to get author suggestions');
+    }
+    
+    return response.data!;
+  }
+
+  /**
+   * Get file categories with counts
+   */
+  async getFileCategories(): Promise<FileCategory[]> {
+    const response = await apiRequest<FileCategory[]>('GET', '/api/v1/documents/search/file-categories');
+    
+    if (!response.success) {
+      console.error('File categories API error:', response.error);
+      throw new Error(response.error?.detail || 'Failed to get file categories');
+    }
+    
+    return response.data!;
   }
 
   /**

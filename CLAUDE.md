@@ -206,4 +206,5 @@ docker-compose exec backend alembic downgrade -1
 
 ## Development Memories
 - Frontend runs on port 3005, backend on port 8002, postgres on port 5430
-- Test credentials for arahuman: TestPass123@
+- Test credentials for rahumana : TestPass123@
+- Encryption password : JHNpAZ39g!&Y

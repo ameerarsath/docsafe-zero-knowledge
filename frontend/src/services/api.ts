@@ -104,9 +104,16 @@ class TokenManager {
 apiClient.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
     const token = TokenManager.getAccessToken();
-    if (token && !TokenManager.isTokenExpired()) {
+    const isExpired = TokenManager.isTokenExpired();
+    
+    console.log('🌐 API REQUEST:', config.url, 'token exists:', !!token, 'isExpired:', isExpired);
+    
+    if (token && !isExpired) {
       config.headers = config.headers || {} as AxiosRequestHeaders;
       config.headers.Authorization = `Bearer ${token}`;
+      console.log('✅ API REQUEST: Authorization header added');
+    } else {
+      console.warn('❌ API REQUEST: No valid token available');
     }
     return config;
   },

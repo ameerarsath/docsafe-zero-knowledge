@@ -133,6 +133,7 @@ class Document(Base):
     # Encryption information
     encryption_algorithm = Column(String(50), default=EncryptionAlgorithm.AES_256_GCM)
     encryption_key_id = Column(String(100))  # Reference to key management system
+    encrypted_dek = Column(Text, nullable=True)  # Document Encryption Key encrypted with user's master key
     encryption_iv = Column(LargeBinary(16))  # Initialization vector for encryption
     encryption_auth_tag = Column(LargeBinary(16))  # Authentication tag for GCM mode
     is_encrypted = Column(Boolean, default=True, nullable=False)
@@ -354,6 +355,7 @@ class Document(Base):
             # Encryption fields
             "encryption_algorithm": self.encryption_algorithm,
             "encryption_key_id": self.encryption_key_id,
+            "encrypted_dek": self.encrypted_dek,
             "encryption_iv": base64.b64encode(self.encryption_iv).decode('utf-8') if self.encryption_iv else None,
             "encryption_auth_tag": base64.b64encode(self.encryption_auth_tag).decode('utf-8') if self.encryption_auth_tag else None,
         }

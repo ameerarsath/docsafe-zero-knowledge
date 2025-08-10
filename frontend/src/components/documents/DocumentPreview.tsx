@@ -25,6 +25,7 @@ import {
 import { Document } from '../../hooks/useDocuments';
 import { documentsApi } from '../../services/api/documents';
 import { useEncryption } from '../../hooks/useEncryption';
+import { documentEncryptionService } from '../../services/documentEncryption';
 
 interface DocumentPreviewProps {
   document: Document;
@@ -73,6 +74,7 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
   // Use encryption hook for decryption
   const { decryptDownloadedFile, keys } = useEncryption();
 
+
   /**
    * Update state helper
    */
@@ -106,11 +108,16 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
   /**
    * Decrypt and load preview content
    */
-  const decryptAndPreview = useCallback(async (encryptionPassword: string) => {
+  const decryptAndPreview = useCallback(async (encryptionPassword?: string) => {
     if (!document || !isPreviewable(document)) {
       updateState({ content: null, error: 'Preview not available for this file type' });
       return;
     }
+
+    console.log('🔍 DocumentPreview: Starting decryption for document:', document.name);
+    console.log('🔍 DocumentPreview: Has zero-knowledge master key:', documentEncryptionService.hasMasterKey());
+    console.log('🔍 DocumentPreview: Document has DEK info:', !!document.encrypted_dek);
+    console.log('🔍 DocumentPreview: Encryption password provided:', !!encryptionPassword);
 
     updateState({ isDecrypting: true, error: null });
 
@@ -130,10 +137,56 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
       }
 
       const encryptedBlob = await response.blob();
-      // Downloaded encrypted blob successfully
+      console.log('🔍 DocumentPreview: Downloaded encrypted blob, size:', encryptedBlob.size);
 
-      // Check if document has encryption metadata
-      if (document.encryption_key_id && document.encryption_iv && document.encryption_auth_tag) {
+      // Check for zero-knowledge encryption first (DEK-based)
+      if (document.encrypted_dek && document.encryption_iv) {
+        if (documentEncryptionService.hasMasterKey()) {
+          console.log('🔐 DocumentPreview: Using zero-knowledge decryption with master key');
+          
+          // Convert blob to ArrayBuffer for decryption
+          const encryptedData = await encryptedBlob.arrayBuffer();
+          
+          // Use DocumentEncryptionService for zero-knowledge decryption
+          const decryptionResult = await documentEncryptionService.decryptDocument(
+            document,
+            encryptedData,
+            (progress) => {
+              console.log('🔍 DocumentPreview: Decryption progress:', progress);
+            }
+          );
+          
+          console.log('✅ DocumentPreview: Zero-knowledge decryption successful');
+          
+          // Create blob URL for preview
+          const decryptedBlob = new Blob([decryptionResult.decryptedData], { 
+            type: decryptionResult.mimeType 
+          });
+          const blobUrl = URL.createObjectURL(decryptedBlob);
+          
+          updateState({
+            content: document.mime_type === 'application/pdf' ? 'pdf-viewer' : 'decrypted-content',
+            isDecrypting: false,
+            needsPassword: false,
+            decryptedBlob: decryptedBlob,
+            blobUrl: blobUrl
+          });
+        } else {
+          console.log('🔑 DocumentPreview: Zero-knowledge document but no master key - prompting for encryption password');
+          updateState({
+            needsPassword: true,
+            isDecrypting: false,
+            error: 'Encryption password required to decrypt this document'
+          });
+          return;
+        }
+        
+      } else if (document.encryption_key_id && document.encryption_iv && document.encryption_auth_tag) {
+        console.log('🔑 DocumentPreview: Using legacy encryption decryption');
+        
+        if (!encryptionPassword) {
+          throw new Error('Password required for legacy encrypted document');
+        }
         // Decrypting document with metadata
 
         // Convert blob to ArrayBuffer for decryption
@@ -188,6 +241,37 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
       });
     }
   }, [document, isPreviewable, updateState, decryptDownloadedFile]);
+
+  // Auto-decrypt zero-knowledge encrypted documents
+  useEffect(() => {
+    if (!document || !isOpen) return;
+
+    // Check if this is a zero-knowledge encrypted document with master key available
+    const hasZeroKnowledgeEncryption = document.encrypted_dek && document.encryption_iv;
+    const hasMasterKey = documentEncryptionService.hasMasterKey();
+    
+    console.log('🔍 DocumentPreview: useEffect - Auto-decrypt check:', {
+      hasZeroKnowledgeEncryption,
+      hasMasterKey,
+      documentName: document.name
+    });
+
+    if (hasZeroKnowledgeEncryption && hasMasterKey) {
+      console.log('✅ DocumentPreview: Auto-starting zero-knowledge decryption');
+      updateState({ needsPassword: false });
+      decryptAndPreview(); // No password needed for zero-knowledge
+    } else if (hasZeroKnowledgeEncryption && !hasMasterKey) {
+      console.log('⚠️ DocumentPreview: Zero-knowledge document but no master key');
+      updateState({ needsPassword: true, error: 'Master key not available. Please refresh or re-enter your encryption password.' });
+    } else if (document.encryption_key_id) {
+      console.log('🔑 DocumentPreview: Legacy encrypted document - password required');
+      updateState({ needsPassword: true });
+    } else {
+      console.log('📄 DocumentPreview: Unencrypted document');
+      updateState({ needsPassword: false });
+      decryptAndPreview(); // No encryption, direct preview
+    }
+  }, [document, isOpen, decryptAndPreview, updateState]);
 
   /**
    * Handle password submission
@@ -306,12 +390,26 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
     }
 
     if (state.error) {
+      const isEncryptionError = state.error.includes('Encryption password') || state.error.includes('decrypt');
       return (
         <div className="flex items-center justify-center h-64">
           <div className="text-center">
             <AlertCircle className="w-8 h-8 text-red-500 mx-auto mb-4" />
             <p className="text-red-600 mb-2">Preview Unavailable</p>
-            <p className="text-gray-500 text-sm">{state.error}</p>
+            <p className="text-gray-500 text-sm mb-4">{state.error}</p>
+            {isEncryptionError && (
+              <button
+                onClick={() => {
+                  // Trigger the upload component's session manager
+                  window.dispatchEvent(new CustomEvent('requestEncryptionPassword'));
+                  onClose(); // Close preview and let user set up encryption again
+                }}
+                className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                <Eye className="w-4 h-4 mr-2" />
+                Restore Encryption Session
+              </button>
+            )}
           </div>
         </div>
       );

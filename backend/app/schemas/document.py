@@ -137,15 +137,32 @@ class DocumentUpload(BaseModel):
     doc_metadata: Dict[str, Any] = Field(default_factory=dict, description="Additional metadata")
     is_sensitive: bool = Field(False, description="Whether file contains sensitive data")
     
-    # Encryption information
-    encryption_key_id: str = Field(..., description="Encryption key identifier")
-    encryption_iv: str = Field(..., description="Base64 encoded initialization vector")
-    encryption_auth_tag: str = Field(..., description="Base64 encoded authentication tag")
+    # Legacy encryption information (for backward compatibility)
+    encryption_key_id: Optional[str] = Field(None, description="Encryption key identifier")
+    encryption_iv: Optional[str] = Field(None, description="Base64 encoded initialization vector")
+    encryption_auth_tag: Optional[str] = Field(None, description="Base64 encoded authentication tag")
+    
+    # Zero-Knowledge encryption information (DEK-per-document architecture)
+    encrypted_dek: Optional[str] = Field(None, description="Encrypted Document Encryption Key (JSON)")
+    encryption_algorithm: Optional[str] = Field(None, description="Encryption algorithm used")
+    original_filename: Optional[str] = Field(None, description="Original filename for zero-knowledge uploads")
+    mime_type: str = Field(..., description="MIME type of the file")
+    original_size: Optional[int] = Field(None, description="Original file size for zero-knowledge uploads")
     
     # File validation
     file_size: int = Field(..., gt=0, description="File size in bytes")
-    file_hash: str = Field(..., description="SHA256 hash of original file")
-    mime_type: str = Field(..., description="MIME type of the file")
+    file_hash: Optional[str] = Field(None, description="SHA256 hash of original file")
+    
+    @root_validator(skip_on_failure=True)
+    def validate_encryption_method(cls, values):
+        """Validate that either legacy or zero-knowledge encryption is provided."""
+        has_legacy = all(values.get(field) for field in ['encryption_key_id', 'encryption_iv', 'encryption_auth_tag'])
+        has_zero_knowledge = values.get('encrypted_dek') is not None
+        
+        if not (has_legacy or has_zero_knowledge):
+            raise ValueError("Either legacy encryption fields or zero-knowledge encrypted_dek must be provided")
+        
+        return values
     
     @validator('file_size')
     def validate_file_size(cls, v):
@@ -205,6 +222,11 @@ class Document(DocumentBase):
     can_write: bool = False
     can_delete: bool = False
     can_share: bool = False
+    
+    # Enhanced search fields
+    author_name: Optional[str] = None
+    author_email: Optional[str] = None
+    file_category: Optional[str] = None
 
     class Config:
         orm_mode = True
@@ -413,12 +435,12 @@ class DocumentAccessLog(BaseModel):
 
 # Search and filter schemas
 class DocumentFilter(BaseModel):
-    """Schema for document filtering."""
+    """Schema for document filtering with enhanced capabilities."""
     document_type: Optional[DocumentType] = None
     status: Optional[DocumentStatus] = None
     owner_id: Optional[int] = None
     parent_id: Optional[int] = None
-    mime_type: Optional[str] = None
+    mime_type: Optional[str] = Field(None, description="MIME type or file category (document, image, etc.)")
     is_shared: Optional[bool] = None
     is_sensitive: Optional[bool] = None
     tags: Optional[List[str]] = None
@@ -428,6 +450,39 @@ class DocumentFilter(BaseModel):
     updated_before: Optional[datetime] = None
     min_size: Optional[int] = Field(None, ge=0, description="Minimum file size in bytes")
     max_size: Optional[int] = Field(None, ge=0, description="Maximum file size in bytes")
+    
+    # Enhanced search filters
+    author_id: Optional[int] = Field(None, description="Document author/creator ID (admin only)")
+    file_category: Optional[str] = Field(None, description="File category (document, image, video, etc.)")
+    size_range: Optional[str] = Field(None, description="Smart size range (small, medium, large, huge)")
+    date_range: Optional[str] = Field(None, description="Smart date range (today, week, month, year)")
+    
+    @validator('size_range')
+    def validate_size_range(cls, v):
+        """Validate size range options."""
+        if v is not None:
+            allowed_ranges = ['small', 'medium', 'large', 'huge']
+            if v not in allowed_ranges:
+                raise ValueError(f"Size range must be one of: {allowed_ranges}")
+        return v
+    
+    @validator('date_range')
+    def validate_date_range(cls, v):
+        """Validate date range options."""
+        if v is not None:
+            allowed_ranges = ['today', 'week', 'month', 'quarter', 'year', 'older']
+            if v not in allowed_ranges:
+                raise ValueError(f"Date range must be one of: {allowed_ranges}")
+        return v
+    
+    @validator('file_category')
+    def validate_file_category(cls, v):
+        """Validate file category options."""
+        if v is not None:
+            allowed_categories = ['document', 'spreadsheet', 'presentation', 'image', 'video', 'audio', 'archive', 'code', 'other']
+            if v not in allowed_categories:
+                raise ValueError(f"File category must be one of: {allowed_categories}")
+        return v
 
 
 class DocumentSearch(BaseModel):

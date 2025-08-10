@@ -1,13 +1,11 @@
 /**
  * Key Management Page for SecureVault
  * 
- * Provides comprehensive encryption key management for admin users:
- * - View all encryption keys in the system
- * - Generate new encryption keys
- * - Rotate existing keys
- * - Manage admin escrow keys
- * - Key recovery operations
- * - Key audit trail
+ * Provides comprehensive encryption key management for both users and admins:
+ * - User-focused zero-knowledge key management
+ * - Admin-level system key management
+ * - Key rotation and security operations
+ * - Security audits and diagnostics
  */
 
 import React, { useState, useEffect } from 'react';
@@ -32,12 +30,14 @@ import {
   Filter,
   Calendar,
   Lock,
-  Unlock
+  Unlock,
+  Settings
 } from 'lucide-react';
 import { LoadingSpinner } from '../components/ui';
 import AppLayout from '../components/layout/AppLayout';
 import { encryptionApi, EncryptionKey as ApiEncryptionKey } from '../services/api/encryptionService';
 import SessionKeyManager from '../components/security/SessionKeyManager';
+import KeyManagementInterface from '../components/security/KeyManagementInterface';
 
 interface EncryptionKey {
   id: string;
@@ -82,7 +82,10 @@ interface KeyGenerationRequest {
   expires_days?: number;
 }
 
+type ManagementTab = 'user' | 'admin';
+
 export default function KeyManagementPage() {
+  const [activeTab, setActiveTab] = useState<ManagementTab>('user');
   const [keys, setKeys] = useState<EncryptionKey[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -308,35 +311,78 @@ export default function KeyManagementPage() {
   return (
     <AppLayout 
       title="Key Management" 
-      subtitle="Manage encryption keys and admin escrow"
+      subtitle="Manage your encryption keys and security settings"
     >
       <div className="space-y-6">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900 flex items-center space-x-2">
-              <Key className="w-8 h-8 text-blue-600" />
-              <span>Key Management</span>
-            </h1>
-            <p className="text-gray-600">Manage encryption keys and admin escrow</p>
+        {/* Header with Tab Navigation */}
+        <div className="bg-white shadow-sm rounded-lg">
+          <div className="px-6 py-4 border-b border-gray-200">
+            <div className="flex items-center justify-between">
+              <div>
+                <h1 className="text-2xl font-bold text-gray-900 flex items-center space-x-2">
+                  <Shield className="w-8 h-8 text-blue-600" />
+                  <span>Key Management</span>
+                </h1>
+                <p className="text-gray-600">Manage your encryption keys and security settings</p>
+              </div>
+            </div>
           </div>
-        <div className="flex items-center space-x-3">
-          <button
-            onClick={loadKeys}
-            className="inline-flex items-center px-3 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
-          >
-            <RefreshCw className="w-4 h-4 mr-2" />
-            Refresh
-          </button>
-          <button
-            onClick={() => setShowGenerateModal(true)}
-            className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-          >
-            <Plus className="w-4 h-4 mr-2" />
-            Generate Key
-          </button>
+
+          {/* Tab Navigation */}
+          <div className="flex space-x-6 px-6">
+            <button
+              onClick={() => setActiveTab('user')}
+              className={`py-4 px-2 border-b-2 font-medium text-sm flex items-center ${
+                activeTab === 'user'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              <User className="h-4 w-4 mr-2" />
+              Personal Keys
+            </button>
+            <button
+              onClick={() => setActiveTab('admin')}
+              className={`py-4 px-2 border-b-2 font-medium text-sm flex items-center ${
+                activeTab === 'admin'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              <Settings className="h-4 w-4 mr-2" />
+              System Keys
+            </button>
+          </div>
         </div>
-      </div>
+
+        {/* Tab Content */}
+        {activeTab === 'user' ? (
+          <KeyManagementInterface />
+        ) : (
+          <div className="space-y-6">
+            {/* Admin Header */}
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-xl font-semibold text-gray-900">System Key Administration</h2>
+                <p className="text-gray-600">Manage system-wide encryption keys and admin escrow</p>
+              </div>
+              <div className="flex items-center space-x-3">
+                <button
+                  onClick={loadKeys}
+                  className="inline-flex items-center px-3 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
+                >
+                  <RefreshCw className="w-4 h-4 mr-2" />
+                  Refresh
+                </button>
+                <button
+                  onClick={() => setShowGenerateModal(true)}
+                  className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                >
+                  <Plus className="w-4 h-4 mr-2" />
+                  Generate Key
+                </button>
+              </div>
+            </div>
 
       {/* Session Management */}
       <div className="bg-white rounded-lg border border-gray-200 p-6">
@@ -588,80 +634,82 @@ export default function KeyManagementPage() {
         )}
       </div>
 
-      {/* Generate Key Modal */}
-      {showGenerateModal && (
-        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-md">
-            <h3 className="text-lg font-medium text-gray-900 mb-4">Generate New Key</h3>
-            <form onSubmit={(e) => {
-              e.preventDefault();
-              const formData = new FormData(e.target as HTMLFormElement);
-              handleGenerateKey({
-                key_type: formData.get('key_type') as 'user' | 'admin_escrow' | 'system',
-                algorithm: formData.get('algorithm') as string,
-                key_size: parseInt(formData.get('key_size') as string),
-                expires_days: parseInt(formData.get('expires_days') as string) || undefined
-              });
-            }}>
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Key Type</label>
-                  <select name="key_type" required className="w-full border border-gray-300 rounded-lg px-3 py-2">
-                    <option value="user">User Key</option>
-                    <option value="admin_escrow">Admin Escrow</option>
-                    <option value="system">System Key</option>
-                  </select>
-                </div>
+            {/* Generate Key Modal */}
+            {showGenerateModal && (
+              <div className="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center z-50">
+                <div className="bg-white rounded-lg p-6 w-full max-w-md">
+                  <h3 className="text-lg font-medium text-gray-900 mb-4">Generate New Key</h3>
+                  <form onSubmit={(e) => {
+                    e.preventDefault();
+                    const formData = new FormData(e.target as HTMLFormElement);
+                    handleGenerateKey({
+                      key_type: formData.get('key_type') as 'user' | 'admin_escrow' | 'system',
+                      algorithm: formData.get('algorithm') as string,
+                      key_size: parseInt(formData.get('key_size') as string),
+                      expires_days: parseInt(formData.get('expires_days') as string) || undefined
+                    });
+                  }}>
+                    <div className="space-y-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Key Type</label>
+                        <select name="key_type" required className="w-full border border-gray-300 rounded-lg px-3 py-2">
+                          <option value="user">User Key</option>
+                          <option value="admin_escrow">Admin Escrow</option>
+                          <option value="system">System Key</option>
+                        </select>
+                      </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Algorithm</label>
-                  <select name="algorithm" className="w-full border border-gray-300 rounded-lg px-3 py-2">
-                    <option value="AES-256-GCM">AES-256-GCM</option>
-                    <option value="RSA-4096">RSA-4096</option>
-                    <option value="ChaCha20-Poly1305">ChaCha20-Poly1305</option>
-                  </select>
-                </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Algorithm</label>
+                        <select name="algorithm" className="w-full border border-gray-300 rounded-lg px-3 py-2">
+                          <option value="AES-256-GCM">AES-256-GCM</option>
+                          <option value="RSA-4096">RSA-4096</option>
+                          <option value="ChaCha20-Poly1305">ChaCha20-Poly1305</option>
+                        </select>
+                      </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Key Size (bits)</label>
-                  <select name="key_size" className="w-full border border-gray-300 rounded-lg px-3 py-2">
-                    <option value="256">256</option>
-                    <option value="512">512</option>
-                    <option value="2048">2048</option>
-                    <option value="4096">4096</option>
-                  </select>
-                </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Key Size (bits)</label>
+                        <select name="key_size" className="w-full border border-gray-300 rounded-lg px-3 py-2">
+                          <option value="256">256</option>
+                          <option value="512">512</option>
+                          <option value="2048">2048</option>
+                          <option value="4096">4096</option>
+                        </select>
+                      </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Expires In (days)</label>
-                  <input
-                    type="number"
-                    name="expires_days"
-                    placeholder="30"
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2"
-                  />
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Expires In (days)</label>
+                        <input
+                          type="number"
+                          name="expires_days"
+                          placeholder="30"
+                          className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex justify-end space-x-3 mt-6">
+                      <button
+                        type="button"
+                        onClick={() => setShowGenerateModal(false)}
+                        className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="submit"
+                        className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700"
+                      >
+                        Generate Key
+                      </button>
+                    </div>
+                  </form>
                 </div>
               </div>
-
-              <div className="flex justify-end space-x-3 mt-6">
-                <button
-                  type="button"
-                  onClick={() => setShowGenerateModal(false)}
-                  className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700"
-                >
-                  Generate Key
-                </button>
-              </div>
-            </form>
+            )}
           </div>
-        </div>
-      )}
+        )}
       </div>
     </AppLayout>
   );

@@ -26,6 +26,7 @@ import {
 import { encryptionApi } from '../../services/api/encryptionService';
 import { useSessionStatus } from '../security/SessionKeyManager';
 import SessionKeyManager from '../security/SessionKeyManager';
+import { documentEncryptionService } from '../../services/documentEncryption';
 import TagsInput from '../ui/TagsInput';
 import FolderUploadPreview, { UploadOptions } from './FolderUploadPreview';
 import { 
@@ -63,6 +64,7 @@ interface FolderUploadSession {
 
 interface EncryptedDocumentUploadProps {
   onUploadComplete?: (file: UploadedFile) => void;
+  onAllUploadsComplete?: () => void; // Called when all uploads in a batch are finished
   maxFileSize?: number; // in MB
   allowedTypes?: string[];
   className?: string;
@@ -72,6 +74,7 @@ interface EncryptedDocumentUploadProps {
 
 export default function EncryptedDocumentUpload({
   onUploadComplete,
+  onAllUploadsComplete,
   maxFileSize = 100, // 100MB default
   allowedTypes = ['application/pdf', 'image/*', 'text/*', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
   className = '',
@@ -82,6 +85,7 @@ export default function EncryptedDocumentUpload({
   const [isDragOver, setIsDragOver] = useState(false);
   const [showSessionManager, setShowSessionManager] = useState(false);
   const [attemptedUploadWithoutSession, setAttemptedUploadWithoutSession] = useState(false);
+  const [currentUploadBatch, setCurrentUploadBatch] = useState<Set<string>>(new Set());
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [uploadMode, setUploadMode] = useState<UploadMode>('files');
   
@@ -89,14 +93,91 @@ export default function EncryptedDocumentUpload({
   const [folderUploadSession, setFolderUploadSession] = useState<FolderUploadSession | null>(null);
   const [showFolderPreview, setShowFolderPreview] = useState(false);
   
+  // Zero-knowledge encryption status
+  const [hasZeroKnowledgeKey, setHasZeroKnowledgeKey] = useState(false);
+  
+  
   const sessionStatus = useSessionStatus();
 
-  // Validation: if sessionStatus says active but no CryptoKey, clear session quietly
+  // Debug state changes
+  useEffect(() => {
+    console.log('🎯 STATE UPDATE:', {
+      hasZeroKnowledgeKey,
+      sessionStatusIsActive: sessionStatus.isActive,
+      directCheck: documentEncryptionService.hasMasterKey(),
+      shouldShowReady: hasZeroKnowledgeKey || sessionStatus.isActive
+    });
+  }, [hasZeroKnowledgeKey, sessionStatus.isActive]);
+
+  // Check zero-knowledge key status and listen for changes
+  useEffect(() => {
+    const checkZeroKnowledgeKey = () => {
+      const hasKey = documentEncryptionService.hasMasterKey();
+      const debugInfo = documentEncryptionService.getDebugInfo();
+      console.log('🔄 EncryptedDocumentUpload: Master key status check:', hasKey, 'debugInfo:', debugInfo);
+      setHasZeroKnowledgeKey(hasKey);
+    };
+
+    // Force immediate check with debug info
+    console.log('🎯 EncryptedDocumentUpload: Component mounted, checking master key status...');
+    checkZeroKnowledgeKey();
+
+    // Check if we should automatically show the session manager
+    const shouldPrompt = sessionStorage.getItem('prompt_encryption_password') === 'true';
+    const userHasEncryption = sessionStorage.getItem('user_has_encryption') === 'true';
+    
+    if (shouldPrompt && userHasEncryption && !documentEncryptionService.hasMasterKey()) {
+      console.log('🔑 Auto-showing session manager due to prompt_encryption_password flag');
+      setShowSessionManager(true);
+      setAttemptedUploadWithoutSession(true);
+      // Clear the flag so we don't keep showing it
+      sessionStorage.removeItem('prompt_encryption_password');
+    }
+
+    // Listen for master key changes (event-based, immediate updates)
+    documentEncryptionService.addMasterKeyChangeListener(checkZeroKnowledgeKey);
+
+    // Also check every 1 second initially for faster detection, then every 3 seconds
+    const fastInterval = setInterval(checkZeroKnowledgeKey, 1000);
+    let regularInterval: NodeJS.Timeout | null = null;
+    
+    const slowTimeout = setTimeout(() => {
+      clearInterval(fastInterval);
+      regularInterval = setInterval(checkZeroKnowledgeKey, 3000);
+    }, 10000); // Switch to slower polling after 10 seconds
+
+    // Listen for custom events from preview component
+    const handleEncryptionPasswordRequest = () => {
+      console.log('🔑 Received encryption password request from preview');
+      setShowSessionManager(true);
+      setAttemptedUploadWithoutSession(true);
+    };
+
+    window.addEventListener('requestEncryptionPassword', handleEncryptionPasswordRequest);
+
+    return () => {
+      documentEncryptionService.removeMasterKeyChangeListener(checkZeroKnowledgeKey);
+      clearInterval(fastInterval);
+      clearTimeout(slowTimeout);
+      if (regularInterval) clearInterval(regularInterval);
+      window.removeEventListener('requestEncryptionPassword', handleEncryptionPasswordRequest);
+    };
+  }, []);
+
+  // Only clear legacy session if it's invalid AND we don't have zero-knowledge key
   useEffect(() => {
     const sessionKey = encryptionApi.getSessionKey();
-    if (sessionStatus.isActive && (!sessionKey || !sessionKey.cryptoKey)) {
+    const hasZeroKnowledgeMasterKey = documentEncryptionService.hasMasterKey();
+    
+    // Only clear legacy session if both conditions are true:
+    // 1. Legacy session claims to be active but has no valid key
+    // 2. We don't have a zero-knowledge master key either
+    if (sessionStatus.isActive && (!sessionKey || !sessionKey.cryptoKey) && !hasZeroKnowledgeMasterKey) {
+      console.log('🧹 Clearing invalid legacy session (no backup zero-knowledge key)');
       encryptionApi.clearSession();
-      sessionStatus.refreshStatus?.();
+      setTimeout(() => {
+        sessionStatus.refreshStatus?.();
+      }, 0);
     }
   }, [sessionStatus.isActive, showSessionManager, attemptedUploadWithoutSession]);
 
@@ -126,15 +207,55 @@ export default function EncryptedDocumentUpload({
   };
 
   const handleFiles = useCallback(async (files: File[]) => {
-    // Check if we need to prompt for encryption password
+    console.log('🎯 UPLOAD: handleFiles called with', files.length, 'files');
+    console.log('🎯 UPLOAD: hasZeroKnowledgeKey state =', hasZeroKnowledgeKey);
+    console.log('🎯 UPLOAD: sessionStatus.isActive =', sessionStatus.isActive);
+    
+    // Double-check master key status directly (in case state is stale)
+    const actualMasterKeyStatus = documentEncryptionService.hasMasterKey();
+    const debugInfo = documentEncryptionService.getDebugInfo();
+    console.log('🔐 UPLOAD: Actual master key status (direct check) =', actualMasterKeyStatus);
+    console.log('🔧 UPLOAD: DocumentEncryptionService debug info =', debugInfo);
+    
+    // Check for zero-knowledge master key first (preferred method)
+    const hasZeroKnowledgeMasterKey = hasZeroKnowledgeKey || actualMasterKeyStatus;
+    console.log('🔐 UPLOAD: hasZeroKnowledgeMasterKey (state OR direct) =', hasZeroKnowledgeMasterKey);
+    
+    // Update state if it's out of sync
+    if (hasZeroKnowledgeKey !== actualMasterKeyStatus) {
+      console.log('⚠️ UPLOAD: State out of sync! Updating hasZeroKnowledgeKey from', hasZeroKnowledgeKey, 'to', actualMasterKeyStatus);
+      setHasZeroKnowledgeKey(actualMasterKeyStatus);
+    }
+    
+    // Fallback to legacy session key for backwards compatibility
     const sessionKey = encryptionApi.getSessionKey();
-    const hasValidEncryptionSession = sessionStatus.isActive && sessionKey && sessionKey.cryptoKey;
+    const hasLegacySessionKey = sessionStatus.isActive && sessionKey && sessionKey.cryptoKey;
+    console.log('🔑 UPLOAD: hasLegacySessionKey =', hasLegacySessionKey);
+    
+    const hasValidEncryptionSession = hasZeroKnowledgeMasterKey || hasLegacySessionKey;
+    console.log('✅ UPLOAD: hasValidEncryptionSession =', hasValidEncryptionSession);
+    
+    // Check if user has encryption configured but key is missing from memory
+    const userHasEncryption = sessionStorage.getItem('user_has_encryption') === 'true';
     
     if (!hasValidEncryptionSession) {
+      console.error('❌ UPLOAD: No encryption session found, aborting upload');
       setAttemptedUploadWithoutSession(true);
+      
+      // If user has encryption configured, show session manager to re-derive key
+      if (userHasEncryption) {
+        console.log('🔑 User has encryption configured, showing session manager for key restoration');
+      }
+      
       setShowSessionManager(true);
       return;
     }
+    
+    console.log('🚀 UPLOAD: Proceeding with file upload...');
+
+    // Create new batch for this upload session
+    const batchIds = new Set<string>();
+    const newFiles: UploadedFile[] = [];
 
     for (const file of files) {
       const validationError = validateFile(file);
@@ -149,13 +270,28 @@ export default function EncryptedDocumentUpload({
         error: validationError || undefined
       };
 
-      setUploadedFiles(prev => [...prev, uploadedFile]);
+      newFiles.push(uploadedFile);
+      batchIds.add(uploadedFile.id);
+    }
 
-      if (!validationError) {
+    // Set the current batch and add files
+    console.log('🚀 Starting new upload batch:', {
+      batchSize: batchIds.size,
+      batchIds: Array.from(batchIds),
+      fileNames: newFiles.map(f => f.name)
+    });
+    setCurrentUploadBatch(batchIds);
+    setUploadedFiles(prev => [...prev, ...newFiles]);
+
+    // Process each file
+    for (const file of files) {
+      const uploadedFile = newFiles.find(f => f.name === file.name);
+      if (uploadedFile && !uploadedFile.error) {
+        console.log(`📤 Processing file ${file.name} with ID ${uploadedFile.id}`);
         await processFileUpload(file, uploadedFile.id);
       }
     }
-  }, [sessionStatus.isActive, parentFolderId]);
+  }, [hasZeroKnowledgeKey, sessionStatus.isActive, parentFolderId]);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -246,108 +382,161 @@ export default function EncryptedDocumentUpload({
       // Update status to encrypting
       updateFileStatus(fileId, 'encrypting', 10);
 
-      // Get session key for encryption
-      const sessionKey = encryptionApi.getSessionKey();
-      if (!sessionKey) {
-        throw new Error('No active session key for encryption');
-      }
+      // Check for zero-knowledge master key first
+      const hasZeroKnowledgeMasterKey = documentEncryptionService.hasMasterKey();
       
-      // Use client-side encryption utilities
-      const { encryptFile } = await import('../../utils/encryption');
-      
-      // Use the encryptFile function which handles progress and file specifics
-      const encryptionResult = await encryptFile(
-        file,
-        sessionKey.cryptoKey, // Use the actual CryptoKey
-        (progress) => {
-          updateFileStatus(fileId, 'encrypting', 10 + (progress * 0.4)); // 10-50%
-        }
-      );
-      
-      updateFileStatus(fileId, 'uploading', 50);
-
-      // Create FormData for upload
-      const formData = new FormData();
-      
-      // Convert encrypted data back to Uint8Array then to Blob
-      const encryptedBytes = Uint8Array.from(atob(encryptionResult.ciphertext), c => c.charCodeAt(0));
-      const authTagBytes = Uint8Array.from(atob(encryptionResult.authTag), c => c.charCodeAt(0));
-      
-      // Combine ciphertext and auth tag for storage
-      const combinedData = new Uint8Array(encryptedBytes.length + authTagBytes.length);
-      combinedData.set(encryptedBytes);
-      combinedData.set(authTagBytes, encryptedBytes.length);
-      
-      const encryptedBlob = new Blob([combinedData], { type: 'application/octet-stream' });
-      formData.append('file', encryptedBlob, file.name);
-      
-      // Calculate file hash for verification
-      const fileBuffer = await file.arrayBuffer();
-      const hashBuffer = await crypto.subtle.digest('SHA-256', fileBuffer);
-      const hashArray = Array.from(new Uint8Array(hashBuffer));
-      const file_hash = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-
-      // Add upload metadata including salt for key derivation
-      const uploadMetadata = {
-        name: file.name,
-        parent_id: fileParentId,
-        description: '',
-        tags: selectedTags,
-        doc_metadata: {
-          encryption_salt: sessionKey.salt, // Store salt for decryption
-          encryption_algorithm: sessionKey.algorithm,
-          encryption_iterations: 100000 // Store iterations used
-        },
-        is_sensitive: true, // Mark as sensitive since it's encrypted
-        encryption_key_id: sessionKey.keyId,
-        encryption_iv: encryptionResult.iv,
-        encryption_auth_tag: encryptionResult.authTag,
-        file_size: file.size, // Original file size
-        file_hash: file_hash, // SHA-256 hash of original file
-        mime_type: file.type
-      };
-      
-      formData.append('upload_data', JSON.stringify(uploadMetadata));
-
-      
-      // Import documents API dynamically to avoid circular imports
-      const { documentsApi } = await import('../../services/api/documents');
-      
-      // Upload the encrypted file
-      const document = await documentsApi.uploadDocument(
-        formData,
-        (progress) => {
-          updateFileStatus(fileId, 'uploading', 50 + (progress * 0.5)); // 50-100%
-        }
-      );
-
-      updateFileStatus(fileId, 'completed', 100);
-
-      // Extend session on successful upload
-      sessionStatus.extendSession();
-
-      // Call completion callback
-      const completedFile = uploadedFiles.find(f => f.id === fileId);
-      if (completedFile && onUploadComplete) {
-        onUploadComplete({
-          ...completedFile,
-          status: 'completed',
-          progress: 100,
-          encryptionMetadata: {
-            key_id: sessionKey.keyId,
-            iv: encryptionResult.iv,
-            auth_tag: encryptionResult.authTag,
-            algorithm: encryptionResult.algorithm
+      if (hasZeroKnowledgeMasterKey) {
+        // Use zero-knowledge encryption (DEK-per-document architecture)
+        const encryptedUpload = await documentEncryptionService.encryptFileForUpload(
+          file,
+          (progress) => {
+            updateFileStatus(fileId, 'encrypting', 10 + (progress.progress * 0.4 / 100)); // 10-50%
           }
-        });
+        );
         
-        // Auto-reset component state if enabled
-        if (autoResetAfterUpload) {
-          setTimeout(() => {
-            setUploadedFiles([]);
-            setIsDragOver(false);
-          }, 1500); // Reset after 1.5 seconds
+        updateFileStatus(fileId, 'uploading', 50);
+
+        // Prepare FormData for zero-knowledge upload
+        const formData = await documentEncryptionService.prepareEncryptedUpload(
+          encryptedUpload,
+          {
+            name: file.name,
+            parent_id: fileParentId,
+            tags: selectedTags
+          }
+        );
+
+        // Import documents API and upload
+        const { documentsApi } = await import('../../services/api/documents');
+        
+        const document = await documentsApi.uploadDocument(
+          formData,
+          (progress) => {
+            updateFileStatus(fileId, 'uploading', 50 + (progress * 0.5)); // 50-100%
+          }
+        );
+
+        updateFileStatus(fileId, 'completed', 100);
+
+        // Call completion callback
+        const completedFile = uploadedFiles.find(f => f.id === fileId);
+        if (completedFile && onUploadComplete) {
+          onUploadComplete({
+            ...completedFile,
+            status: 'completed',
+            progress: 100,
+            encryptionMetadata: {
+              dek_info: encryptedUpload.dekInfo,
+              algorithm: 'AES-256-GCM',
+              zero_knowledge: true
+            }
+          });
         }
+        
+      } else {
+        // Fallback to legacy session key encryption
+        const sessionKey = encryptionApi.getSessionKey();
+        if (!sessionKey) {
+          throw new Error('No active session key for encryption');
+        }
+        
+        // Use client-side encryption utilities
+        const { encryptFile } = await import('../../utils/encryption');
+        
+        // Use the encryptFile function which handles progress and file specifics
+        const encryptionResult = await encryptFile(
+          file,
+          sessionKey.cryptoKey, // Use the actual CryptoKey
+          (progress) => {
+            updateFileStatus(fileId, 'encrypting', 10 + (progress * 0.4)); // 10-50%
+          }
+        );
+        
+        updateFileStatus(fileId, 'uploading', 50);
+
+        // Create FormData for upload
+        const formData = new FormData();
+        
+        // Convert encrypted data back to Uint8Array then to Blob
+        const encryptedBytes = Uint8Array.from(atob(encryptionResult.ciphertext), c => c.charCodeAt(0));
+        const authTagBytes = Uint8Array.from(atob(encryptionResult.authTag), c => c.charCodeAt(0));
+        
+        // Combine ciphertext and auth tag for storage
+        const combinedData = new Uint8Array(encryptedBytes.length + authTagBytes.length);
+        combinedData.set(encryptedBytes);
+        combinedData.set(authTagBytes, encryptedBytes.length);
+        
+        const encryptedBlob = new Blob([combinedData], { type: 'application/octet-stream' });
+        formData.append('file', encryptedBlob, file.name);
+        
+        // Calculate file hash for verification
+        const fileBuffer = await file.arrayBuffer();
+        const hashBuffer = await crypto.subtle.digest('SHA-256', fileBuffer);
+        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        const file_hash = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+
+        // Add upload metadata including salt for key derivation
+        const uploadMetadata = {
+          name: file.name,
+          parent_id: fileParentId,
+          description: '',
+          tags: selectedTags,
+          doc_metadata: {
+            encryption_salt: sessionKey.salt, // Store salt for decryption
+            encryption_algorithm: sessionKey.algorithm,
+            encryption_iterations: 100000 // Store iterations used
+          },
+          is_sensitive: true, // Mark as sensitive since it's encrypted
+          encryption_key_id: sessionKey.keyId,
+          encryption_iv: encryptionResult.iv,
+          encryption_auth_tag: encryptionResult.authTag,
+          file_size: file.size, // Original file size
+          file_hash: file_hash, // SHA-256 hash of original file
+          mime_type: file.type
+        };
+        
+        formData.append('upload_data', JSON.stringify(uploadMetadata));
+
+        
+        // Import documents API dynamically to avoid circular imports
+        const { documentsApi } = await import('../../services/api/documents');
+        
+        // Upload the encrypted file
+        const document = await documentsApi.uploadDocument(
+          formData,
+          (progress) => {
+            updateFileStatus(fileId, 'uploading', 50 + (progress * 0.5)); // 50-100%
+          }
+        );
+
+        updateFileStatus(fileId, 'completed', 100);
+
+        // Extend session on successful upload
+        sessionStatus.extendSession();
+
+        // Call completion callback
+        const completedFile = uploadedFiles.find(f => f.id === fileId);
+        if (completedFile && onUploadComplete) {
+          onUploadComplete({
+            ...completedFile,
+            status: 'completed',
+            progress: 100,
+            encryptionMetadata: {
+              key_id: sessionKey.keyId,
+              iv: encryptionResult.iv,
+              auth_tag: encryptionResult.authTag,
+              algorithm: encryptionResult.algorithm
+            }
+          });
+        }
+      }
+
+      // Auto-reset component state if enabled (for both methods)
+      if (autoResetAfterUpload) {
+        setTimeout(() => {
+          setUploadedFiles([]);
+          setIsDragOver(false);
+        }, 1500); // Reset after 1.5 seconds
       }
 
       // Auto-remove completed files after a delay (fallback)
@@ -372,8 +561,11 @@ export default function EncryptedDocumentUpload({
     if (!folderUploadSession) return;
 
     // Check session before starting upload
+    const hasZeroKnowledgeMasterKey = documentEncryptionService.hasMasterKey();
     const sessionKey = encryptionApi.getSessionKey();
-    const hasValidEncryptionSession = sessionStatus.isActive && sessionKey && sessionKey.cryptoKey;
+    const hasLegacySessionKey = sessionStatus.isActive && sessionKey && sessionKey.cryptoKey;
+    
+    const hasValidEncryptionSession = hasZeroKnowledgeMasterKey || hasLegacySessionKey;
     
     if (!hasValidEncryptionSession) {
       setAttemptedUploadWithoutSession(true);
@@ -536,6 +728,11 @@ export default function EncryptedDocumentUpload({
         isActive: false
       } : null);
 
+      // Call completion callback for folder upload
+      if (onAllUploadsComplete) {
+        onAllUploadsComplete();
+      }
+
       // Auto-reset if enabled
       if (autoResetAfterUpload) {
         setTimeout(() => {
@@ -565,13 +762,46 @@ export default function EncryptedDocumentUpload({
     progress: number, 
     error?: string
   ) => {
-    setUploadedFiles(prev => 
-      prev.map(file => 
+    setUploadedFiles(prev => {
+      const updatedFiles = prev.map(file => 
         file.id === fileId 
           ? { ...file, status, progress, error }
           : file
-      )
-    );
+      );
+      
+      // Check if this completion means all files in the batch are done
+      if (status === 'completed' || status === 'error') {
+        const batchFiles = updatedFiles.filter(file => currentUploadBatch.has(file.id));
+        const allCompleted = batchFiles.length > 0 && batchFiles.every(file => 
+          file.status === 'completed' || file.status === 'error'
+        );
+        const hasSuccessfulFiles = batchFiles.some(file => file.status === 'completed');
+        
+        console.log('📊 Upload batch status check:', {
+          fileId,
+          status,
+          batchSize: currentUploadBatch.size,
+          batchFiles: batchFiles.length,
+          allCompleted,
+          hasSuccessfulFiles,
+          batchFileStatuses: batchFiles.map(f => ({ id: f.id, name: f.name, status: f.status }))
+        });
+        
+        if (allCompleted && hasSuccessfulFiles) {
+          console.log('🎉 All uploads in batch completed! Calling onAllUploadsComplete...');
+          // At least one file succeeded, call the completion callback
+          setTimeout(() => {
+            if (onAllUploadsComplete) {
+              onAllUploadsComplete();
+            }
+            // Clear the batch
+            setCurrentUploadBatch(new Set());
+          }, 100); // Small delay to ensure state updates are complete
+        }
+      }
+      
+      return updatedFiles;
+    });
   };
 
   const removeFile = (fileId: string) => {
@@ -641,11 +871,21 @@ export default function EncryptedDocumentUpload({
               {showSessionManager ? 'Hide' : 'Show'} Session Manager
             </button>
             <button
-              onClick={() => {
-                // Clear both via API and directly
+              onClick={async () => {
+                // Clear both legacy session and zero-knowledge key
                 encryptionApi.clearSession();
                 sessionStorage.removeItem('session_encryption_key');
                 sessionStorage.removeItem('session_key_expiry');
+                
+                // Also clear master key
+                documentEncryptionService.clearMasterKey();
+                
+                // Clear restoration flags
+                sessionStorage.removeItem('user_has_encryption');
+                sessionStorage.removeItem('encryption_salt');
+                sessionStorage.removeItem('key_verification_payload');
+                sessionStorage.removeItem('key_derivation_iterations');
+                sessionStorage.removeItem('encryption_method');
                 
                 sessionStatus.refreshStatus?.();
                 setAttemptedUploadWithoutSession(false);
@@ -654,22 +894,158 @@ export default function EncryptedDocumentUpload({
             >
               Force Clear Session
             </button>
+            <button
+              onClick={async () => {
+                console.log('🧪 === COMPREHENSIVE SESSION DEBUG TEST ===');
+                const debugInfo = documentEncryptionService.getDebugInfo();
+                const sessionKey = encryptionApi.getSessionKey();
+                
+                console.log('🧪 1. Service debug info:', debugInfo);
+                console.log('🧪 2. Component state hasZeroKnowledgeKey:', hasZeroKnowledgeKey);  
+                console.log('🧪 3. sessionStatus.isActive:', sessionStatus.isActive);
+                console.log('🧪 4. Legacy sessionKey exists:', sessionKey ? 'YES' : 'NO');
+                console.log('🧪 5. Direct hasMasterKey() call:', documentEncryptionService.hasMasterKey());
+                
+                // Check sessionStorage flags
+                console.log('🧪 6. SessionStorage flags:', {
+                  has_master_key: sessionStorage.getItem('has_master_key'),
+                  user_has_encryption: sessionStorage.getItem('user_has_encryption'),
+                  encryption_salt: sessionStorage.getItem('encryption_salt')?.substring(0, 10) + '...',
+                  master_key_set_at: sessionStorage.getItem('master_key_set_at')
+                });
+                
+                // Check if DocumentEncryptionService singleton is working properly
+                console.log('🧪 7. DocumentEncryptionService singleton test:');
+                const { documentEncryptionService: testService } = await import('../../services/documentEncryption');
+                console.log('🧪 7a. Imported service instance ID:', testService.getDebugInfo().instanceId);
+                console.log('🧪 7b. Current service instance ID:', documentEncryptionService.getDebugInfo().instanceId);
+                console.log('🧪 7c. Are they the same instance?', testService === documentEncryptionService);
+                
+                // Final determination
+                const actualMasterKeyStatus = documentEncryptionService.hasMasterKey();
+                const testServiceMasterKey = testService.hasMasterKey();
+                const hasZeroKnowledgeMasterKey = hasZeroKnowledgeKey || actualMasterKeyStatus;
+                const hasLegacySessionKey = sessionStatus.isActive && sessionKey && sessionKey.cryptoKey;
+                const hasValidEncryptionSession = hasZeroKnowledgeMasterKey || hasLegacySessionKey;
+                
+                console.log('🧪 8. FINAL COMPARISON:', {
+                  componentState_hasZeroKnowledgeKey: hasZeroKnowledgeKey,
+                  directCall_actualMasterKeyStatus: actualMasterKeyStatus,
+                  testService_masterKeyStatus: testServiceMasterKey,
+                  hasZeroKnowledgeMasterKey,
+                  hasLegacySessionKey,
+                  hasValidEncryptionSession
+                });
+                
+                // Force aggressive state updates
+                console.log('🧪 9. FORCING STATE UPDATES...');
+                setHasZeroKnowledgeKey(actualMasterKeyStatus);
+                sessionStatus.refreshStatus?.();
+                
+                // Force re-render with timeout
+                setTimeout(() => {
+                  const postUpdateState = documentEncryptionService.hasMasterKey();
+                  console.log('🧪 10. POST-UPDATE CHECK:', postUpdateState);
+                  setHasZeroKnowledgeKey(postUpdateState);
+                }, 100);
+                
+                // Show result and force UI update if session is valid but component shows wrong state
+                if (hasValidEncryptionSession && !hasZeroKnowledgeKey) {
+                  console.log('🚨 DETECTED STATE MISMATCH: Valid session exists but component state is false!');
+                  console.log('🔧 FORCING COMPONENT STATE UPDATE...');
+                  
+                  // Force multiple state updates to ensure UI synchronization
+                  setHasZeroKnowledgeKey(true);
+                  setTimeout(() => setHasZeroKnowledgeKey(actualMasterKeyStatus), 50);
+                  setTimeout(() => setHasZeroKnowledgeKey(documentEncryptionService.hasMasterKey()), 100);
+                  setTimeout(() => setHasZeroKnowledgeKey(testService.hasMasterKey()), 150);
+                }
+                
+                const resultMessage = hasValidEncryptionSession 
+                  ? `✅ Valid encryption session detected!\n- Component state: ${hasZeroKnowledgeKey}\n- Direct check: ${actualMasterKeyStatus}\n- Session active: ${sessionStatus.isActive}\n\n${(!hasZeroKnowledgeKey) ? '🔧 FORCING UI UPDATE...' : ''}`
+                  : `❌ No valid encryption session detected!\n- Component state: ${hasZeroKnowledgeKey}\n- Direct check: ${actualMasterKeyStatus}\n- Session active: ${sessionStatus.isActive}\n\nCheck console for detailed debug info.`;
+                
+                alert(resultMessage);
+              }}
+              className="text-sm text-blue-600 hover:text-blue-800"
+            >
+              Test Session
+            </button>
+            <button
+              onClick={async () => {
+                console.log('🔄 AGGRESSIVE MANUAL REFRESH TRIGGERED');
+                
+                // Get current state from multiple sources
+                const directCheck = documentEncryptionService.hasMasterKey();
+                const { documentEncryptionService: importedService } = await import('../../services/documentEncryption');
+                const importedCheck = importedService.hasMasterKey();
+                const sessionFlag = sessionStorage.getItem('has_master_key') === 'true';
+                const userHasEncryption = sessionStorage.getItem('user_has_encryption') === 'true';
+                
+                console.log('🔄 REFRESH - Multiple checks:', {
+                  directCheck,
+                  importedCheck,
+                  sessionFlag,
+                  userHasEncryption,
+                  currentComponentState: hasZeroKnowledgeKey
+                });
+                
+                // Determine the correct state
+                const correctState = directCheck || importedCheck || (userHasEncryption && sessionFlag);
+                
+                console.log('🔄 REFRESH - Setting component state to:', correctState);
+                
+                // Force state updates multiple times with slight delays
+                setHasZeroKnowledgeKey(correctState);
+                setTimeout(() => setHasZeroKnowledgeKey(directCheck), 25);
+                setTimeout(() => setHasZeroKnowledgeKey(importedCheck), 50);
+                setTimeout(() => setHasZeroKnowledgeKey(correctState), 75);
+                setTimeout(() => setHasZeroKnowledgeKey(documentEncryptionService.hasMasterKey()), 100);
+                
+                // Also refresh session status
+                sessionStatus.refreshStatus?.();
+                
+                console.log('🔄 REFRESH COMPLETE - Final state should be:', correctState);
+              }}
+              className="text-sm text-green-600 hover:text-green-800"
+            >
+              Refresh State
+            </button>
           </div>
         </div>
 
         {showSessionManager && (
           <div className="mb-4 p-3 bg-gray-50 rounded-lg">
-            {attemptedUploadWithoutSession && !sessionStatus.isActive && (
+            {attemptedUploadWithoutSession && (
               <div className="mb-3 p-2 bg-blue-50 border border-blue-200 rounded text-sm text-blue-800">
-                Please enter your encryption password to upload files securely.
+                {sessionStorage.getItem('user_has_encryption') === 'true' 
+                  ? 'Your encryption key needs to be restored. Please enter your encryption password to access your encrypted documents.'
+                  : 'Please enter your encryption password to upload files securely.'
+                }
               </div>
             )}
             <SessionKeyManager onSessionChange={(isActive) => {
               if (isActive) {
+                console.log('🎉 SessionKeyManager reported session active, hiding modal');
+                
+                // Force immediate updates
+                const hasKey = documentEncryptionService.hasMasterKey();
+                console.log('🔄 Force-checking master key after session change:', hasKey);
+                setHasZeroKnowledgeKey(hasKey);
+                
+                // Hide the modal and reset flags
                 setShowSessionManager(false);
                 setAttemptedUploadWithoutSession(false);
-                // Refresh session status immediately
+                
+                // Refresh session status immediately  
                 sessionStatus.refreshStatus?.();
+                
+                // Force a re-render by updating state multiple times if needed
+                setTimeout(() => {
+                  const hasKeyDelayed = documentEncryptionService.hasMasterKey();
+                  console.log('🔄 Double-checking master key after delay:', hasKeyDelayed);
+                  setHasZeroKnowledgeKey(hasKeyDelayed);
+                }, 100);
               }
             }} />
           </div>
@@ -732,15 +1108,20 @@ export default function EncryptedDocumentUpload({
             >
               {uploadMode === 'folder' 
                 ? 'Folder Upload Mode'
-                : sessionStatus.isActive 
+                : (hasZeroKnowledgeKey || sessionStatus.isActive)
                   ? 'Upload encrypted documents & folders' 
                   : 'Click to upload (will prompt for encryption password)'
               }
             </label>
             <p className="text-gray-500 text-sm mt-1">
-              {sessionStatus.isActive ? (
+              {(hasZeroKnowledgeKey || sessionStatus.isActive) ? (
                 <>
                   Drag and drop files or folders here, or click to select files
+                  {(hasZeroKnowledgeKey || sessionStatus.isActive) && (
+                    <span className="block text-green-600 mt-1">
+                      🔒 Encryption Ready
+                    </span>
+                  )}
                   {uploadMode === 'folder' && folderUploadSession && (
                     <span className="block text-blue-600 mt-1">
                       📁 {folderUploadSession.structure.rootFolder} ready to upload
@@ -748,7 +1129,7 @@ export default function EncryptedDocumentUpload({
                   )}
                 </>
               ) : (
-                <>Will prompt for your password to create encryption session</>
+                <>Click to upload - will prompt for encryption password if needed</>
               )}
             </p>
           </div>

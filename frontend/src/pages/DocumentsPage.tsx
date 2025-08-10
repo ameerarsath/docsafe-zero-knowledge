@@ -26,6 +26,9 @@ import EncryptedDocumentUpload from '../components/documents/EncryptedDocumentUp
 import { RequireAuth } from '../components/auth/ProtectedRoute';
 import TagsDisplay, { TagFilter } from '../components/ui/TagsDisplay';
 import AppLayout from '../components/layout/AppLayout';
+import EnhancedSearch from '../components/search/EnhancedSearch';
+import { DocumentSearchParams, documentsApi } from '../services/api/documents';
+import { useAuth } from '../contexts/AuthContext';
 import {
   FileText,
   FolderOpen,
@@ -64,6 +67,9 @@ export default function DocumentsPage() {
 }
 
 function DocumentsContent() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'admin' || user?.role === 'super_admin';
+  
   // Add error boundary for useDocuments hook
   const documentsHookResult = (() => {
     try {
@@ -143,6 +149,13 @@ function DocumentsContent() {
   const [showCreateFolder, setShowCreateFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
   const [searchInput, setSearchInput] = useState(searchQuery);
+  const [enhancedSearchResults, setEnhancedSearchResults] = useState<Document[]>([]);
+  const [isEnhancedSearch, setIsEnhancedSearch] = useState(false);
+  const [enhancedSearchLoading, setEnhancedSearchLoading] = useState(false);
+  
+  // Get current documents to display (either search results or regular documents)
+  const displayDocuments = isEnhancedSearch && enhancedSearchResults.length > 0 ? enhancedSearchResults : documents;
+  const displayLoading = isEnhancedSearch ? enhancedSearchLoading : isLoading;
   
   // Dialog states
   const [previewDocument, setPreviewDocument] = useState<Document | null>(null);
@@ -175,10 +188,43 @@ function DocumentsContent() {
   });
 
   /**
-   * Handle search submission
+   * Handle enhanced search
+   */
+  const handleEnhancedSearch = useCallback(async (params: DocumentSearchParams) => {
+    console.log('🔍 Starting enhanced search with params:', params);
+    setEnhancedSearchLoading(true);
+    setIsEnhancedSearch(true);
+    
+    try {
+      console.log('📡 Calling searchDocumentsAdvanced API...');
+      const response = await documentsApi.searchDocumentsAdvanced(params);
+      console.log('✅ Enhanced search response:', response);
+      setEnhancedSearchResults(response.documents);
+    } catch (error) {
+      console.error('❌ Enhanced search failed:', error);
+      // Set empty results on error but keep enhanced search mode on to show the error
+      setEnhancedSearchResults([]);
+    } finally {
+      setEnhancedSearchLoading(false);
+    }
+  }, []);
+
+  /**
+   * Handle clear enhanced search
+   */
+  const handleClearEnhancedSearch = useCallback(() => {
+    setEnhancedSearchResults([]);
+    setIsEnhancedSearch(false);
+    setSearchInput('');
+    searchDocuments('');
+  }, [searchDocuments]);
+
+  /**
+   * Handle search submission (legacy simple search)
    */
   const handleSearch = useCallback((e: React.FormEvent) => {
     e.preventDefault();
+    setIsEnhancedSearch(false);
     searchDocuments(searchInput);
   }, [searchInput, searchDocuments]);
 
@@ -395,9 +441,20 @@ function DocumentsContent() {
         </div>
       </div>
 
+        {/* Unified Search Interface */}
+        <div className="mb-6">
+          <EnhancedSearch
+            onSearch={handleEnhancedSearch}
+            onClear={handleClearEnhancedSearch}
+            initialQuery={searchQuery}
+            isAdmin={isAdmin}
+            className="mb-4"
+          />
+        </div>
+
         {/* Search and Controls */}
         <div className="flex flex-col sm:flex-row gap-4 mb-6">
-          {/* Search */}
+          {/* Quick Search */}
           <form onSubmit={handleSearch} className="flex-1">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -405,8 +462,8 @@ function DocumentsContent() {
                 type="text"
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
-                placeholder="Search documents..."
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                placeholder="Quick search (or use advanced search above)..."
+                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-gray-50"
               />
               {searchQuery && (
                 <button
@@ -414,6 +471,7 @@ function DocumentsContent() {
                   onClick={() => {
                     setSearchInput('');
                     searchDocuments('');
+                    handleClearEnhancedSearch();
                   }}
                   className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
                 >
@@ -527,10 +585,56 @@ function DocumentsContent() {
           </div>
         )}
 
+        {/* Search Results Status */}
+        {(isEnhancedSearch || searchQuery) && (
+          <div className="mb-4 p-3 bg-slate-50 border border-slate-200 rounded-lg">
+            <div className="flex items-center justify-between">
+              <div className="text-sm text-slate-700">
+                {isEnhancedSearch ? (
+                  <>
+                    <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800 mr-2">
+                      Advanced Search
+                    </span>
+                    Found {enhancedSearchResults.length} result{enhancedSearchResults.length !== 1 ? 's' : ''}
+                  </>
+                ) : (
+                  <>
+                    <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800 mr-2">
+                      Quick Search
+                    </span>
+                    Found {documents.length} result{documents.length !== 1 ? 's' : ''} for "{searchQuery}"
+                  </>
+                )}
+              </div>
+              <button
+                onClick={() => {
+                  handleClearEnhancedSearch();
+                  setSearchInput('');
+                  searchDocuments('');
+                }}
+                className="text-xs text-slate-500 hover:text-slate-700 font-medium"
+              >
+                Clear all
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Loading State */}
+        {displayLoading && (
+          <div className="text-center py-12">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
+            <p className="text-gray-500">
+              {isEnhancedSearch ? 'Searching documents...' : 'Loading documents...'}
+            </p>
+          </div>
+        )}
+
         {/* Documents Grid/List */}
-        {viewMode === 'grid' ? (
+        {!displayLoading && (
+          viewMode === 'grid' ? (
           <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-            {documents && documents.length > 0 && documents.map((doc) => (
+            {displayDocuments && displayDocuments.length > 0 && displayDocuments.map((doc) => (
               <div
                 key={doc.id}
                 className={`relative group p-4 border border-gray-200 rounded-lg hover:shadow-md transition-shadow cursor-pointer ${
@@ -618,7 +722,7 @@ function DocumentsContent() {
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {documents && documents.length > 0 && documents.map((doc) => (
+                {displayDocuments && displayDocuments.length > 0 && displayDocuments.map((doc) => (
                   <tr 
                     key={doc.id} 
                     className="hover:bg-gray-50"
@@ -724,24 +828,64 @@ function DocumentsContent() {
               </tbody>
             </table>
           </div>
+        )
         )}
 
         {/* Empty State */}
-        {!isLoading && documents.length === 0 && (
+        {!displayLoading && displayDocuments.length === 0 && (
           <div className="text-center py-12">
-            <FileText className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 mb-2">No documents found</h3>
-            <p className="text-gray-500 mb-4">
-              {searchQuery ? 'Try adjusting your search terms' : 'Upload your first document to get started'}
-            </p>
-            {!searchQuery && (
-              <button
-                onClick={() => setShowUpload(true)}
-                className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-              >
-                <Upload className="w-4 h-4 mr-2" />
-                Upload Files
-              </button>
+            <div className="mx-auto w-24 h-24 bg-gray-100 rounded-full flex items-center justify-center mb-6">
+              {(isEnhancedSearch || searchQuery) ? (
+                <Search className="w-8 h-8 text-gray-400" />
+              ) : (
+                <FileText className="w-8 h-8 text-gray-400" />
+              )}
+            </div>
+            
+            {(isEnhancedSearch || searchQuery) ? (
+              <>
+                <h3 className="text-lg font-medium text-gray-900 mb-2">No documents found</h3>
+                <p className="text-gray-500 mb-6 max-w-md mx-auto">
+                  {isEnhancedSearch 
+                    ? 'No documents match your search criteria. Try adjusting your filters or search terms.'
+                    : `No documents found for "${searchQuery}". Try different keywords or use advanced search for more options.`
+                  }
+                </p>
+                <div className="flex flex-col sm:flex-row gap-3 justify-center">
+                  <button
+                    onClick={() => {
+                      handleClearEnhancedSearch();
+                      setSearchInput('');
+                      searchDocuments('');
+                    }}
+                    className="inline-flex items-center px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
+                  >
+                    <X className="w-4 h-4 mr-2" />
+                    Clear Search
+                  </button>
+                  <button
+                    onClick={() => setShowUpload(true)}
+                    className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                  >
+                    <Upload className="w-4 h-4 mr-2" />
+                    Upload New File
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <h3 className="text-lg font-medium text-gray-900 mb-2">No documents yet</h3>
+                <p className="text-gray-500 mb-6 max-w-md mx-auto">
+                  Get started by uploading your first document. You can drag and drop files or use the upload button.
+                </p>
+                <button
+                  onClick={() => setShowUpload(true)}
+                  className="inline-flex items-center px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-base font-medium"
+                >
+                  <Upload className="w-5 h-5 mr-2" />
+                  Upload Your First Document
+                </button>
+              </>
             )}
           </div>
         )}
@@ -875,7 +1019,8 @@ function DocumentsContent() {
                 </button>
               </div>
               <EncryptedDocumentUpload
-                onUploadComplete={() => {
+                onAllUploadsComplete={() => {
+                  console.log('📁 All uploads completed, refreshing document list...');
                   setShowUpload(false);
                   refreshDocuments();
                 }}

@@ -18,6 +18,12 @@ export interface User {
   last_login: string | null;
   created_at: string;
   updated_at: string;
+  // Zero-knowledge encryption fields
+  encryption_salt?: string;
+  key_verification_payload?: string;
+  encryption_method?: string;
+  key_derivation_iterations?: number;
+  encryption_configured?: boolean;
 }
 
 export interface LoginCredentials {
@@ -37,6 +43,11 @@ export interface LoginResponse {
   must_change_password: boolean;
   mfa_required?: boolean;
   temp_token?: string; // For MFA flow
+  // Zero-knowledge encryption fields
+  encryption_salt?: string;
+  key_verification_payload?: string;
+  encryption_method?: string;
+  key_derivation_iterations?: number;
 }
 
 export interface RefreshTokenResponse {

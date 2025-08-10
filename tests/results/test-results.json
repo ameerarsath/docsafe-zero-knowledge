@@ -1,0 +1,391 @@
+{
+  "config": {
+    "configFile": "/Users/arahuman/Library/CloudStorage/OneDrive-FranklinMadison/Documents/code/fmg_ai/ai_docsafe/playwright.config.js",
+    "rootDir": "/Users/arahuman/Library/CloudStorage/OneDrive-FranklinMadison/Documents/code/fmg_ai/ai_docsafe",
+    "forbidOnly": false,
+    "fullyParallel": false,
+    "globalSetup": "/Users/arahuman/Library/CloudStorage/OneDrive-FranklinMadison/Documents/code/fmg_ai/ai_docsafe/test-setup.js",
+    "globalTeardown": "/Users/arahuman/Library/CloudStorage/OneDrive-FranklinMadison/Documents/code/fmg_ai/ai_docsafe/test-teardown.js",
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "actualWorkers": 1
+    },
+    "preserveOutput": "always",
+    "reporter": [
+      [
+        "html",
+        {
+          "outputFolder": "playwright-report"
+        }
+      ],
+      [
+        "json",
+        {
+          "outputFile": "test-results.json"
+        }
+      ],
+      [
+        "line",
+        null
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "quiet": false,
+    "projects": [
+      {
+        "outputDir": "/Users/arahuman/Library/CloudStorage/OneDrive-FranklinMadison/Documents/code/fmg_ai/ai_docsafe/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "chromium",
+        "name": "chromium",
+        "testDir": "/Users/arahuman/Library/CloudStorage/OneDrive-FranklinMadison/Documents/code/fmg_ai/ai_docsafe",
+        "testIgnore": [],
+        "testMatch": [
+          "**/*.spec.js"
+        ],
+        "timeout": 60000
+      },
+      {
+        "outputDir": "/Users/arahuman/Library/CloudStorage/OneDrive-FranklinMadison/Documents/code/fmg_ai/ai_docsafe/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "firefox",
+        "name": "firefox",
+        "testDir": "/Users/arahuman/Library/CloudStorage/OneDrive-FranklinMadison/Documents/code/fmg_ai/ai_docsafe",
+        "testIgnore": [],
+        "testMatch": [
+          "**/*.spec.js"
+        ],
+        "timeout": 60000
+      },
+      {
+        "outputDir": "/Users/arahuman/Library/CloudStorage/OneDrive-FranklinMadison/Documents/code/fmg_ai/ai_docsafe/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "webkit",
+        "name": "webkit",
+        "testDir": "/Users/arahuman/Library/CloudStorage/OneDrive-FranklinMadison/Documents/code/fmg_ai/ai_docsafe",
+        "testIgnore": [],
+        "testMatch": [
+          "**/*.spec.js"
+        ],
+        "timeout": 60000
+      }
+    ],
+    "shard": null,
+    "updateSnapshots": "missing",
+    "updateSourceMethod": "patch",
+    "version": "1.54.2",
+    "workers": 6,
+    "webServer": null
+  },
+  "suites": [
+    {
+      "title": "final-working-demo.spec.js",
+      "file": "final-working-demo.spec.js",
+      "column": 0,
+      "line": 0,
+      "specs": [],
+      "suites": [
+        {
+          "title": "Final Working Demo",
+          "file": "final-working-demo.spec.js",
+          "line": 16,
+          "column": 6,
+          "specs": [
+            {
+              "title": "Complete Zero-Knowledge Demo Flow",
+              "ok": false,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 300000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "failed",
+                      "duration": 48225,
+                      "error": {
+                        "message": "TimeoutError: locator.click: Timeout 10000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('text=test-document.txt')\u001b[22m\n\u001b[2m    - locator resolved to <button class=\"text-sm font-medium text-gray-900 hover:text-blue-600 text-left\">test-document.txt</button>\u001b[22m\n\u001b[2m  - attempting click action\u001b[22m\n\u001b[2m    - waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m    - element is visible, enabled and stable\u001b[22m\n\u001b[2m    - scrolling into view if needed\u001b[22m\n\u001b[2m    - done scrolling\u001b[22m\n\u001b[2m    - <div>…</div> from <div class=\"fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4\">…</div> subtree intercepts pointer events\u001b[22m\n\u001b[2m  - retrying click action\u001b[22m\n\u001b[2m    - waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m    - element is visible, enabled and stable\u001b[22m\n\u001b[2m    - scrolling into view if needed\u001b[22m\n\u001b[2m    - done scrolling\u001b[22m\n\u001b[2m    - <div class=\"fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4\">…</div> intercepts pointer events\u001b[22m\n\u001b[2m  - retrying click action\u001b[22m\n\u001b[2m    - waiting 20ms\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is visible, enabled and stable\u001b[22m\n\u001b[2m      - scrolling into view if needed\u001b[22m\n\u001b[2m      - done scrolling\u001b[22m\n\u001b[2m      - <div>…</div> from <div class=\"fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4\">…</div> subtree intercepts pointer events\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m      - waiting 100ms\u001b[22m\n\u001b[2m    4 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is visible, enabled and stable\u001b[22m\n\u001b[2m      - scrolling into view if needed\u001b[22m\n\u001b[2m      - done scrolling\u001b[22m\n\u001b[2m      - <div>…</div> from <div class=\"fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4\">…</div> subtree intercepts pointer events\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m      - waiting 500ms\u001b[22m\n\u001b[2m      - waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is visible, enabled and stable\u001b[22m\n\u001b[2m      - scrolling into view if needed\u001b[22m\n\u001b[2m      - done scrolling\u001b[22m\n\u001b[2m      - <div class=\"fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4\">…</div> intercepts pointer events\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m      - waiting 500ms\u001b[22m\n\u001b[2m      - waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is visible, enabled and stable\u001b[22m\n\u001b[2m      - scrolling into view if needed\u001b[22m\n\u001b[2m      - done scrolling\u001b[22m\n\u001b[2m      - <div>…</div> from <div class=\"fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4\">…</div> subtree intercepts pointer events\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m      - waiting 500ms\u001b[22m\n\u001b[2m      - waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is visible, enabled and stable\u001b[22m\n\u001b[2m      - scrolling into view if needed\u001b[22m\n\u001b[2m      - done scrolling\u001b[22m\n\u001b[2m      - <div>…</div> from <div class=\"fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4\">…</div> subtree intercepts pointer events\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m      - waiting 500ms\u001b[22m\n\u001b[2m    - waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m    - element is visible, enabled and stable\u001b[22m\n\u001b[2m    - scrolling into view if needed\u001b[22m\n\u001b[2m    - done scrolling\u001b[22m\n\u001b[2m    - <div>…</div> from <div class=\"fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4\">…</div> subtree intercepts pointer events\u001b[22m\n\u001b[2m  - retrying click action\u001b[22m\n\u001b[2m    - waiting 500ms\u001b[22m\n\u001b[2m    - waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m    - element is visible, enabled and stable\u001b[22m\n\u001b[2m    - scrolling into view if needed\u001b[22m\n\u001b[2m    - done scrolling\u001b[22m\n\u001b[2m    - <div class=\"fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4\">…</div> intercepts pointer events\u001b[22m\n\u001b[2m  - retrying click action\u001b[22m\n\u001b[2m    - waiting 500ms\u001b[22m\n\u001b[2m    - waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m    - element is visible, enabled and stable\u001b[22m\n\u001b[2m    - scrolling into view if needed\u001b[22m\n\u001b[2m    - done scrolling\u001b[22m\n\u001b[2m    - <div>…</div> from <div class=\"fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4\">…</div> subtree intercepts pointer events\u001b[22m\n\u001b[2m  - retrying click action\u001b[22m\n\u001b[2m    - waiting 500ms\u001b[22m\n",
+                        "stack": "TimeoutError: locator.click: Timeout 10000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('text=test-document.txt')\u001b[22m\n\u001b[2m    - locator resolved to <button class=\"text-sm font-medium text-gray-900 hover:text-blue-600 text-left\">test-document.txt</button>\u001b[22m\n\u001b[2m  - attempting click action\u001b[22m\n\u001b[2m    - waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m    - element is visible, enabled and stable\u001b[22m\n\u001b[2m    - scrolling into view if needed\u001b[22m\n\u001b[2m    - done scrolling\u001b[22m\n\u001b[2m    - <div>…</div> from <div class=\"fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4\">…</div> subtree intercepts pointer events\u001b[22m\n\u001b[2m  - retrying click action\u001b[22m\n\u001b[2m    - waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m    - element is visible, enabled and stable\u001b[22m\n\u001b[2m    - scrolling into view if needed\u001b[22m\n\u001b[2m    - done scrolling\u001b[22m\n\u001b[2m    - <div class=\"fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4\">…</div> intercepts pointer events\u001b[22m\n\u001b[2m  - retrying click action\u001b[22m\n\u001b[2m    - waiting 20ms\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is visible, enabled and stable\u001b[22m\n\u001b[2m      - scrolling into view if needed\u001b[22m\n\u001b[2m      - done scrolling\u001b[22m\n\u001b[2m      - <div>…</div> from <div class=\"fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4\">…</div> subtree intercepts pointer events\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m      - waiting 100ms\u001b[22m\n\u001b[2m    4 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is visible, enabled and stable\u001b[22m\n\u001b[2m      - scrolling into view if needed\u001b[22m\n\u001b[2m      - done scrolling\u001b[22m\n\u001b[2m      - <div>…</div> from <div class=\"fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4\">…</div> subtree intercepts pointer events\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m      - waiting 500ms\u001b[22m\n\u001b[2m      - waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is visible, enabled and stable\u001b[22m\n\u001b[2m      - scrolling into view if needed\u001b[22m\n\u001b[2m      - done scrolling\u001b[22m\n\u001b[2m      - <div class=\"fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4\">…</div> intercepts pointer events\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m      - waiting 500ms\u001b[22m\n\u001b[2m      - waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is visible, enabled and stable\u001b[22m\n\u001b[2m      - scrolling into view if needed\u001b[22m\n\u001b[2m      - done scrolling\u001b[22m\n\u001b[2m      - <div>…</div> from <div class=\"fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4\">…</div> subtree intercepts pointer events\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m      - waiting 500ms\u001b[22m\n\u001b[2m      - waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is visible, enabled and stable\u001b[22m\n\u001b[2m      - scrolling into view if needed\u001b[22m\n\u001b[2m      - done scrolling\u001b[22m\n\u001b[2m      - <div>…</div> from <div class=\"fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4\">…</div> subtree intercepts pointer events\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m      - waiting 500ms\u001b[22m\n\u001b[2m    - waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m    - element is visible, enabled and stable\u001b[22m\n\u001b[2m    - scrolling into view if needed\u001b[22m\n\u001b[2m    - done scrolling\u001b[22m\n\u001b[2m    - <div>…</div> from <div class=\"fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4\">…</div> subtree intercepts pointer events\u001b[22m\n\u001b[2m  - retrying click action\u001b[22m\n\u001b[2m    - waiting 500ms\u001b[22m\n\u001b[2m    - waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m    - element is visible, enabled and stable\u001b[22m\n\u001b[2m    - scrolling into view if needed\u001b[22m\n\u001b[2m    - done scrolling\u001b[22m\n\u001b[2m    - <div class=\"fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4\">…</div> intercepts pointer events\u001b[22m\n\u001b[2m  - retrying click action\u001b[22m\n\u001b[2m    - waiting 500ms\u001b[22m\n\u001b[2m    - waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m    - element is visible, enabled and stable\u001b[22m\n\u001b[2m    - scrolling into view if needed\u001b[22m\n\u001b[2m    - done scrolling\u001b[22m\n\u001b[2m    - <div>…</div> from <div class=\"fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4\">…</div> subtree intercepts pointer events\u001b[22m\n\u001b[2m  - retrying click action\u001b[22m\n\u001b[2m    - waiting 500ms\u001b[22m\n\n    at /Users/arahuman/Library/CloudStorage/OneDrive-FranklinMadison/Documents/code/fmg_ai/ai_docsafe/final-working-demo.spec.js:181:34",
+                        "location": {
+                          "file": "/Users/arahuman/Library/CloudStorage/OneDrive-FranklinMadison/Documents/code/fmg_ai/ai_docsafe/final-working-demo.spec.js",
+                          "column": 34,
+                          "line": 181
+                        },
+                        "snippet": "  179 |               console.log('\\n👀 Step 9: Document Preview Test');\n  180 |               \n> 181 |               await documentItem.click();\n      |                                  ^\n  182 |               await page.waitForTimeout(3000);\n  183 |               await page.screenshot({ path: 'final-demo-10-preview.png', fullPage: true });\n  184 |               console.log('✅ Preview functionality tested');"
+                      },
+                      "errors": [
+                        {
+                          "location": {
+                            "file": "/Users/arahuman/Library/CloudStorage/OneDrive-FranklinMadison/Documents/code/fmg_ai/ai_docsafe/final-working-demo.spec.js",
+                            "column": 34,
+                            "line": 181
+                          },
+                          "message": "TimeoutError: locator.click: Timeout 10000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('text=test-document.txt')\u001b[22m\n\u001b[2m    - locator resolved to <button class=\"text-sm font-medium text-gray-900 hover:text-blue-600 text-left\">test-document.txt</button>\u001b[22m\n\u001b[2m  - attempting click action\u001b[22m\n\u001b[2m    - waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m    - element is visible, enabled and stable\u001b[22m\n\u001b[2m    - scrolling into view if needed\u001b[22m\n\u001b[2m    - done scrolling\u001b[22m\n\u001b[2m    - <div>…</div> from <div class=\"fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4\">…</div> subtree intercepts pointer events\u001b[22m\n\u001b[2m  - retrying click action\u001b[22m\n\u001b[2m    - waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m    - element is visible, enabled and stable\u001b[22m\n\u001b[2m    - scrolling into view if needed\u001b[22m\n\u001b[2m    - done scrolling\u001b[22m\n\u001b[2m    - <div class=\"fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4\">…</div> intercepts pointer events\u001b[22m\n\u001b[2m  - retrying click action\u001b[22m\n\u001b[2m    - waiting 20ms\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is visible, enabled and stable\u001b[22m\n\u001b[2m      - scrolling into view if needed\u001b[22m\n\u001b[2m      - done scrolling\u001b[22m\n\u001b[2m      - <div>…</div> from <div class=\"fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4\">…</div> subtree intercepts pointer events\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m      - waiting 100ms\u001b[22m\n\u001b[2m    4 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is visible, enabled and stable\u001b[22m\n\u001b[2m      - scrolling into view if needed\u001b[22m\n\u001b[2m      - done scrolling\u001b[22m\n\u001b[2m      - <div>…</div> from <div class=\"fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4\">…</div> subtree intercepts pointer events\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m      - waiting 500ms\u001b[22m\n\u001b[2m      - waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is visible, enabled and stable\u001b[22m\n\u001b[2m      - scrolling into view if needed\u001b[22m\n\u001b[2m      - done scrolling\u001b[22m\n\u001b[2m      - <div class=\"fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4\">…</div> intercepts pointer events\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m      - waiting 500ms\u001b[22m\n\u001b[2m      - waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is visible, enabled and stable\u001b[22m\n\u001b[2m      - scrolling into view if needed\u001b[22m\n\u001b[2m      - done scrolling\u001b[22m\n\u001b[2m      - <div>…</div> from <div class=\"fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4\">…</div> subtree intercepts pointer events\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m      - waiting 500ms\u001b[22m\n\u001b[2m      - waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is visible, enabled and stable\u001b[22m\n\u001b[2m      - scrolling into view if needed\u001b[22m\n\u001b[2m      - done scrolling\u001b[22m\n\u001b[2m      - <div>…</div> from <div class=\"fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4\">…</div> subtree intercepts pointer events\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m      - waiting 500ms\u001b[22m\n\u001b[2m    - waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m    - element is visible, enabled and stable\u001b[22m\n\u001b[2m    - scrolling into view if needed\u001b[22m\n\u001b[2m    - done scrolling\u001b[22m\n\u001b[2m    - <div>…</div> from <div class=\"fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4\">…</div> subtree intercepts pointer events\u001b[22m\n\u001b[2m  - retrying click action\u001b[22m\n\u001b[2m    - waiting 500ms\u001b[22m\n\u001b[2m    - waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m    - element is visible, enabled and stable\u001b[22m\n\u001b[2m    - scrolling into view if needed\u001b[22m\n\u001b[2m    - done scrolling\u001b[22m\n\u001b[2m    - <div class=\"fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4\">…</div> intercepts pointer events\u001b[22m\n\u001b[2m  - retrying click action\u001b[22m\n\u001b[2m    - waiting 500ms\u001b[22m\n\u001b[2m    - waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m    - element is visible, enabled and stable\u001b[22m\n\u001b[2m    - scrolling into view if needed\u001b[22m\n\u001b[2m    - done scrolling\u001b[22m\n\u001b[2m    - <div>…</div> from <div class=\"fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4\">…</div> subtree intercepts pointer events\u001b[22m\n\u001b[2m  - retrying click action\u001b[22m\n\u001b[2m    - waiting 500ms\u001b[22m\n\n\n  179 |               console.log('\\n👀 Step 9: Document Preview Test');\n  180 |               \n> 181 |               await documentItem.click();\n      |                                  ^\n  182 |               await page.waitForTimeout(3000);\n  183 |               await page.screenshot({ path: 'final-demo-10-preview.png', fullPage: true });\n  184 |               console.log('✅ Preview functionality tested');\n    at /Users/arahuman/Library/CloudStorage/OneDrive-FranklinMadison/Documents/code/fmg_ai/ai_docsafe/final-working-demo.spec.js:181:34"
+                        }
+                      ],
+                      "stdout": [
+                        {
+                          "text": "\n🎬 FINAL WORKING DEMO - Zero-Knowledge Upload Flow\n"
+                        },
+                        {
+                          "text": "===================================================\n"
+                        },
+                        {
+                          "text": "\n📍 Step 1: Loading SecureVault Application\n"
+                        },
+                        {
+                          "text": "[BROWSER] LOG: 🏗️ DocumentEncryptionService created with instanceId: service_qw8qcspfg\n"
+                        },
+                        {
+                          "text": "[BROWSER] LOG: 🌐 API REQUEST: /api/auth/logout token exists: false isExpired: true\n"
+                        },
+                        {
+                          "text": "[BROWSER] WARNING: ❌ API REQUEST: No valid token available\n"
+                        },
+                        {
+                          "text": "[BROWSER] LOG: 🌐 API REQUEST: /api/auth/logout token exists: false isExpired: true\n"
+                        },
+                        {
+                          "text": "[BROWSER] WARNING: ❌ API REQUEST: No valid token available\n"
+                        },
+                        {
+                          "text": "[BROWSER] LOG: 🗑️ DocumentEncryptionService[service_qw8qcspfg].clearMasterKey called\n"
+                        },
+                        {
+                          "text": "[BROWSER] LOG: 📢 DocumentEncryptionService[service_qw8qcspfg] notifying 0 listeners of master key change\n"
+                        },
+                        {
+                          "text": "[BROWSER] LOG: 🗑️ DocumentEncryptionService[service_qw8qcspfg].clearMasterKey called\n"
+                        },
+                        {
+                          "text": "[BROWSER] LOG: 📢 DocumentEncryptionService[service_qw8qcspfg] notifying 0 listeners of master key change\n"
+                        },
+                        {
+                          "text": "✅ Application loaded successfully\n"
+                        },
+                        {
+                          "text": "\n🔗 Step 2: Accessing Legacy Login\n"
+                        },
+                        {
+                          "text": "✅ Navigated to legacy login page\n"
+                        },
+                        {
+                          "text": "\n👤 Step 3: User Authentication\n"
+                        },
+                        {
+                          "text": "✅ Credentials entered\n"
+                        },
+                        {
+                          "text": "[BROWSER] LOG: 🌐 API REQUEST: /api/auth/login token exists: false isExpired: true\n"
+                        },
+                        {
+                          "text": "[BROWSER] WARNING: ❌ API REQUEST: No valid token available\n"
+                        },
+                        {
+                          "text": "🚀 Login submitted\n"
+                        },
+                        {
+                          "text": "[BROWSER] LOG: 🌐 API REQUEST: /api/auth/me token exists: true isExpired: false\n"
+                        },
+                        {
+                          "text": "[BROWSER] LOG: ✅ API REQUEST: Authorization header added\n"
+                        },
+                        {
+                          "text": "[BROWSER] LOG: 🌐 API REQUEST: /api/v1/rbac/users/14/permissions token exists: true isExpired: false\n"
+                        },
+                        {
+                          "text": "[BROWSER] LOG: ✅ API REQUEST: Authorization header added\n"
+                        },
+                        {
+                          "text": "[BROWSER] ERROR: Failed to load resource: the server responded with a status of 403 (Forbidden)\n"
+                        },
+                        {
+                          "text": "[BROWSER] ERROR: Failed to load resource: the server responded with a status of 403 (Forbidden)\n"
+                        },
+                        {
+                          "text": "📍 Current URL: http://localhost:3005/dashboard\n"
+                        },
+                        {
+                          "text": "\n🔐 Step 4: Encryption Unlock\n"
+                        },
+                        {
+                          "text": "\n📁 Step 5: Accessing Documents\n"
+                        },
+                        {
+                          "text": "✅ Documents page loaded\n"
+                        },
+                        {
+                          "text": "\n📤 Step 6: Testing Upload Interface\n"
+                        },
+                        {
+                          "text": "✅ Upload interface opened\n"
+                        },
+                        {
+                          "text": "\n📄 Step 7: File Upload with Encryption\n"
+                        },
+                        {
+                          "text": "[BROWSER] ERROR: ❌ UPLOAD: No encryption session found, aborting upload\n"
+                        },
+                        {
+                          "text": "📁 Test file selected\n"
+                        },
+                        {
+                          "text": "\n📋 Step 8: Document Verification\n"
+                        },
+                        {
+                          "text": "✅ Document appears in list\n"
+                        },
+                        {
+                          "text": "\n👀 Step 9: Document Preview Test\n"
+                        }
+                      ],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2025-08-01T20:11:13.152Z",
+                      "annotations": [],
+                      "attachments": [
+                        {
+                          "name": "screenshot",
+                          "contentType": "image/png",
+                          "path": "/Users/arahuman/Library/CloudStorage/OneDrive-FranklinMadison/Documents/code/fmg_ai/ai_docsafe/test-results/final-working-demo-Final-W-9c37f-te-Zero-Knowledge-Demo-Flow-chromium/test-failed-1.png"
+                        },
+                        {
+                          "name": "video",
+                          "contentType": "video/webm",
+                          "path": "/Users/arahuman/Library/CloudStorage/OneDrive-FranklinMadison/Documents/code/fmg_ai/ai_docsafe/test-results/final-working-demo-Final-W-9c37f-te-Zero-Knowledge-Demo-Flow-chromium/video.webm"
+                        },
+                        {
+                          "name": "error-context",
+                          "contentType": "text/markdown",
+                          "path": "/Users/arahuman/Library/CloudStorage/OneDrive-FranklinMadison/Documents/code/fmg_ai/ai_docsafe/test-results/final-working-demo-Final-W-9c37f-te-Zero-Knowledge-Demo-Flow-chromium/error-context.md"
+                        }
+                      ],
+                      "errorLocation": {
+                        "file": "/Users/arahuman/Library/CloudStorage/OneDrive-FranklinMadison/Documents/code/fmg_ai/ai_docsafe/final-working-demo.spec.js",
+                        "column": 34,
+                        "line": 181
+                      }
+                    }
+                  ],
+                  "status": "unexpected"
+                }
+              ],
+              "id": "6c1ecfd917524b8e6d33-b7c2f2f19643b726f082",
+              "file": "final-working-demo.spec.js",
+              "line": 17,
+              "column": 3
+            },
+            {
+              "title": "Architecture and Security Verification",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 1320,
+                      "errors": [],
+                      "stdout": [
+                        {
+                          "text": "\n🔬 ARCHITECTURE VERIFICATION\n"
+                        },
+                        {
+                          "text": "============================\n"
+                        },
+                        {
+                          "text": "🔐 Security Architecture Status:\n"
+                        },
+                        {
+                          "text": "   Web Crypto API: ✅\n"
+                        },
+                        {
+                          "text": "   Document Encryption Service: ❌\n"
+                        },
+                        {
+                          "text": "   Auth Store Present: ✅\n"
+                        },
+                        {
+                          "text": "   Session Storage Keys: []\n"
+                        },
+                        {
+                          "text": "   Local Storage Keys: [auth-store]\n"
+                        },
+                        {
+                          "text": "   Browser: Chrome\n"
+                        },
+                        {
+                          "text": "\n✅ Zero-Knowledge Principles Verified:\n"
+                        },
+                        {
+                          "text": "   🛡️ No sensitive keys in localStorage\n"
+                        },
+                        {
+                          "text": "   🔐 Browser-native crypto API available\n"
+                        },
+                        {
+                          "text": "   🏗️ Client-side architecture ready\n"
+                        },
+                        {
+                          "text": "   📱 Session-based security model\n"
+                        }
+                      ],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2025-08-01T20:12:02.409Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "6c1ecfd917524b8e6d33-0488bc3e1440c15b90c7",
+              "file": "final-working-demo.spec.js",
+              "line": 218,
+              "column": 3
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2025-08-01T20:11:07.739Z",
+    "duration": 56444.119999999995,
+    "expected": 1,
+    "skipped": 0,
+    "unexpected": 1,
+    "flaky": 0
+  }
+}

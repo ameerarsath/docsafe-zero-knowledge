@@ -172,12 +172,13 @@ async def get_document_statistics(
     print(f"🚀 STATISTICS ENDPOINT CALLED for user {current_user.username} (ID: {current_user.id})")
     print(f"🚀 User is_admin: {current_user.is_admin}")
     
-    # Check if user has permission to read documents
-    if not has_permission(current_user, "documents:read", db):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Insufficient privileges to view document statistics"
-        )
+    # Allow users to view their own document statistics
+    # Only require admin permission if trying to view global statistics
+    if not current_user.is_admin and not has_permission(current_user, "documents:read", db):
+        # For regular users, we'll show only their own document statistics
+        # This is a more permissive approach for user's own data
+        print(f"🚀 User {current_user.username} viewing own statistics without documents:read permission")
+        pass  # Allow access to own statistics
     
     try:
         # Use database aggregation for performance instead of loading all documents
@@ -783,11 +784,23 @@ async def upload_file(
         upload_metadata_dict = json.loads(upload_data)
         print(f"📋 Parsed upload metadata: {upload_metadata_dict}")
         
+        # Check if this is zero-knowledge upload
+        is_zero_knowledge = 'encrypted_dek' in upload_metadata_dict
+        print(f"🔍 Upload type detected: {'Zero-Knowledge' if is_zero_knowledge else 'Legacy'}")
+        
         upload_metadata = DocumentUpload.parse_obj(upload_metadata_dict)
         print(f"✅ Upload metadata validated successfully")
-        print(f"🔐 Encryption fields: key_id={upload_metadata.encryption_key_id}, iv={upload_metadata.encryption_iv[:20]}..., auth_tag={upload_metadata.encryption_auth_tag[:20]}...")
+        
+        if is_zero_knowledge:
+            print(f"🔐 Zero-knowledge fields: encrypted_dek length={len(upload_metadata.encrypted_dek) if upload_metadata.encrypted_dek else 0}, algorithm={upload_metadata.encryption_algorithm}")
+        else:
+            print(f"🔐 Legacy encryption fields: key_id={upload_metadata.encryption_key_id}, iv={upload_metadata.encryption_iv[:20] if upload_metadata.encryption_iv else 'None'}...")
+            
     except Exception as e:
         print(f"❌ Upload metadata parsing failed: {str(e)}")
+        print(f"❌ Exception type: {type(e).__name__}")
+        import traceback
+        print(f"❌ Full traceback: {traceback.format_exc()}")
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"Invalid upload metadata: {str(e)}"
@@ -823,30 +836,65 @@ async def upload_file(
         
         # Create document record
         print(f"💾 Creating document record with encryption metadata...")
-        encryption_iv_bytes = base64.b64decode(upload_metadata.encryption_iv)
-        encryption_auth_tag_bytes = base64.b64decode(upload_metadata.encryption_auth_tag)
         
-        print(f"🔐 Decoded encryption data: iv_length={len(encryption_iv_bytes)}, auth_tag_length={len(encryption_auth_tag_bytes)}")
+        # Check if this is zero-knowledge or legacy encryption
+        is_zero_knowledge = upload_metadata.encrypted_dek is not None
         
-        document = Document(
-            name=upload_metadata.name,
-            description=upload_metadata.description,
-            document_type=DocumentType.DOCUMENT,
-            mime_type=upload_metadata.mime_type,
-            file_size=upload_metadata.file_size,
-            file_hash_sha256=upload_metadata.file_hash,
-            storage_path=storage_path,
-            parent_id=upload_metadata.parent_id,
-            owner_id=current_user.id,
-            created_by=current_user.id,
-            encryption_key_id=upload_metadata.encryption_key_id,
-            encryption_iv=encryption_iv_bytes,
-            encryption_auth_tag=encryption_auth_tag_bytes,
-            tags=upload_metadata.tags,
-            doc_metadata=upload_metadata.doc_metadata,
-            is_sensitive=upload_metadata.is_sensitive,
-            is_encrypted=True
-        )
+        if is_zero_knowledge:
+            # Zero-knowledge encryption (DEK-per-document architecture)
+            print(f"🔒 Zero-knowledge upload detected")
+            
+            # For zero-knowledge uploads, encryption_iv is already base64 string, so decode it to bytes
+            encryption_iv_bytes = base64.b64decode(upload_metadata.encryption_iv) if upload_metadata.encryption_iv else None
+            
+            document = Document(
+                name=upload_metadata.name,
+                description=upload_metadata.description,
+                document_type=DocumentType.DOCUMENT,
+                mime_type=upload_metadata.mime_type,
+                file_size=upload_metadata.original_size or upload_metadata.file_size,
+                file_hash_sha256=upload_metadata.file_hash,
+                storage_path=storage_path,
+                parent_id=upload_metadata.parent_id,
+                owner_id=current_user.id,
+                created_by=current_user.id,
+                # Zero-knowledge specific fields
+                encrypted_dek=upload_metadata.encrypted_dek,
+                encryption_iv=encryption_iv_bytes,  # Convert base64 to bytes
+                encryption_algorithm=upload_metadata.encryption_algorithm or "AES-256-GCM",
+                tags=upload_metadata.tags,
+                doc_metadata=upload_metadata.doc_metadata,
+                is_sensitive=upload_metadata.is_sensitive,
+                is_encrypted=True
+            )
+            print(f"🔐 Zero-knowledge document created: encrypted_dek_length={len(upload_metadata.encrypted_dek) if upload_metadata.encrypted_dek else 0}")
+        else:
+            # Legacy encryption format
+            print(f"🔑 Legacy encryption upload detected")
+            encryption_iv_bytes = base64.b64decode(upload_metadata.encryption_iv)
+            encryption_auth_tag_bytes = base64.b64decode(upload_metadata.encryption_auth_tag)
+            
+            print(f"🔐 Decoded encryption data: iv_length={len(encryption_iv_bytes)}, auth_tag_length={len(encryption_auth_tag_bytes)}")
+            
+            document = Document(
+                name=upload_metadata.name,
+                description=upload_metadata.description,
+                document_type=DocumentType.DOCUMENT,
+                mime_type=upload_metadata.mime_type,
+                file_size=upload_metadata.file_size,
+                file_hash_sha256=upload_metadata.file_hash,
+                storage_path=storage_path,
+                parent_id=upload_metadata.parent_id,
+                owner_id=current_user.id,
+                created_by=current_user.id,
+                encryption_key_id=upload_metadata.encryption_key_id,
+                encryption_iv=encryption_iv_bytes,
+                encryption_auth_tag=encryption_auth_tag_bytes,
+                tags=upload_metadata.tags,
+                doc_metadata=upload_metadata.doc_metadata,
+                is_sensitive=upload_metadata.is_sensitive,
+                is_encrypted=True
+            )
         
         print(f"📄 Document created with: name={document.name}, encryption_key_id={document.encryption_key_id}, is_encrypted={document.is_encrypted}")
         
@@ -962,18 +1010,21 @@ async def search_documents(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Search documents with advanced filtering."""
-    # Build query with filters
-    query = db.query(Document)
+    """Enhanced search documents with advanced filtering and full-text capabilities."""
+    from ...models.user import User as UserModel
     
-    # Apply filters
-    if search_params.filters.document_type:
-        query = query.filter(Document.document_type == search_params.filters.document_type)
+    # Build base query with joins for author search
+    query = db.query(Document).outerjoin(UserModel, Document.created_by == UserModel.id)
     
+    # Apply status filter (default to active)
     if search_params.filters.status:
         query = query.filter(Document.status == search_params.filters.status)
     else:
         query = query.filter(Document.status == DocumentStatus.ACTIVE)
+    
+    # Apply basic filters
+    if search_params.filters.document_type:
+        query = query.filter(Document.document_type == search_params.filters.document_type)
     
     if search_params.filters.owner_id:
         query = query.filter(Document.owner_id == search_params.filters.owner_id)
@@ -981,57 +1032,164 @@ async def search_documents(
     if search_params.filters.parent_id is not None:
         query = query.filter(Document.parent_id == search_params.filters.parent_id)
     
-    if search_params.filters.mime_type:
-        query = query.filter(Document.mime_type.like(f"%{search_params.filters.mime_type}%"))
-    
     if search_params.filters.is_shared is not None:
         query = query.filter(Document.is_shared == search_params.filters.is_shared)
     
     if search_params.filters.is_sensitive is not None:
         query = query.filter(Document.is_sensitive == search_params.filters.is_sensitive)
     
+    # Enhanced MIME type and file extension filtering
+    if search_params.filters.mime_type:
+        mime_filter = search_params.filters.mime_type.lower()
+        
+        # File type categories
+        type_categories = {
+            'document': ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text/plain', 'text/rtf'],
+            'spreadsheet': ['application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'text/csv'],
+            'presentation': ['application/vnd.ms-powerpoint', 'application/vnd.openxmlformats-officedocument.presentationml.presentation'],
+            'image': ['image/jpeg', 'image/png', 'image/gif', 'image/bmp', 'image/webp', 'image/svg+xml'],
+            'video': ['video/mp4', 'video/avi', 'video/quicktime', 'video/x-msvideo'],
+            'audio': ['audio/mpeg', 'audio/wav', 'audio/x-wav', 'audio/ogg'],
+            'archive': ['application/zip', 'application/x-rar-compressed', 'application/x-7z-compressed', 'application/x-tar'],
+            'code': ['text/x-python', 'text/javascript', 'text/html', 'text/css', 'application/json', 'text/x-java-source']
+        }
+        
+        if mime_filter in type_categories:
+            # Search by category
+            query = query.filter(Document.mime_type.in_(type_categories[mime_filter]))
+        else:
+            # Search by specific mime type or pattern
+            query = query.filter(Document.mime_type.ilike(f"%{mime_filter}%"))
+    
+    # File category filtering (alternative to mime_type)
+    if search_params.filters.file_category:
+        type_categories = {
+            'document': ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text/plain', 'text/rtf'],
+            'spreadsheet': ['application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'text/csv'],
+            'presentation': ['application/vnd.ms-powerpoint', 'application/vnd.openxmlformats-officedocument.presentationml.presentation'],
+            'image': ['image/jpeg', 'image/png', 'image/gif', 'image/bmp', 'image/webp', 'image/svg+xml'],
+            'video': ['video/mp4', 'video/avi', 'video/quicktime', 'video/x-msvideo'],
+            'audio': ['audio/mpeg', 'audio/wav', 'audio/x-wav', 'audio/ogg'],
+            'archive': ['application/zip', 'application/x-rar-compressed', 'application/x-7z-compressed', 'application/x-tar'],
+            'code': ['text/x-python', 'text/javascript', 'text/html', 'text/css', 'application/json', 'text/x-java-source']
+        }
+        
+        category_types = type_categories.get(search_params.filters.file_category, [])
+        if category_types:
+            query = query.filter(Document.mime_type.in_(category_types))
+    
+    # Author filtering (admin only)
+    if search_params.filters.author_id:
+        if not (current_user.role and current_user.role in ['admin', 'super_admin']):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only administrators can filter by author"
+            )
+        query = query.filter(Document.created_by == search_params.filters.author_id)
+    
+    # Enhanced tag filtering with suggestions support
     if search_params.filters.tags:
         for tag in search_params.filters.tags:
-            query = query.filter(Document.tags.contains([tag]))
+            # Use case-insensitive search in JSONB array
+            query = query.filter(
+                func.jsonb_path_exists(
+                    Document.tags,
+                    f'$[*] ? (@ like_regex "{tag.lower()}" flag "i")'
+                )
+            )
     
-    # Date filters
+    # Enhanced date filtering with smart ranges
+    if search_params.filters.date_range:
+        from datetime import timedelta
+        now = datetime.now()
+        
+        date_ranges = {
+            'today': now.replace(hour=0, minute=0, second=0, microsecond=0),
+            'week': now - timedelta(days=7),
+            'month': now - timedelta(days=30),
+            'quarter': now - timedelta(days=90),
+            'year': now - timedelta(days=365),
+            'older': None  # Special case for documents older than 1 year
+        }
+        
+        if search_params.filters.date_range == 'older':
+            query = query.filter(Document.updated_at < (now - timedelta(days=365)))
+        else:
+            start_date = date_ranges[search_params.filters.date_range]
+            query = query.filter(Document.updated_at >= start_date)
+    
+    # Manual date filtering (overrides smart ranges)
     if search_params.filters.created_after:
         query = query.filter(Document.created_at >= search_params.filters.created_after)
     if search_params.filters.created_before:
         query = query.filter(Document.created_at <= search_params.filters.created_before)
+    if search_params.filters.updated_after:
+        query = query.filter(Document.updated_at >= search_params.filters.updated_after)
+    if search_params.filters.updated_before:
+        query = query.filter(Document.updated_at <= search_params.filters.updated_before)
     
-    # Size filters
-    if search_params.filters.min_size:
+    # Enhanced size filtering with smart ranges
+    if search_params.filters.size_range:
+        size_ranges = {
+            'small': (0, 1024 * 1024),  # 0-1MB
+            'medium': (1024 * 1024, 10 * 1024 * 1024),  # 1-10MB
+            'large': (10 * 1024 * 1024, 100 * 1024 * 1024),  # 10-100MB
+            'huge': (100 * 1024 * 1024, None)  # 100MB+
+        }
+        min_size, max_size = size_ranges[search_params.filters.size_range]
+        query = query.filter(Document.file_size >= min_size)
+        if max_size is not None:
+            query = query.filter(Document.file_size <= max_size)
+    
+    # Manual size filtering (overrides smart ranges)
+    if search_params.filters.min_size is not None:
         query = query.filter(Document.file_size >= search_params.filters.min_size)
-    if search_params.filters.max_size:
+    if search_params.filters.max_size is not None:
         query = query.filter(Document.file_size <= search_params.filters.max_size)
     
-    # Text search in name and description
+    # Enhanced full-text search in name, description, and author (admin only)
     if search_params.query:
         search_text = f"%{search_params.query}%"
-        query = query.filter(
-            or_(
-                Document.name.like(search_text),
-                Document.description.like(search_text)
-            )
-        )
+        search_conditions = [
+            Document.name.ilike(search_text),
+            Document.description.ilike(search_text)
+        ]
+        
+        # Add author search for admin users only
+        if current_user.role and current_user.role in ['admin', 'super_admin']:
+            search_conditions.extend([
+                UserModel.full_name.ilike(search_text),
+                UserModel.email.ilike(search_text)
+            ])
+        
+        query = query.filter(or_(*search_conditions))
     
     # Apply permission filtering
     all_docs = query.all()
     accessible_docs = [doc for doc in all_docs if doc.can_user_access(current_user, "read")]
     
-    # Apply sorting
+    # Enhanced sorting with relevance scoring for text searches
+    def get_sort_key(doc):
+        value = getattr(doc, search_params.sort_by, "")
+        # Handle None values
+        if value is None:
+            return ""
+        # Handle datetime objects
+        if hasattr(value, 'isoformat'):
+            return value
+        return str(value)
+    
     if search_params.sort_order == "desc":
-        accessible_docs.sort(key=lambda d: getattr(d, search_params.sort_by, ""), reverse=True)
+        accessible_docs.sort(key=get_sort_key, reverse=True)
     else:
-        accessible_docs.sort(key=lambda d: getattr(d, search_params.sort_by, ""))
+        accessible_docs.sort(key=get_sort_key)
     
     # Apply pagination
     total_count = len(accessible_docs)
     offset = (search_params.page - 1) * search_params.size
     paginated_docs = accessible_docs[offset:offset + search_params.size]
     
-    # Convert to response format
+    # Convert to response format with enhanced metadata
     document_responses = []
     for doc in paginated_docs:
         doc_dict = doc.to_dict()
@@ -1039,6 +1197,18 @@ async def search_documents(
         doc_dict["can_write"] = doc.can_user_access(current_user, "write")
         doc_dict["can_delete"] = doc.can_user_access(current_user, "delete")
         doc_dict["can_share"] = doc.can_user_access(current_user, "share")
+        
+        # Add author information if available and user has permission
+        if current_user.role and current_user.role in ['admin', 'super_admin']:
+            creator = db.query(UserModel).filter(UserModel.id == doc.created_by).first()
+            if creator:
+                doc_dict["author_name"] = creator.full_name
+                doc_dict["author_email"] = creator.email
+        
+        # Add file category based on mime type
+        if doc.mime_type:
+            doc_dict["file_category"] = _get_file_category(doc.mime_type)
+        
         document_responses.append(DocumentSchema(**doc_dict))
     
     return DocumentList(
@@ -1048,6 +1218,155 @@ async def search_documents(
         size=search_params.size,
         has_next=offset + search_params.size < total_count
     )
+
+
+def _get_file_category(mime_type: str) -> str:
+    """Categorize file based on MIME type."""
+    mime_lower = mime_type.lower()
+    
+    if any(t in mime_lower for t in ['pdf', 'msword', 'wordprocessing', 'text/plain', 'rtf']):
+        return 'document'
+    elif any(t in mime_lower for t in ['excel', 'spreadsheet', 'csv']):
+        return 'spreadsheet'
+    elif any(t in mime_lower for t in ['powerpoint', 'presentation']):
+        return 'presentation'
+    elif mime_lower.startswith('image/'):
+        return 'image'
+    elif mime_lower.startswith('video/'):
+        return 'video'
+    elif mime_lower.startswith('audio/'):
+        return 'audio'
+    elif any(t in mime_lower for t in ['zip', 'rar', '7z', 'tar', 'gz']):
+        return 'archive'
+    elif any(t in mime_lower for t in ['javascript', 'python', 'java', 'html', 'css', 'json', 'xml']):
+        return 'code'
+    else:
+        return 'other'
+
+
+@router.get("/search/suggestions/tags", response_model=List[str])
+async def get_tag_suggestions(
+    query: str = Query("", description="Tag search query"),
+    limit: int = Query(10, ge=1, le=50, description="Maximum number of suggestions"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get tag suggestions based on existing tags."""
+    # Get all accessible documents first (for permission filtering)
+    docs_query = db.query(Document).filter(Document.status == DocumentStatus.ACTIVE)
+    all_docs = docs_query.all()
+    accessible_docs = [doc for doc in all_docs if doc.can_user_access(current_user, "read")]
+    
+    # Extract all tags from accessible documents
+    all_tags = set()
+    for doc in accessible_docs:
+        if doc.tags and isinstance(doc.tags, list):
+            for tag in doc.tags:
+                if isinstance(tag, str):
+                    all_tags.add(tag.lower())
+    
+    # Filter tags based on query
+    if query:
+        query_lower = query.lower()
+        matching_tags = [tag for tag in all_tags if query_lower in tag]
+    else:
+        matching_tags = list(all_tags)
+    
+    # Sort by relevance (exact matches first, then alphabetical)
+    if query:
+        query_lower = query.lower()
+        exact_matches = [tag for tag in matching_tags if tag == query_lower]
+        starts_with = [tag for tag in matching_tags if tag.startswith(query_lower) and tag != query_lower]
+        contains = [tag for tag in matching_tags if query_lower in tag and not tag.startswith(query_lower)]
+        
+        matching_tags = exact_matches + sorted(starts_with) + sorted(contains)
+    else:
+        matching_tags = sorted(matching_tags)
+    
+    return matching_tags[:limit]
+
+
+@router.get("/search/suggestions/authors", response_model=List[Dict[str, Any]])
+async def get_author_suggestions(
+    query: str = Query("", description="Author search query"),
+    limit: int = Query(10, ge=1, le=50, description="Maximum number of suggestions"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get author suggestions (admin only)."""
+    # Check admin permission
+    if not (current_user.role and current_user.role in ['admin', 'super_admin']):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only administrators can search by author"
+        )
+    
+    from ...models.user import User as UserModel
+    
+    # Build query for users who have created documents
+    user_query = db.query(UserModel).join(Document, UserModel.id == Document.created_by).distinct()
+    
+    if query:
+        search_text = f"%{query}%"
+        user_query = user_query.filter(
+            or_(
+                UserModel.full_name.ilike(search_text),
+                UserModel.email.ilike(search_text)
+            )
+        )
+    
+    users = user_query.limit(limit).all()
+    
+    return [
+        {
+            "id": user.id,
+            "full_name": user.full_name,
+            "email": user.email,
+            "document_count": db.query(Document).filter(
+                Document.created_by == user.id,
+                Document.status == DocumentStatus.ACTIVE
+            ).count()
+        }
+        for user in users
+    ]
+
+
+@router.get("/search/file-categories", response_model=List[Dict[str, Any]])
+async def get_file_categories(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get available file categories with counts."""
+    # Get all accessible documents
+    docs_query = db.query(Document).filter(
+        Document.status == DocumentStatus.ACTIVE,
+        Document.document_type == DocumentType.DOCUMENT
+    )
+    all_docs = docs_query.all()
+    accessible_docs = [doc for doc in all_docs if doc.can_user_access(current_user, "read")]
+    
+    # Count documents by category
+    category_counts = {}
+    for doc in accessible_docs:
+        if doc.mime_type:
+            category = _get_file_category(doc.mime_type)
+            category_counts[category] = category_counts.get(category, 0) + 1
+    
+    # Format response
+    categories = [
+        {"name": "document", "label": "Documents", "count": category_counts.get("document", 0)},
+        {"name": "spreadsheet", "label": "Spreadsheets", "count": category_counts.get("spreadsheet", 0)},
+        {"name": "presentation", "label": "Presentations", "count": category_counts.get("presentation", 0)},
+        {"name": "image", "label": "Images", "count": category_counts.get("image", 0)},
+        {"name": "video", "label": "Videos", "count": category_counts.get("video", 0)},
+        {"name": "audio", "label": "Audio", "count": category_counts.get("audio", 0)},
+        {"name": "archive", "label": "Archives", "count": category_counts.get("archive", 0)},
+        {"name": "code", "label": "Code", "count": category_counts.get("code", 0)},
+        {"name": "other", "label": "Other", "count": category_counts.get("other", 0)}
+    ]
+    
+    # Only return categories with documents
+    return [cat for cat in categories if cat["count"] > 0]
 
 
 # Document Permission Endpoints

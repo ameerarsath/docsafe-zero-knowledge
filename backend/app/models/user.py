@@ -27,6 +27,12 @@ class User(Base):
     email = Column(String(255), unique=True, index=True, nullable=False)
     password_hash = Column(String(255), nullable=False)
     
+    # Zero-Knowledge Encryption fields (separate from login authentication)
+    encryption_salt = Column(String(64), nullable=True)  # Base64 encoded salt for PBKDF2
+    key_verification_payload = Column(Text, nullable=True)  # Encrypted payload to verify encryption key
+    encryption_method = Column(String(50), default='PBKDF2-SHA256', nullable=False)
+    key_derivation_iterations = Column(Integer, default=500000, nullable=False)
+    
     # User status
     is_active = Column(Boolean, default=True, nullable=False)
     is_verified = Column(Boolean, default=False, nullable=False)
