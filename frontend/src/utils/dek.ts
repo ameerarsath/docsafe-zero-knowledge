@@ -191,22 +191,72 @@ export async function decryptDEK(
 }
 
 /**
- * Parse DEK info from stored JSON string
+ * Parse DEK info from stored JSON string with enhanced validation
  */
 export function parseDEKInfo(dekInfoString: string): DEKInfo {
   try {
-    const dekInfo = JSON.parse(dekInfoString);
+    console.log('🔧 Parsing DEK info:', {
+      stringLength: dekInfoString?.length,
+      stringStart: dekInfoString?.substring(0, 100) + '...'
+    });
     
-    // Validate required fields
+    // Validate input
+    if (!dekInfoString || typeof dekInfoString !== 'string') {
+      throw new Error('DEK info string is empty or invalid');
+    }
+    
+    // Parse JSON with error handling
+    let dekInfo: any;
+    try {
+      dekInfo = JSON.parse(dekInfoString);
+    } catch (jsonError) {
+      throw new Error(`Invalid JSON format: ${jsonError instanceof Error ? jsonError.message : 'Unknown JSON error'}`);
+    }
+    
+    if (!dekInfo || typeof dekInfo !== 'object') {
+      throw new Error('Parsed DEK info is not a valid object');
+    }
+    
+    // Validate required fields with detailed reporting
     const requiredFields = ['dekId', 'encryptedDek', 'dekIv', 'dekAuthTag', 'algorithm'];
+    const missingFields: string[] = [];
+    const invalidFields: string[] = [];
+    
     for (const field of requiredFields) {
       if (!dekInfo[field]) {
-        throw new Error(`Missing required field: ${field}`);
+        missingFields.push(field);
+      } else if (typeof dekInfo[field] !== 'string') {
+        invalidFields.push(`${field} (type: ${typeof dekInfo[field]})`);
       }
     }
     
+    if (missingFields.length > 0) {
+      throw new Error(`Missing required fields: ${missingFields.join(', ')}`);
+    }
+    
+    if (invalidFields.length > 0) {
+      throw new Error(`Invalid field types: ${invalidFields.join(', ')}`);
+    }
+    
+    // Validate base64 fields
+    const base64Fields = ['encryptedDek', 'dekIv', 'dekAuthTag'];
+    for (const field of base64Fields) {
+      const value = dekInfo[field];
+      if (!/^[A-Za-z0-9+/]*={0,2}$/.test(value)) {
+        throw new Error(`Field ${field} contains invalid base64 data`);
+      }
+    }
+    
+    console.log('✅ DEK info parsed successfully:', {
+      dekId: dekInfo.dekId,
+      algorithm: dekInfo.algorithm,
+      version: dekInfo.version,
+      createdAt: dekInfo.createdAt
+    });
+    
     return dekInfo as DEKInfo;
   } catch (error) {
+    console.error('❌ DEK parsing failed:', error);
     throw new DEKError(`Failed to parse DEK info: ${error instanceof Error ? error.message : 'Invalid JSON'}`);
   }
 }

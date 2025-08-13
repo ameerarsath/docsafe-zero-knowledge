@@ -156,14 +156,24 @@ export const PermissionProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           const summary = await rbacService.getUserPermissionSummary(user.id);
           setUserRoles(summary.all_roles);
           setHierarchyLevel(summary.highest_hierarchy_level);
-        } catch (apiError) {
+          
+          console.log('✅ RBAC: Successfully loaded permissions from API for user:', user.id);
+        } catch (apiError: any) {
           // Fallback to using auth context data if RBAC API not available
+          console.log('⚠️ RBAC API not available, using fallback role-based permissions for user:', user.role);
+          
+          // Only log actual errors, not expected 403s for insufficient permissions
+          if (apiError?.response?.status !== 403) {
+            console.warn('RBAC API error:', apiError?.message);
+          }
           
           // Use basic role-based permissions from auth context
           const roleBasedPermissions = getRoleBasedPermissions(user.role);
           setUserPermissions(roleBasedPermissions);
           setUserRoles([user.role]);
           setHierarchyLevel(getRoleHierarchyLevel(user.role));
+          
+          console.log('✅ RBAC: Using fallback permissions for role:', user.role, 'permissions:', roleBasedPermissions.length);
         }
 
         setIsLoading(false);

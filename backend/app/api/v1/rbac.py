@@ -548,9 +548,13 @@ async def get_user_permissions_endpoint(
     db: Session = Depends(get_db)
 ):
     """Get all permissions for a user."""
-    # Only allow viewing own permissions unless user has admin privileges
+    # Always allow users to view their own permissions
+    # Only require admin permissions for viewing other users' permissions
     if user_id != current_user.id:
         if not has_permission(current_user, "users:read", db):
+            # Provide better error logging for debugging
+            print(f"🚫 RBAC DEBUG: User {current_user.id} ({current_user.username}) attempted to access permissions for user {user_id}")
+            print(f"🚫 RBAC DEBUG: User permissions: {get_user_permissions(current_user, db)}")
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Can only view own permissions"
@@ -697,6 +701,17 @@ async def get_resource_permissions(
         )
     ).all()
     
+    return permissions
+
+
+@router.get("/users/me/permissions", response_model=List[str])
+async def get_current_user_permissions(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get permissions for the current authenticated user."""
+    permissions = get_user_permissions(current_user, db)
+    print(f"✅ RBAC DEBUG: Returning permissions for current user {current_user.id} ({current_user.username}): {permissions}")
     return permissions
 
 

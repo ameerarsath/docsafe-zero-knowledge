@@ -8,6 +8,8 @@ interface EnhancedSearchProps {
   onClear: () => void;
   initialQuery?: string;
   isAdmin?: boolean;
+  canSearchAdvanced?: boolean;  // Can use advanced search features
+  canSearchAll?: boolean;       // Can search (basic permission)
   className?: string;
 }
 
@@ -29,6 +31,8 @@ const EnhancedSearch: React.FC<EnhancedSearchProps> = ({
   onClear,
   initialQuery = '',
   isAdmin = false,
+  canSearchAdvanced = false,
+  canSearchAll = true,
   className = ''
 }) => {
   const [state, setState] = useState<SearchState>({
@@ -96,9 +100,13 @@ const EnhancedSearch: React.FC<EnhancedSearchProps> = ({
 
   // Handle search submission
   const handleSearch = () => {
+    // Always include status filter to exclude deleted files, then add user filters
+    const baseFilters = { status: 'active' as const };
+    const combinedFilters = { ...baseFilters, ...state.filters };
+    
     const searchParams: DocumentSearchParams = {
       query: state.query || undefined,
-      filters: Object.keys(state.filters).length > 0 ? state.filters : undefined,
+      filters: combinedFilters,
       sort_by: 'updated_at',
       sort_order: 'desc',
       page: 1,
@@ -115,12 +123,34 @@ const EnhancedSearch: React.FC<EnhancedSearchProps> = ({
     }
   };
 
-  // Handle filter changes
+  // Handle filter changes with auto-search
   const updateFilter = (key: keyof DocumentSearchFilters, value: any) => {
     setState(prev => ({
       ...prev,
       filters: { ...prev.filters, [key]: value }
     }));
+    
+    // Auto-trigger search when filters change (debounced)
+    setTimeout(() => {
+      handleSearch();
+    }, 300);
+  };
+
+  // Clear individual filter
+  const clearFilter = (key: keyof DocumentSearchFilters) => {
+    setState(prev => {
+      const newFilters = { ...prev.filters };
+      delete newFilters[key];
+      return {
+        ...prev,
+        filters: newFilters
+      };
+    });
+    
+    // Auto-trigger search after clearing filter
+    setTimeout(() => {
+      handleSearch();
+    }, 100);
   };
 
   // Handle tag input
@@ -191,8 +221,33 @@ const EnhancedSearch: React.FC<EnhancedSearchProps> = ({
     onClear();
   };
 
-  // Count active filters
-  const activeFilterCount = Object.keys(state.filters).length;
+  // Count active filters (excluding status which is always 'active')
+  const activeFilterCount = Object.keys(state.filters).filter(key => key !== 'status').length;
+  
+  // Get active filter summary for display
+  const getActiveFiltersSummary = () => {
+    const summaries: string[] = [];
+    if (state.filters.file_category) summaries.push(`Type: ${state.filters.file_category}`);
+    if (state.filters.size_range) summaries.push(`Size: ${state.filters.size_range}`);
+    if (state.filters.date_range) summaries.push(`Date: ${state.filters.date_range}`);
+    if (state.filters.document_type) summaries.push(`Content: ${state.filters.document_type}`);
+    if (state.filters.tags?.length) summaries.push(`Tags: ${state.filters.tags.join(', ')}`);
+    if (state.filters.author_id) summaries.push(`Author: ${state.authorQuery}`);
+    if (state.filters.is_shared) summaries.push('Shared only');
+    if (state.filters.is_sensitive) summaries.push('Sensitive only');
+    return summaries;
+  };
+
+  // Show restricted message if user can't search at all
+  if (!canSearchAll) {
+    return (
+      <div className={`bg-gray-50 rounded-lg border border-gray-200 p-6 text-center ${className}`}>
+        <Search className="h-8 w-8 text-gray-400 mx-auto mb-3" />
+        <h3 className="text-lg font-medium text-gray-700 mb-2">Search Not Available</h3>
+        <p className="text-gray-500">Your current role does not have search permissions. Please contact your administrator for access.</p>
+      </div>
+    );
+  }
 
   return (
     <div className={`bg-white rounded-xl shadow-sm border border-gray-200 ${className}`}>
@@ -201,10 +256,12 @@ const EnhancedSearch: React.FC<EnhancedSearchProps> = ({
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-2">
             <Search className="h-5 w-5 text-blue-600" />
-            <h3 className="text-lg font-semibold text-gray-900">Advanced Search</h3>
+            <h3 className="text-lg font-semibold text-gray-900">
+              {canSearchAdvanced ? 'Advanced Search' : 'Search'}
+            </h3>
           </div>
           <div className="flex items-center space-x-2 text-sm text-gray-500">
-            <span>Smart filters • Tag suggestions • Content search</span>
+            <span>{canSearchAdvanced ? 'Smart filters • Tag suggestions • Content search' : 'Basic search functionality'}</span>
           </div>
         </div>
       </div>
@@ -225,14 +282,15 @@ const EnhancedSearch: React.FC<EnhancedSearchProps> = ({
             />
           </div>
           
-          <button
-            onClick={() => setState(prev => ({ ...prev, showFilters: !prev.showFilters }))}
-            className={`px-4 py-3 rounded-lg border transition-all duration-200 flex items-center space-x-2 ${
-              state.showFilters || activeFilterCount > 0
-                ? 'bg-blue-50 border-blue-300 text-blue-700 shadow-sm'
-                : 'bg-gray-50 border-gray-300 text-gray-700 hover:bg-gray-100 hover:border-gray-400'
-            }`}
-          >
+          {canSearchAdvanced && (
+            <button
+              onClick={() => setState(prev => ({ ...prev, showFilters: !prev.showFilters }))}
+              className={`px-4 py-3 rounded-lg border transition-all duration-200 flex items-center space-x-2 ${
+                state.showFilters || activeFilterCount > 0
+                  ? 'bg-blue-50 border-blue-300 text-blue-700 shadow-sm'
+                  : 'bg-gray-50 border-gray-300 text-gray-700 hover:bg-gray-100 hover:border-gray-400'
+              }`}
+            >
             <Filter className="h-4 w-4" />
             <span>Filters</span>
             {activeFilterCount > 0 && (
@@ -241,7 +299,8 @@ const EnhancedSearch: React.FC<EnhancedSearchProps> = ({
               </span>
             )}
             <ChevronDown className={`h-4 w-4 transition-transform ${state.showFilters ? 'rotate-180' : ''}`} />
-          </button>
+            </button>
+          )}
           
           <button
             onClick={handleSearch}
@@ -264,13 +323,18 @@ const EnhancedSearch: React.FC<EnhancedSearchProps> = ({
       </div>
 
       {/* Advanced filters panel */}
-      {state.showFilters && (
+      {canSearchAdvanced && state.showFilters && (
         <div className="border-t border-gray-200 bg-gradient-to-b from-gray-50 to-white">
           <div className="p-4">
             <div className="flex items-center justify-between mb-4">
               <h4 className="text-sm font-semibold text-gray-900 flex items-center">
                 <Filter className="h-4 w-4 mr-2 text-gray-600" />
                 Advanced Filters
+                {activeFilterCount > 0 && (
+                  <span className="ml-2 bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full font-medium">
+                    {activeFilterCount} active
+                  </span>
+                )}
               </h4>
               {activeFilterCount > 0 && (
                 <button
@@ -281,18 +345,40 @@ const EnhancedSearch: React.FC<EnhancedSearchProps> = ({
                 </button>
               )}
             </div>
+            
+            {/* Active filters summary */}
+            {activeFilterCount > 0 && (
+              <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                <p className="text-sm text-blue-800 font-medium mb-1">Active Filters:</p>
+                <p className="text-xs text-blue-700">
+                  {getActiveFiltersSummary().join(' • ')}
+                </p>
+              </div>
+            )}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             
             {/* File Type Filter */}
             <div className="space-y-2">
-              <label className="block text-sm font-semibold text-gray-800 flex items-center">
-                <FileText className="h-4 w-4 mr-2 text-blue-600" />
-                File Type
+              <label className="block text-sm font-semibold text-gray-800 flex items-center justify-between">
+                <span className="flex items-center">
+                  <FileText className="h-4 w-4 mr-2 text-blue-600" />
+                  File Type
+                </span>
+                {state.filters.file_category && (
+                  <button
+                    onClick={() => clearFilter('file_category')}
+                    className="text-xs text-blue-600 hover:text-blue-800 bg-blue-50 px-2 py-1 rounded"
+                  >
+                    Clear
+                  </button>
+                )}
               </label>
               <select
                 value={state.filters.file_category || ''}
                 onChange={(e) => updateFilter('file_category', e.target.value || undefined)}
-                className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white text-gray-900 text-sm shadow-sm"
+                className={`w-full px-3 py-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white text-gray-900 text-sm shadow-sm ${
+                  state.filters.file_category ? 'border-blue-300 bg-blue-50' : 'border-gray-300'
+                }`}
               >
                 <option value="">All file types</option>
                 {state.fileCategories.map(category => (
@@ -305,14 +391,26 @@ const EnhancedSearch: React.FC<EnhancedSearchProps> = ({
 
             {/* Size Range Filter */}
             <div className="space-y-2">
-              <label className="block text-sm font-semibold text-gray-800 flex items-center">
-                <FolderOpen className="h-4 w-4 mr-2 text-blue-600" />
-                File Size
+              <label className="block text-sm font-semibold text-gray-800 flex items-center justify-between">
+                <span className="flex items-center">
+                  <FolderOpen className="h-4 w-4 mr-2 text-blue-600" />
+                  File Size
+                </span>
+                {state.filters.size_range && (
+                  <button
+                    onClick={() => clearFilter('size_range')}
+                    className="text-xs text-blue-600 hover:text-blue-800 bg-blue-50 px-2 py-1 rounded"
+                  >
+                    Clear
+                  </button>
+                )}
               </label>
               <select
                 value={state.filters.size_range || ''}
                 onChange={(e) => updateFilter('size_range', e.target.value || undefined)}
-                className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white text-gray-900 text-sm shadow-sm"
+                className={`w-full px-3 py-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white text-gray-900 text-sm shadow-sm ${
+                  state.filters.size_range ? 'border-blue-300 bg-blue-50' : 'border-gray-300'
+                }`}
               >
                 <option value="">Any size</option>
                 <option value="small">Small (0-1MB)</option>
@@ -324,14 +422,26 @@ const EnhancedSearch: React.FC<EnhancedSearchProps> = ({
 
             {/* Date Range Filter */}
             <div className="space-y-2">
-              <label className="block text-sm font-semibold text-gray-800 flex items-center">
-                <Calendar className="h-4 w-4 mr-2 text-blue-600" />
-                Date Modified
+              <label className="block text-sm font-semibold text-gray-800 flex items-center justify-between">
+                <span className="flex items-center">
+                  <Calendar className="h-4 w-4 mr-2 text-blue-600" />
+                  Date Modified
+                </span>
+                {state.filters.date_range && (
+                  <button
+                    onClick={() => clearFilter('date_range')}
+                    className="text-xs text-blue-600 hover:text-blue-800 bg-blue-50 px-2 py-1 rounded"
+                  >
+                    Clear
+                  </button>
+                )}
               </label>
               <select
                 value={state.filters.date_range || ''}
                 onChange={(e) => updateFilter('date_range', e.target.value || undefined)}
-                className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white text-gray-900 text-sm shadow-sm"
+                className={`w-full px-3 py-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white text-gray-900 text-sm shadow-sm ${
+                  state.filters.date_range ? 'border-blue-300 bg-blue-50' : 'border-gray-300'
+                }`}
               >
                 <option value="">Any time</option>
                 <option value="today">Today</option>
@@ -436,14 +546,26 @@ const EnhancedSearch: React.FC<EnhancedSearchProps> = ({
 
             {/* Document Type Filter */}
             <div className="space-y-2">
-              <label className="block text-sm font-semibold text-gray-800 flex items-center">
-                <FileText className="h-4 w-4 mr-2 text-blue-600" />
-                Content Type
+              <label className="block text-sm font-semibold text-gray-800 flex items-center justify-between">
+                <span className="flex items-center">
+                  <FileText className="h-4 w-4 mr-2 text-blue-600" />
+                  Content Type
+                </span>
+                {state.filters.document_type && (
+                  <button
+                    onClick={() => clearFilter('document_type')}
+                    className="text-xs text-blue-600 hover:text-blue-800 bg-blue-50 px-2 py-1 rounded"
+                  >
+                    Clear
+                  </button>
+                )}
               </label>
               <select
                 value={state.filters.document_type || ''}
                 onChange={(e) => updateFilter('document_type', e.target.value || undefined)}
-                className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white text-gray-900 text-sm shadow-sm"
+                className={`w-full px-3 py-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white text-gray-900 text-sm shadow-sm ${
+                  state.filters.document_type ? 'border-blue-300 bg-blue-50' : 'border-gray-300'
+                }`}
               >
                 <option value="">Files & folders</option>
                 <option value="document">Files only</option>

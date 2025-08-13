@@ -317,15 +317,53 @@ export async function decrypt(input: DecryptionInput): Promise<ArrayBuffer> {
   }
 
   try {
-    // Combine ciphertext and auth tag
-    const ciphertext = base64ToUint8Array(input.ciphertext);
-    const authTag = base64ToUint8Array(input.authTag);
-    const iv = base64ToUint8Array(input.iv);
+    // Enhanced validation and logging for debugging
+    console.log('🔧 Core decrypt function called with input validation:');
     
+    // Validate input parameters
+    if (!input.ciphertext || !input.authTag || !input.iv || !input.key) {
+      throw new DecryptionError('Missing required decryption parameters');
+    }
+    
+    // Convert base64 data with validation
+    let ciphertext: Uint8Array;
+    let authTag: Uint8Array;
+    let iv: Uint8Array;
+    
+    try {
+      ciphertext = base64ToUint8Array(input.ciphertext);
+      authTag = base64ToUint8Array(input.authTag);
+      iv = base64ToUint8Array(input.iv);
+    } catch (conversionError) {
+      throw new DecryptionError(`Base64 conversion failed: ${conversionError instanceof Error ? conversionError.message : 'Unknown error'}`);
+    }
+    
+    console.log('🔧 Decryption data sizes:', {
+      ciphertextLength: ciphertext.length,
+      authTagLength: authTag.length,
+      ivLength: iv.length,
+      expectedIvLength: ENCRYPTION_CONFIG.IV_LENGTH
+    });
+    
+    // Validate data sizes
+    if (ciphertext.length === 0) {
+      throw new DecryptionError('Ciphertext is empty');
+    }
+    if (authTag.length === 0) {
+      throw new DecryptionError('Auth tag is empty');
+    }
+    if (iv.length !== ENCRYPTION_CONFIG.IV_LENGTH) {
+      console.warn(`⚠️ IV length mismatch: expected ${ENCRYPTION_CONFIG.IV_LENGTH}, got ${iv.length}`);
+    }
+    
+    // Combine ciphertext and auth tag for WebCrypto
     const encryptedData = new Uint8Array(ciphertext.length + authTag.length);
     encryptedData.set(ciphertext);
     encryptedData.set(authTag, ciphertext.length);
 
+    console.log('🔧 Combined encrypted data size:', encryptedData.length);
+
+    // Prepare decryption parameters
     const decryptParams: AesGcmParams = {
       name: ENCRYPTION_CONFIG.ALGORITHM,
       iv: iv
@@ -333,16 +371,51 @@ export async function decrypt(input: DecryptionInput): Promise<ArrayBuffer> {
 
     if (input.aad) {
       decryptParams.additionalData = new TextEncoder().encode(input.aad);
+      console.log('🔧 Additional data included in decryption');
     }
 
-    const decryptedData = await window.crypto.subtle.decrypt(
-      decryptParams,
-      input.key,
-      encryptedData
-    );
+    console.log('🔧 Calling WebCrypto decrypt...');
+
+    // Perform decryption with enhanced error handling
+    let decryptedData: ArrayBuffer;
+    try {
+      decryptedData = await window.crypto.subtle.decrypt(
+        decryptParams,
+        input.key,
+        encryptedData
+      );
+    } catch (cryptoError) {
+      console.error('❌ WebCrypto decrypt failed:', cryptoError);
+      
+      // Provide more specific error messages based on common WebCrypto errors
+      if (cryptoError instanceof Error) {
+        if (cryptoError.name === 'OperationError') {
+          throw new DecryptionError('Decryption failed - invalid key or corrupted data. The document may be encrypted with a different key.');
+        } else if (cryptoError.message.includes('auth')) {
+          throw new DecryptionError('Authentication failed - the document may be corrupted or tampered with.');
+        } else {
+          throw new DecryptionError(`WebCrypto decryption error: ${cryptoError.message}`);
+        }
+      } else {
+        throw new DecryptionError('Unknown WebCrypto decryption error');
+      }
+    }
+
+    console.log('✅ WebCrypto decrypt successful, decrypted size:', decryptedData.byteLength);
+
+    // Validate decryption result
+    if (decryptedData.byteLength === 0) {
+      throw new DecryptionError('Decryption produced empty result');
+    }
 
     return decryptedData;
   } catch (error) {
+    // Re-throw DecryptionError instances as-is
+    if (error instanceof DecryptionError) {
+      throw error;
+    }
+    
+    // Wrap other errors
     throw new DecryptionError(
       `Decryption failed: ${error instanceof Error ? error.message : 'Unknown error'}`
     );

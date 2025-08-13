@@ -12,7 +12,7 @@
  * - Enhanced folder management
  */
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { useDocuments, Document } from '../hooks/useDocuments';
 import { 
   DocumentUpload,
@@ -69,6 +69,8 @@ export default function DocumentsPage() {
 function DocumentsContent() {
   const { user } = useAuth();
   const isAdmin = user?.role === 'admin' || user?.role === 'super_admin';
+  const canSearchAdvanced = user?.role && ['super_admin', 'admin', 'manager'].includes(user.role);
+  const canSearchAll = user?.role && ['super_admin', 'admin', 'manager', 'user', 'viewer'].includes(user.role);
   
   // Add error boundary for useDocuments hook
   const documentsHookResult = (() => {
@@ -166,6 +168,21 @@ function DocumentsContent() {
   });
   const [shareDocument, setShareDocument] = useState<Document | null>(null);
   const [versionHistoryDocument, setVersionHistoryDocument] = useState<Document | null>(null);
+
+  // Handle escape key to close modals
+  useEffect(() => {
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        if (showUpload) {
+          console.log('⌨️ Escape pressed - closing upload modal');
+          setShowUpload(false);
+        }
+      }
+    };
+
+    document.addEventListener('keydown', handleEscape);
+    return () => document.removeEventListener('keydown', handleEscape);
+  }, [showUpload]);
   const [folderDialog, setFolderDialog] = useState<{
     isOpen: boolean;
     folder?: Document | null;
@@ -448,6 +465,8 @@ function DocumentsContent() {
             onClear={handleClearEnhancedSearch}
             initialQuery={searchQuery}
             isAdmin={isAdmin}
+            canSearchAdvanced={canSearchAdvanced}
+            canSearchAll={canSearchAll}
             className="mb-4"
           />
         </div>
@@ -697,13 +716,13 @@ function DocumentsContent() {
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     <input
                       type="checkbox"
-                      onChange={(e) => {
-                        if (e.target.checked) {
-                          selectAllDocuments();
-                        } else {
-                          clearSelection();
+                      checked={selectedDocuments.size > 0 && selectedDocuments.size === displayDocuments.length}
+                      ref={(input) => {
+                        if (input) {
+                          input.indeterminate = selectedDocuments.size > 0 && selectedDocuments.size < displayDocuments.length;
                         }
                       }}
+                      onChange={() => selectAllDocuments()}
                       className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                     />
                   </th>
@@ -741,14 +760,17 @@ function DocumentsContent() {
                         {getFileIcon(doc)}
                         <div className="flex flex-col">
                           <button
-                            onClick={() => {
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              console.log('🖱️ Document name clicked:', doc.name);
                               if (doc.document_type === 'folder') {
                                 navigateToFolder(doc.id);
                               } else {
                                 handlePreview(doc);
                               }
                             }}
-                            className="text-sm font-medium text-gray-900 hover:text-blue-600 text-left"
+                            className="text-sm font-medium text-gray-900 hover:text-blue-600 text-left relative z-10"
+                            style={{ pointerEvents: 'auto' }}
                           >
                             {doc.name}
                           </button>
@@ -907,7 +929,7 @@ function DocumentsContent() {
             onClick={closeContextMenu}
           />
           <div
-            className="fixed bg-white border border-gray-200 rounded-lg shadow-lg py-1 z-50 min-w-48"
+            className="fixed bg-white border border-gray-200 rounded-lg shadow-lg py-1 z-[55] min-w-48"
             style={{
               left: `${Math.min(contextMenu.x, window.innerWidth - 200)}px`,
               top: `${Math.min(contextMenu.y, window.innerHeight - 300)}px`
@@ -1006,7 +1028,24 @@ function DocumentsContent() {
 
       {/* Upload Modal */}
       {showUpload && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60] p-4"
+          onClick={(e) => {
+            // Close modal if clicking on backdrop
+            if (e.target === e.currentTarget) {
+              console.log('🖱️ Clicking outside modal, closing upload modal');
+              setShowUpload(false);
+            }
+          }}
+          onKeyDown={(e) => {
+            // Close modal on Escape key
+            if (e.key === 'Escape') {
+              console.log('⌨️ Escape key pressed, closing upload modal');
+              setShowUpload(false);
+            }
+          }}
+          tabIndex={0}
+        >
           <div className="max-w-4xl w-full max-h-[90vh] overflow-y-auto bg-white rounded-lg">
             <div className="p-6">
               <div className="flex items-center justify-between mb-6">
@@ -1019,10 +1058,27 @@ function DocumentsContent() {
                 </button>
               </div>
               <EncryptedDocumentUpload
-                onAllUploadsComplete={() => {
+                onAllUploadsComplete={async () => {
                   console.log('📁 All uploads completed, refreshing document list...');
+                  // Add a small delay to show the success state
+                  setTimeout(async () => {
+                    try {
+                      await refreshDocuments();
+                      console.log('✅ Document list refreshed successfully');
+                    } catch (error) {
+                      console.error('❌ Failed to refresh document list:', error);
+                    }
+                    setShowUpload(false);
+                    console.log('🔒 Upload modal closed');
+                  }, 500); // Brief delay to show success before closing
+                }}
+                onError={() => {
+                  console.log('❌ Upload error occurred, keeping modal open for retry');
+                  // Keep modal open but ensure no blocking overlays from child components
+                }}
+                onCancel={() => {
+                  console.log('🚫 Upload cancelled by user');
                   setShowUpload(false);
-                  refreshDocuments();
                 }}
                 maxFileSize={100}
                 allowedTypes={[

@@ -351,15 +351,33 @@ export default function AppLayout({ children, title, subtitle }: AppLayoutProps)
               ))}
             </nav>
 
-            {/* Right side - Search, notifications, etc. */}
+            {/* Right side - Search, user info, etc. */}
             <div className="flex items-center space-x-4">
-              {/* Search button (placeholder) */}
-              <button className="text-gray-500 hover:text-gray-700">
-                <Search className="h-5 w-5" />
-              </button>
+              {/* Search button - Role-based access */}
+              {user?.role && ['super_admin', 'admin', 'manager', 'user', 'viewer'].includes(user.role) ? (
+                <Link 
+                  to="/documents" 
+                  className="text-gray-500 hover:text-gray-700 transition-colors"
+                  title="Search Documents"
+                >
+                  <Search className="h-5 w-5" />
+                </Link>
+              ) : (
+                <button 
+                  className="text-gray-300 cursor-not-allowed" 
+                  disabled
+                  title="Search not available for your role"
+                >
+                  <Search className="h-5 w-5" />
+                </button>
+              )}
               
-              {/* Notifications button (placeholder) */}
-              <button className="text-gray-500 hover:text-gray-700">
+              {/* Notifications button - DISABLED (as requested) */}
+              <button 
+                className="text-gray-300 cursor-not-allowed" 
+                disabled
+                title="Notifications feature is not available"
+              >
                 <Bell className="h-5 w-5" />
               </button>
 

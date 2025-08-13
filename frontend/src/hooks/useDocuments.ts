@@ -469,21 +469,39 @@ export function useDocuments(): UseDocumentsReturn {
   }, [loadDocuments, updateState]);
 
   /**
-   * Select document
+   * Select document (toggle selection)
    */
   const selectDocument = useCallback((documentId: number) => {
+    const newSelection = new Set(state.selectedDocuments);
+    
+    if (newSelection.has(documentId)) {
+      // Unselect if already selected
+      newSelection.delete(documentId);
+    } else {
+      // Select if not selected
+      newSelection.add(documentId);
+    }
+    
     updateState({
-      selectedDocuments: new Set([...state.selectedDocuments, documentId])
+      selectedDocuments: newSelection
     });
   }, [state.selectedDocuments, updateState]);
 
   /**
-   * Select all documents
+   * Select all documents (toggle between select all / deselect all)
    */
   const selectAllDocuments = useCallback(() => {
     const allIds = new Set(state.documents.map(doc => doc.id));
-    updateState({ selectedDocuments: allIds });
-  }, [state.documents, updateState]);
+    const currentSelection = state.selectedDocuments;
+    
+    // If all documents are currently selected, deselect all
+    // Otherwise, select all documents
+    const allSelected = allIds.size > 0 && Array.from(allIds).every(id => currentSelection.has(id));
+    
+    updateState({ 
+      selectedDocuments: allSelected ? new Set() : allIds 
+    });
+  }, [state.documents, state.selectedDocuments, updateState]);
 
   /**
    * Clear selection

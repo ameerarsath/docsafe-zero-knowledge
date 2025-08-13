@@ -65,6 +65,8 @@ interface FolderUploadSession {
 interface EncryptedDocumentUploadProps {
   onUploadComplete?: (file: UploadedFile) => void;
   onAllUploadsComplete?: () => void; // Called when all uploads in a batch are finished
+  onError?: (error: string) => void; // Called when an error occurs
+  onCancel?: () => void; // Called when upload is cancelled
   maxFileSize?: number; // in MB
   allowedTypes?: string[];
   className?: string;
@@ -75,6 +77,8 @@ interface EncryptedDocumentUploadProps {
 export default function EncryptedDocumentUpload({
   onUploadComplete,
   onAllUploadsComplete,
+  onError,
+  onCancel,
   maxFileSize = 100, // 100MB default
   allowedTypes = ['application/pdf', 'image/*', 'text/*', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
   className = '',
@@ -181,6 +185,17 @@ export default function EncryptedDocumentUpload({
     }
   }, [sessionStatus.isActive, showSessionManager, attemptedUploadWithoutSession]);
 
+  // Cleanup modal states on component unmount to prevent UI blocking
+  useEffect(() => {
+    return () => {
+      console.log('🧹 EncryptedDocumentUpload unmounting - cleaning up modal states');
+      setShowSessionManager(false);
+      setShowFolderPreview(false);
+      setFolderUploadSession(null);
+      setAttemptedUploadWithoutSession(false);
+    };
+  }, []);
+
   // Don't auto-show session manager on mount - only show when upload is attempted
   // This prevents interfering with normal page browsing
 
@@ -239,15 +254,50 @@ export default function EncryptedDocumentUpload({
     const userHasEncryption = sessionStorage.getItem('user_has_encryption') === 'true';
     
     if (!hasValidEncryptionSession) {
-      console.error('❌ UPLOAD: No encryption session found, aborting upload');
+      console.error('❌ UPLOAD: No encryption session found, attempting auto-recovery...');
+      
+      // Try to restore from sessionStorage first
+      const sessionFlag = sessionStorage.getItem('has_master_key') === 'true';
+      const userHasEncryptionFlag = sessionStorage.getItem('user_has_encryption') === 'true';
+      
+      if (sessionFlag && userHasEncryptionFlag) {
+        console.log('🔄 Attempting to restore encryption session from storage...');
+        
+        // Try to reinitialize the documentEncryptionService
+        try {
+          const testKey = documentEncryptionService.hasMasterKey();
+          if (testKey) {
+            console.log('✅ Encryption session restored successfully');
+            setHasZeroKnowledgeKey(true);
+            // Retry upload after brief delay
+            setTimeout(() => handleUpload(files), 500);
+            return;
+          }
+        } catch (error) {
+          console.log('❌ Failed to restore encryption session:', error);
+        }
+      }
+      
       setAttemptedUploadWithoutSession(true);
+      
+      // Clean up any open modals/overlays to prevent UI blocking
+      setShowFolderPreview(false);
+      setFolderUploadSession(prev => prev ? { ...prev, isActive: false } : null);
+      
+      // Notify parent component of error
+      if (onError) {
+        onError('No encryption session found. Please set up encryption to upload files.');
+      }
       
       // If user has encryption configured, show session manager to re-derive key
       if (userHasEncryption) {
         console.log('🔑 User has encryption configured, showing session manager for key restoration');
+        setShowSessionManager(true);
+      } else {
+        console.log('🔑 User needs to set up encryption, showing session manager for first-time setup');
+        setShowSessionManager(true);
       }
       
-      setShowSessionManager(true);
       return;
     }
     
@@ -531,18 +581,13 @@ export default function EncryptedDocumentUpload({
         }
       }
 
-      // Auto-reset component state if enabled (for both methods)
-      if (autoResetAfterUpload) {
-        setTimeout(() => {
-          setUploadedFiles([]);
-          setIsDragOver(false);
-        }, 1500); // Reset after 1.5 seconds
-      }
-
-      // Auto-remove completed files after a delay (fallback)
+      // Don't auto-reset individual files since we handle it at the batch level
+      // The parent's onAllUploadsComplete callback will handle modal closure
+      
+      // Auto-remove individual completed files after a longer delay (fallback)
       setTimeout(() => {
         setUploadedFiles(prev => prev.filter(f => f.id !== fileId));
-      }, 3000); // Remove after 3 seconds if not already cleared
+      }, 5000); // Remove after 5 seconds if not already cleared by batch completion
 
     } catch (error) {
       updateFileStatus(fileId, 'error', 0, error instanceof Error ? error.message : 'Upload failed');
@@ -750,9 +795,13 @@ export default function EncryptedDocumentUpload({
    * Cancel folder upload
    */
   const handleFolderUploadCancel = useCallback(() => {
+    console.log('🚫 Folder upload cancelled - cleaning up modal state');
     setShowFolderPreview(false);
     setFolderUploadSession(null);
     setUploadMode('files');
+    // Ensure no lingering upload states
+    setCurrentUploadBatch(new Set());
+    setAttemptedUploadWithoutSession(false);
   }, []);
 
 
@@ -796,7 +845,7 @@ export default function EncryptedDocumentUpload({
             }
             // Clear the batch
             setCurrentUploadBatch(new Set());
-          }, 100); // Small delay to ensure state updates are complete
+          }, 1000); // Increased delay to show success state before closing
         }
       }
       

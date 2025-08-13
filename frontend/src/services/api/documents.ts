@@ -173,9 +173,15 @@ export class DocumentsApiService {
    * List documents with optional filtering and pagination
    */
   async listDocuments(params: DocumentListParams = {}): Promise<DocumentListResponse> {
+    // Ensure deleted documents are excluded by default unless specifically requested
+    const defaultParams = {
+      status: 'active', // Exclude deleted, archived, and quarantined files by default
+      ...params
+    };
+    
     const searchParams = new URLSearchParams();
     
-    Object.entries(params).forEach(([key, value]) => {
+    Object.entries(defaultParams).forEach(([key, value]) => {
       if (value !== undefined && value !== null) {
         if (key === 'tags' && Array.isArray(value)) {
           // Tags should be comma-separated string for backend
@@ -287,6 +293,26 @@ export class DocumentsApiService {
   }
 
   /**
+   * Fetch document blob for preview (does not trigger download)
+   */
+  async fetchDocumentBlob(documentId: number, password?: string): Promise<Blob> {
+    const params = password ? `?password=${encodeURIComponent(password)}` : '';
+    const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8002'}/api/v1/documents/${documentId}/download${params}`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${TokenManager.getAccessToken()}`,
+      },
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.detail || `Failed to fetch document: ${response.status}`);
+    }
+
+    return response.blob();
+  }
+
+  /**
    * Download a document
    */
   async downloadDocument(documentId: number, password?: string): Promise<void> {
@@ -318,17 +344,119 @@ export class DocumentsApiService {
 
       // Downloaded encrypted blob successfully
 
-      // Check if the document has DEK encryption metadata
+      // Check if the document has DEK encryption metadata (zero-knowledge)
       if (document.encrypted_dek && document.encryption_iv) {
+        console.log('📥 Download: Zero-knowledge encrypted document, using DEK decryption');
         // Document is encrypted with DEK architecture, decrypt it
         await this.decryptAndDownload(encryptedBlob, document, filename);
+      } else if (document.encryption_key_id && document.encryption_iv && document.encryption_auth_tag) {
+        console.log('📥 Download: Legacy encrypted document, using legacy decryption');
+        // Document is legacy encrypted, decrypt it with password
+        await this.decryptAndDownloadLegacy(encryptedBlob, document, filename, password);
       } else {
+        console.log('📥 Download: Unencrypted document, downloading directly');
         // Document is not encrypted, download as-is
         this.downloadBlob(encryptedBlob, filename);
       }
     } catch (error) {
       // Download failed
       throw error;
+    }
+  }
+
+  /**
+   * Decrypt and download a legacy encrypted document
+   */
+  private async decryptAndDownloadLegacy(encryptedBlob: Blob, document: Document, filename: string, password?: string): Promise<void> {
+    try {
+      if (!password) {
+        // Prompt user for password
+        const userPassword = prompt(`Enter password for ${document.name}:`);
+        if (!userPassword) {
+          throw new Error('Password required to decrypt this document');
+        }
+        password = userPassword;
+      }
+
+      // Dynamic import to avoid circular dependencies
+      const { useEncryption } = await import('../../hooks/useEncryption');
+      
+      // We need to get the encryption hook instance, but since we're not in a React component,
+      // we need to use the legacy decryption directly
+      const encryptedData = await encryptedBlob.arrayBuffer();
+      
+      // Prepare decryption metadata for legacy documents
+      const metadata = {
+        keyId: document.encryption_key_id,
+        iv: document.encryption_iv,
+        authTag: document.encryption_auth_tag,
+        originalName: document.name,
+        mimeType: document.mime_type,
+        documentMetadata: document.doc_metadata
+      };
+
+      console.log('📥 Legacy download: Using decryptDownloadedFile with metadata:', {
+        keyId: metadata.keyId,
+        hasIV: !!metadata.iv,
+        hasAuthTag: !!metadata.authTag,
+        hasPassword: !!password
+      });
+
+      // Import the decryptDownloadedFile function from the hook
+      // Note: This is a bit hacky, but necessary since we're not in a React component
+      const { decryptFile } = await import('../../utils/encryption');
+      
+      // For legacy documents, we need to use the legacy decryption approach
+      // Split encrypted data into ciphertext and auth tag
+      const encryptedArray = new Uint8Array(encryptedData);
+      const authTagSize = 16; // Standard AES-GCM auth tag length
+      
+      if (encryptedArray.length <= authTagSize) {
+        throw new Error(`Encrypted data too small: ${encryptedArray.length} bytes`);
+      }
+      
+      const ciphertext = encryptedArray.slice(0, -authTagSize);
+      const authTag = encryptedArray.slice(-authTagSize);
+
+      // Convert to base64 for decryption
+      const { uint8ArrayToBase64, deriveKey } = await import('../../utils/encryption');
+      
+      console.log('📥 Legacy download: Deriving key from password');
+      
+      // Derive key from password - we'll need to implement this based on your legacy approach
+      // For now, let's try using the document metadata for salt/iterations
+      let derivedKey;
+      if (document.doc_metadata?.encryption_salt) {
+        const salt = new Uint8Array(atob(document.doc_metadata.encryption_salt).split('').map(c => c.charCodeAt(0)));
+        const iterations = document.doc_metadata.encryption_iterations || 100000;
+        
+        derivedKey = await deriveKey({
+          password,
+          salt,
+          iterations
+        });
+      } else {
+        throw new Error('Legacy document missing encryption salt in metadata');
+      }
+
+      console.log('📥 Legacy download: Decrypting file data');
+      
+      // Create decrypted file
+      const decryptedData = await decryptFile({
+        ciphertext: uint8ArrayToBase64(ciphertext),
+        iv: metadata.iv!,
+        authTag: uint8ArrayToBase64(authTag),
+        key: derivedKey
+      }, filename, metadata.mimeType || 'application/octet-stream');
+      
+      console.log('✅ Legacy download: Decryption successful, initiating download');
+      
+      // Download the decrypted file
+      this.downloadBlob(decryptedData, filename);
+      
+    } catch (error) {
+      console.error('❌ Legacy download failed:', error);
+      throw new Error(`Failed to decrypt legacy document: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 
@@ -474,16 +602,27 @@ export class DocumentsApiService {
    * Search documents (legacy method - uses simple list search)
    */
   async searchDocuments(query: string, filters?: Partial<DocumentListParams>): Promise<DocumentListResponse> {
-    return this.listDocuments({ ...filters, search: query });
+    // Ensure deleted documents are excluded by default
+    const defaultFilters = {
+      status: 'active', // Exclude deleted, archived, and quarantined files by default
+      ...filters
+    };
+    return this.listDocuments({ ...defaultFilters, search: query });
   }
 
   /**
    * Enhanced search documents with advanced filtering
    */
   async searchDocumentsAdvanced(params: DocumentSearchParams): Promise<DocumentListResponse> {
+    // Ensure deleted documents are excluded by default unless specifically searching for deleted files
+    const defaultFilters = {
+      status: 'active', // Exclude deleted, archived, and quarantined files by default
+      ...params.filters
+    };
+
     const searchPayload = {
       query: params.query || '',
-      filters: params.filters || {},
+      filters: defaultFilters,
       sort_by: params.sort_by || 'updated_at',
       sort_order: params.sort_order || 'desc',
       page: params.page || 1,

@@ -393,67 +393,154 @@ export function useEncryption(): UseEncryptionReturn {
     metadata: any,
     password: string
   ): Promise<File> => {
+    const sessionId = Date.now().toString(36);
+    console.log(`🔧 [${sessionId}] decryptDownloadedFile called with:`, {
+      encryptedDataSize: encryptedData.byteLength,
+      metadata: JSON.stringify(metadata, null, 2),
+      hasPassword: !!password,
+      passwordLength: password?.length
+    });
+
     try {
-      // Decrypting file with metadata
+      // Validate inputs
+      if (!encryptedData || encryptedData.byteLength === 0) {
+        throw new Error('Encrypted data is empty or invalid');
+      }
+      
+      if (!metadata) {
+        throw new Error('Metadata is missing');
+      }
+      
+      if (!password) {
+        throw new Error('Password is required for decryption');
+      }
+
+      console.log(`🔧 [${sessionId}] Starting key derivation process`);
       
       // For session-based keys (generated during upload), derive key directly from password
       // instead of looking it up in the backend keys array
       let derivedKey: CryptoKey;
       
       if (metadata.keyId && metadata.keyId.startsWith('key_')) {
-        // This is a session-generated key, derive it directly from password and salt
-        // Using session-based key derivation
+        console.log(`🔧 [${sessionId}] Using session-based key derivation for keyId: ${metadata.keyId}`);
         
         // The salt should be stored in the document metadata from upload
         if (metadata.encryptionSalt || (metadata.documentMetadata && metadata.documentMetadata.encryption_salt)) {
           const saltBase64 = metadata.encryptionSalt || metadata.documentMetadata.encryption_salt;
           const iterations = metadata.encryptionIterations || (metadata.documentMetadata && metadata.documentMetadata.encryption_iterations) || 100000;
           
-          // Using salt from document metadata
-          
-          // Convert salt from base64 to Uint8Array
-          const salt = new Uint8Array(atob(saltBase64).split('').map(c => c.charCodeAt(0)));
-          
-          derivedKey = await deriveKey({
-            password,
-            salt,
+          console.log(`🔧 [${sessionId}] Using salt from document metadata:`, {
+            saltLength: saltBase64?.length,
             iterations
           });
-          // Successfully derived key from document metadata
+          
+          try {
+            // Convert salt from base64 to Uint8Array
+            const salt = new Uint8Array(atob(saltBase64).split('').map(c => c.charCodeAt(0)));
+            
+            derivedKey = await deriveKey({
+              password,
+              salt,
+              iterations
+            });
+            console.log(`✅ [${sessionId}] Successfully derived key from document metadata`);
+          } catch (keyError) {
+            console.error(`❌ [${sessionId}] Key derivation failed:`, keyError);
+            throw new Error(`Key derivation failed: ${keyError instanceof Error ? keyError.message : 'Unknown key error'}`);
+          }
         } else {
           throw new Error('Encryption salt not found in document metadata. Cannot decrypt this document.');
         }
       } else {
+        console.log(`🔧 [${sessionId}] Using backend key lookup for keyId: ${metadata.keyId}`);
+        
         // This is a backend key, use the original lookup method
-        // Using backend key lookup
         const keyData = state.keys?.find(k => k.keyId === metadata.keyId);
         if (!keyData) {
-          throw new Error('Encryption key not found in backend keys');
+          console.error(`❌ [${sessionId}] Encryption key not found in backend keys:`, {
+            searchKeyId: metadata.keyId,
+            availableKeys: state.keys?.map(k => k.keyId)
+          });
+          throw new Error(`Encryption key '${metadata.keyId}' not found in backend keys`);
         }
-        derivedKey = await deriveUserKey(password, keyData);
+        
+        try {
+          derivedKey = await deriveUserKey(password, keyData);
+          console.log(`✅ [${sessionId}] Successfully derived key from backend`);
+        } catch (backendKeyError) {
+          console.error(`❌ [${sessionId}] Backend key derivation failed:`, backendKeyError);
+          throw new Error(`Backend key derivation failed: ${backendKeyError instanceof Error ? backendKeyError.message : 'Unknown backend key error'}`);
+        }
       }
+      
+      console.log(`🔧 [${sessionId}] Splitting encrypted data into ciphertext and auth tag`);
       
       // Split encrypted data into ciphertext and auth tag
       const encryptedArray = new Uint8Array(encryptedData);
       const authTagSize = ENCRYPTION_CONFIG.AUTH_TAG_LENGTH;
+      
+      console.log(`🔧 [${sessionId}] Data split analysis:`, {
+        totalSize: encryptedArray.length,
+        authTagSize,
+        ciphertextSize: encryptedArray.length - authTagSize
+      });
+      
+      if (encryptedArray.length <= authTagSize) {
+        throw new Error(`Encrypted data too small: ${encryptedArray.length} bytes, but auth tag needs ${authTagSize} bytes`);
+      }
+      
       const ciphertext = encryptedArray.slice(0, -authTagSize);
       const authTag = encryptedArray.slice(-authTagSize);
 
-      const decryptedFile = await decryptFile(
-        {
-          ciphertext: uint8ArrayToBase64(ciphertext),
-          iv: metadata.iv,
-          authTag: uint8ArrayToBase64(authTag),
-          key: derivedKey
-        },
-        metadata.originalName || 'decrypted-file',
-        metadata.mimeType
-      );
+      console.log(`🔧 [${sessionId}] Calling decryptFile with:`, {
+        ciphertextLength: ciphertext.length,
+        authTagLength: authTag.length,
+        ivLength: metadata.iv?.length,
+        originalName: metadata.originalName,
+        mimeType: metadata.mimeType
+      });
 
-      return decryptedFile;
+      try {
+        const decryptedFile = await decryptFile(
+          {
+            ciphertext: uint8ArrayToBase64(ciphertext),
+            iv: metadata.iv,
+            authTag: uint8ArrayToBase64(authTag),
+            key: derivedKey
+          },
+          metadata.originalName || 'decrypted-file',
+          metadata.mimeType
+        );
+
+        console.log(`✅ [${sessionId}] File decryption successful:`, {
+          decryptedSize: decryptedFile.size,
+          decryptedType: decryptedFile.type,
+          decryptedName: decryptedFile.name
+        });
+
+        return decryptedFile;
+      } catch (decryptFileError) {
+        console.error(`❌ [${sessionId}] decryptFile function failed:`, {
+          error: decryptFileError,
+          errorMessage: decryptFileError instanceof Error ? decryptFileError.message : 'Unknown',
+          errorName: decryptFileError instanceof Error ? decryptFileError.name : 'Unknown'
+        });
+        throw new Error(`File decryption failed: ${decryptFileError instanceof Error ? decryptFileError.message : 'Unknown decryptFile error'}`);
+      }
     } catch (error) {
+      console.error(`❌ [${sessionId}] decryptDownloadedFile failed:`, {
+        error,
+        errorMessage: error instanceof Error ? error.message : 'Unknown error',
+        errorStack: error instanceof Error ? error.stack?.split('\n').slice(0, 10) : undefined
+      });
+      
+      // Don't wrap the error if it's already a DecryptionError to avoid nested messages
+      if (error instanceof Error && error.name === 'DecryptionError') {
+        throw error;
+      }
+      
       throw new DecryptionError(
-        `File decryption failed: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Legacy decryption failed: ${error instanceof Error ? error.message : 'Unknown error'}`
       );
     }
   }, [state.keys, deriveUserKey]);

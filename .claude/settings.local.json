@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(docker-compose:*)",
+      "Bash(npm run test:headed:*)",
+      "Bash(npx playwright test:*)",
+      "Bash(npm install)",
+      "Bash(npx playwright install:*)",
+      "Bash(curl:*)",
+      "Bash(claude --model claude-opus-4-1-20250805)",
+      "Bash(claude --model opus)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

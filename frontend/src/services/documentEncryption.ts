@@ -109,6 +109,9 @@ export class DocumentEncryptionService {
     
     // Try to restore master key from session storage on construction
     this.attemptKeyRestoration();
+    
+    // Set up periodic key restoration check (for HMR resilience)
+    this.setupPeriodicKeyCheck();
   }
 
   /**
@@ -150,6 +153,28 @@ export class DocumentEncryptionService {
         sessionStorage.removeItem('master_key_set_at');
       }
     }
+  }
+
+  /**
+   * Set up periodic key restoration check (for HMR resilience)
+   */
+  private setupPeriodicKeyCheck(): void {
+    setInterval(() => {
+      const hasKeyFlag = sessionStorage.getItem('has_master_key') === 'true';
+      const keyData = sessionStorage.getItem('temp_master_key_data');
+      
+      // If session storage indicates we should have a key but we don't, try to restore
+      if (hasKeyFlag && keyData && !this.masterKey && !this.keyRestored) {
+        console.log(`🔄 DocumentEncryptionService[${this.instanceId}]: Periodic key restoration check triggered`);
+        this.attemptKeyRestoration();
+      }
+      
+      // If we have a key but session storage doesn't reflect it, update storage
+      if (this.masterKey && !hasKeyFlag) {
+        console.log(`🔄 DocumentEncryptionService[${this.instanceId}]: Fixing session storage flags`);
+        sessionStorage.setItem('has_master_key', 'true');
+      }
+    }, 5000); // Check every 5 seconds
   }
 
   /**
@@ -476,17 +501,66 @@ export class DocumentEncryptionService {
         message: 'Preparing for decryption...'
       });
 
-      // Extract ciphertext and auth tag from encrypted data
+      // Extract ciphertext and auth tag from encrypted data with dynamic auth tag length calculation
       const encryptedArray = new Uint8Array(encryptedData);
-      const authTagLength = 16; // 128 bits for AES-GCM
-      const ciphertextLength = encryptedArray.length - authTagLength;
       
+      // Calculate auth tag length dynamically based on original file size
+      const originalFileSize = document.file_size || 0;
+      const totalEncryptedSize = encryptedArray.length;
+      const calculatedAuthTagLength = totalEncryptedSize - originalFileSize;
+      
+      console.log(`🔍 Auth tag extraction analysis:`, {
+        originalFileSize,
+        totalEncryptedSize,
+        calculatedAuthTagLength,
+        documentName: document.name
+      });
+      
+      // Determine correct ciphertext and auth tag split
+      let ciphertextLength: number;
+      let authTagLength: number;
+      
+      // Validate calculated auth tag length (AES-GCM typically uses 12-16 bytes)
+      if (originalFileSize > 0 && calculatedAuthTagLength >= 12 && calculatedAuthTagLength <= 32) {
+        // Use dynamic calculation based on original file size
+        ciphertextLength = originalFileSize;
+        authTagLength = calculatedAuthTagLength;
+        console.log(`✅ Using dynamic auth tag length: ${authTagLength} bytes`);
+      } else {
+        // Fallback to standard AES-GCM auth tag length
+        authTagLength = 16;
+        ciphertextLength = encryptedArray.length - authTagLength;
+        console.warn(`⚠️ Using fallback auth tag length (16 bytes). Calculated length ${calculatedAuthTagLength} seems invalid.`);
+        console.warn(`Debug: originalFileSize=${originalFileSize}, totalSize=${totalEncryptedSize}`);
+      }
+      
+      // Extract ciphertext and auth tag based on calculated lengths
       const ciphertext = encryptedArray.slice(0, ciphertextLength);
       const authTag = encryptedArray.slice(ciphertextLength);
+      
+      // Validate extraction results
+      if (ciphertext.length === 0 || authTag.length === 0) {
+        throw new DocumentDecryptionError(
+          `Invalid auth tag extraction: ciphertext=${ciphertext.length}bytes, authTag=${authTag.length}bytes`,
+          'AUTH_TAG_EXTRACTION_FAILED'
+        );
+      }
 
       // Convert to base64 for decryption utilities
-      const ciphertextBase64 = arrayBufferToBase64(ciphertext.buffer);
-      const authTagBase64 = arrayBufferToBase64(authTag.buffer);
+      // IMPORTANT: When slicing Uint8Array, the .buffer property still points to the original buffer
+      // We need to create new ArrayBuffers with only the sliced data
+      const ciphertextBuffer = ciphertext.buffer.slice(ciphertext.byteOffset, ciphertext.byteOffset + ciphertext.byteLength);
+      const authTagBuffer = authTag.buffer.slice(authTag.byteOffset, authTag.byteOffset + authTag.byteLength);
+      
+      const ciphertextBase64 = arrayBufferToBase64(ciphertextBuffer);
+      const authTagBase64 = arrayBufferToBase64(authTagBuffer);
+      
+      console.log(`🔧 Base64 conversion completed:`, {
+        ciphertextLength: ciphertext.length,
+        authTagLength: authTag.length,
+        ciphertextBase64Length: ciphertextBase64.length,
+        authTagBase64Length: authTagBase64.length
+      });
 
       // Report progress: Decrypting with DEK
       onProgress?.({
@@ -529,9 +603,101 @@ export class DocumentEncryptionService {
   }
 
   /**
-   * Download and decrypt a document, then trigger browser download
+   * Download and decrypt a document, then trigger browser download as encrypted file
    */
   async downloadAndDecryptDocument(
+    document: Document,
+    onProgress?: (progress: DecryptionProgress) => void
+  ): Promise<void> {
+    try {
+      // Report progress: Downloading
+      onProgress?.({
+        stage: 'downloading',
+        progress: 20,
+        message: 'Downloading encrypted document...'
+      });
+
+      // Download the encrypted file
+      const response = await fetch(
+        `${import.meta.env.VITE_API_URL || 'http://localhost:8002'}/api/v1/documents/${document.id}/download`,
+        {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${this.getAccessToken()}`,
+          },
+        }
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.detail || `Download failed: ${response.status}`);
+      }
+
+      const encryptedData = await response.arrayBuffer();
+
+      // Report progress: Downloaded, starting decryption
+      onProgress?.({
+        stage: 'decrypting',
+        progress: 40,
+        message: 'Decrypting and preparing secure download...'
+      });
+
+      // Decrypt the document
+      const decryptionResult = await this.decryptDocument(
+        document,
+        encryptedData,
+        onProgress
+      );
+
+      // Report progress: Creating encrypted wrapper
+      onProgress?.({
+        stage: 'decrypting',
+        progress: 80,
+        message: 'Creating password-protected file...'
+      });
+
+      // Create encrypted file wrapper that requires password to open
+      const { createEncryptedFileWrapper, ENCRYPTED_FILE_HEADER } = await import('../utils/encryptedFileWrapper');
+      
+      // Use the user's decryption password as the file password
+      const userPassword = await this.getUserDecryptionPassword();
+      
+      const encryptedWrapper = await createEncryptedFileWrapper(
+        decryptionResult.decryptedData,
+        decryptionResult.originalFilename,
+        decryptionResult.mimeType,
+        userPassword
+      );
+
+      // Create filename with .docsafe extension
+      const encryptedFilename = this.addEncryptedExtension(decryptionResult.originalFilename);
+
+      // Create and download the encrypted file
+      const encryptedBlob = new Blob([encryptedWrapper.wrappedData], { 
+        type: 'application/octet-stream' 
+      });
+
+      // Report progress: Complete
+      onProgress?.({
+        stage: 'complete',
+        progress: 100,
+        message: 'Secure download ready'
+      });
+
+      this.downloadBlob(encryptedBlob, encryptedFilename);
+
+    } catch (error) {
+      throw new DocumentDecryptionError(
+        `Failed to download and decrypt document: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        'DOWNLOAD_DECRYPT_FAILED'
+      );
+    }
+  }
+
+  /**
+   * Download document in original decrypted format (for preview/internal use)
+   */
+  async downloadAndDecryptDocumentAsOriginal(
     document: Document,
     onProgress?: (progress: DecryptionProgress) => void
   ): Promise<void> {
@@ -575,7 +741,7 @@ export class DocumentEncryptionService {
         onProgress
       );
 
-      // Create and download the decrypted file
+      // Create and download the decrypted file in original format
       const decryptedBlob = new Blob([decryptionResult.decryptedData], { 
         type: decryptionResult.mimeType 
       });
@@ -662,6 +828,43 @@ export class DocumentEncryptionService {
       return localStorage.getItem('access_token');
     }
     return sessionStorage.getItem('access_token');
+  }
+
+  /**
+   * Get user's decryption password (prompt if needed)
+   */
+  private async getUserDecryptionPassword(): Promise<string> {
+    // Try to get the stored password from session (if available)
+    const storedPassword = sessionStorage.getItem('temp_decryption_password');
+    if (storedPassword) {
+      return storedPassword;
+    }
+
+    // Prompt user for password
+    const password = prompt(
+      'Enter password to protect downloaded file:\n(This password will be required to open the file outside this application)'
+    );
+    
+    if (!password) {
+      throw new Error('Password required to create encrypted file');
+    }
+
+    // Temporarily store password for this session
+    sessionStorage.setItem('temp_decryption_password', password);
+    
+    // Clear password after 5 minutes for security
+    setTimeout(() => {
+      sessionStorage.removeItem('temp_decryption_password');
+    }, 5 * 60 * 1000);
+
+    return password;
+  }
+
+  /**
+   * Add encrypted file extension to filename
+   */
+  private addEncryptedExtension(originalFilename: string): string {
+    return originalFilename + '.docsafe';
   }
 
   /**
