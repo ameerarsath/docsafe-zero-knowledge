@@ -4,6 +4,65 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Development Commands
 
+Use the organized scripts for the best development experience:
+
+```bash
+# Quick setup (run once)
+scripts\setup_project.bat
+
+# Start hybrid development environment (recommended)
+scripts\dev\start-dev-hybrid.bat
+
+# Access the application
+# Frontend: http://localhost:3005
+# Backend: http://localhost:8002
+# API Docs: http://localhost:8002/docs
+```
+
+### Manual Local Development (Alternative)
+
+```bash
+# Backend setup and start (from backend directory with venv activated)
+cd backend
+python -m venv venv
+venv\Scripts\activate  # Windows
+# source venv/bin/activate  # Mac/Linux
+pip install -r requirements\dev.txt
+alembic upgrade head
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8002
+
+# Frontend setup and start (from frontend directory)
+cd frontend
+npm install
+npm run dev
+
+# Backend linting and code quality (from backend directory with venv activated)
+black .
+ruff check .
+mypy app
+isort .
+
+# Frontend linting and code quality (from frontend directory)
+npm run lint
+npm run format
+npm run type-check
+
+# Testing commands
+# Backend (from backend directory with venv activated)
+pytest
+pytest --cov=app
+
+# Frontend (from frontend directory)
+npm test
+npm run test:coverage
+
+# Security scanning (from backend directory with venv activated)
+bandit -r app
+safety check
+```
+
+### Docker Development (Alternative)
+
 ```bash
 # Start full development environment with Docker
 cd config/docker && docker-compose up --build -d
@@ -79,7 +138,11 @@ SecureVault is a zero-knowledge enterprise document storage platform with client
 │   │   ├── services/       - Business logic services
 │   │   └── middleware/     - Security middleware
 │   ├── tests/              - Backend tests (unit, integration, security)
-│   ├── requirements.txt    - Python dependencies
+│   ├── requirements/       - Python dependencies (organized by environment)
+│   │   ├── base.txt        - Core requirements
+│   │   ├── dev.txt         - Development tools
+│   │   └── prod.txt        - Production server
+│   ├── scripts/            - Backend utility scripts
 │   └── Dockerfile          - Backend container config
 ├── frontend/               - React TypeScript application
 │   ├── src/
@@ -100,10 +163,17 @@ SecureVault is a zero-knowledge enterprise document storage platform with client
 │   └── Dockerfile          - Frontend container config
 ├── config/                 - Configuration files
 │   ├── docker/             - Docker compose configurations
-│   └── nginx/              - Reverse proxy configuration
+│   ├── environments/       - Environment configurations
+│   ├── nginx/              - Reverse proxy configuration
+│   └── database/           - Database initialization scripts
+├── scripts/                - Project automation scripts
+│   ├── dev/                - Development scripts
+│   ├── prod/               - Production scripts
+│   └── setup/              - Setup scripts
 ├── tests/                  - End-to-end tests (Playwright)
 ├── data/                   - Development data storage
-└── docs/                   - Documentation
+├── docs/                   - Documentation
+└── README.md               - Project overview and quick start
 ```
 
 ### Important Notes
@@ -111,6 +181,7 @@ SecureVault is a zero-knowledge enterprise document storage platform with client
 - Nginx reverse proxy on port 8080 (HTTP) and 8443 (HTTPS)
 - Database migrations handled with Alembic
 - Docker compose files located in `config/docker/`
+- PostgreSQL container name: `securevault_postgres`
 - Test credentials: username `rahumana`, password `TestPass123@`
 - Encryption password: `JHNpAZ39g!&Y`
 

@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document Preview Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .container { max-width: 800px; margin: 0 auto; }
+        .preview-container { border: 1px solid #ccc; padding: 20px; margin: 20px 0; }
+        .error { color: red; background: #ffebee; padding: 10px; border-radius: 4px; }
+        .success { color: green; background: #e8f5e8; padding: 10px; border-radius: 4px; }
+        .loading { color: blue; background: #e3f2fd; padding: 10px; border-radius: 4px; }
+        button { padding: 10px 20px; margin: 5px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; }
+        button:hover { background: #0056b3; }
+        input { padding: 8px; margin: 5px; border: 1px solid #ccc; border-radius: 4px; }
+        .preview-content { background: #f8f9fa; padding: 15px; border-radius: 4px; margin: 10px 0; white-space: pre-wrap; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔐 Zero-Knowledge Document Preview Test</h1>
+        
+        <div class="preview-container">
+            <h2>Test Document Preview</h2>
+            <p><strong>Document ID:</strong> 9 (test_document.txt)</p>
+            
+            <div id="status" class="loading">Ready to test preview...</div>
+            
+            <div>
+                <button onclick="testInitialPreview()">Test Initial Preview</button>
+                <button onclick="testEncryptedPreview()">Test Encrypted Preview</button>
+            </div>
+            
+            <div style="margin: 10px 0;">
+                <input type="password" id="passwordInput" placeholder="Enter password (e.g., testpass123)" value="testpass123">
+                <button onclick="testWithPassword()">Test with Password</button>
+            </div>
+            
+            <div id="previewContent" class="preview-content" style="display: none;"></div>
+        </div>
+        
+        <div class="preview-container">
+            <h2>Debug Information</h2>
+            <div id="debugInfo"></div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:8002';
+        let accessToken = null;
+        
+        // Login and get access token
+        async function login() {
+            try {
+                const response = await fetch(`${API_BASE}/api/auth/login`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username: 'rahumana', password: 'TestPass123@' })
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    accessToken = data.access_token;
+                    updateStatus('✅ Logged in successfully', 'success');
+                    return true;
+                } else {
+                    const error = await response.text();
+                    updateStatus(`❌ Login failed: ${error}`, 'error');
+                    return false;
+                }
+            } catch (error) {
+                updateStatus(`❌ Login error: ${error.message}`, 'error');
+                return false;
+            }
+        }
+        
+        function updateStatus(message, type = 'loading') {
+            const statusEl = document.getElementById('status');
+            statusEl.textContent = message;
+            statusEl.className = type;
+        }
+        
+        function updateDebug(info) {
+            document.getElementById('debugInfo').innerHTML = `<pre>${JSON.stringify(info, null, 2)}</pre>`;
+        }
+        
+        function showPreview(content) {
+            const previewEl = document.getElementById('previewContent');
+            previewEl.textContent = content;
+            previewEl.style.display = 'block';
+        }
+        
+        async function testInitialPreview() {
+            updateStatus('🔍 Testing initial preview...', 'loading');
+            
+            if (!accessToken && !(await login())) {
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${API_BASE}/api/v1/documents/9/preview`, {
+                    headers: { 'Authorization': `Bearer ${accessToken}` }
+                });
+                
+                const data = await response.json();
+                updateDebug({ endpoint: 'Initial Preview', response: data });
+                
+                if (data.type === 'encrypted') {
+                    updateStatus('🔐 Document detected as encrypted - password required!', 'success');
+                    showPreview('Document is encrypted and requires password for preview.');
+                } else if (data.type === 'metadata') {
+                    updateStatus(`📄 Metadata preview returned - is_encrypted: ${data.is_encrypted}`, data.is_encrypted ? 'success' : 'error');
+                    showPreview(`File: ${data.name}\\nSize: ${data.file_size_formatted}\\nEncrypted: ${data.is_encrypted}\\nType: ${data.encryption_type || 'none'}`);
+                } else {
+                    updateStatus(`📄 Preview type: ${data.type}`, 'success');
+                    showPreview(JSON.stringify(data, null, 2));
+                }
+            } catch (error) {
+                updateStatus(`❌ Preview failed: ${error.message}`, 'error');
+                updateDebug({ error: error.message });
+            }
+        }
+        
+        async function testEncryptedPreview() {
+            updateStatus('🔐 Testing encrypted preview endpoint...', 'loading');
+            
+            if (!accessToken && !(await login())) {
+                return;
+            }
+            
+            const password = document.getElementById('passwordInput').value || 'testpass123';
+            
+            try {
+                const response = await fetch(`${API_BASE}/api/v1/documents/9/preview/encrypted`, {
+                    method: 'POST',
+                    headers: { 
+                        'Authorization': `Bearer ${accessToken}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ password })
+                });
+                
+                const data = await response.json();
+                updateDebug({ endpoint: 'Encrypted Preview', response: data });
+                
+                if (response.ok) {
+                    if (data.type === 'decrypted') {
+                        updateStatus('✅ Zero-knowledge decryption successful!', 'success');
+                        showPreview(data.preview || JSON.stringify(data, null, 2));
+                    } else {
+                        updateStatus(`📄 Preview type: ${data.type}`, 'success');
+                        showPreview(JSON.stringify(data, null, 2));
+                    }
+                } else {
+                    updateStatus(`❌ Encrypted preview failed: ${data.detail}`, 'error');
+                }
+            } catch (error) {
+                updateStatus(`❌ Encrypted preview error: ${error.message}`, 'error');
+                updateDebug({ error: error.message });
+            }
+        }
+        
+        async function testWithPassword() {
+            await testEncryptedPreview();
+        }
+        
+        // Auto-login on page load
+        window.onload = () => {
+            login();
+        };
+    </script>
+</body>
+</html>

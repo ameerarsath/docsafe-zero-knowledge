@@ -37,7 +37,6 @@ interface DocumentUploadProps {
   maxFileSize?: number; // in bytes
   maxFiles?: number;
   className?: string;
-  autoResetAfterUpload?: boolean; // Auto-reset component state after successful upload
 }
 
 const DEFAULT_ACCEPTED_TYPES = [
@@ -66,8 +65,7 @@ export const DocumentUpload: React.FC<DocumentUploadProps> = ({
   acceptedFileTypes = DEFAULT_ACCEPTED_TYPES,
   maxFileSize = DEFAULT_MAX_FILE_SIZE,
   maxFiles = DEFAULT_MAX_FILES,
-  className = '',
-  autoResetAfterUpload = true
+  className = ''
 }) => {
   const user = useAuthStore((state) => state.user);
   const {
@@ -290,9 +288,9 @@ export const DocumentUpload: React.FC<DocumentUploadProps> = ({
             replaceExisting: false
           });
           activeKey = newKey;
-          // Created new encryption key successfully
+          console.log('Created new encryption key:', newKey.keyId);
         } catch (error) {
-          // Failed to create encryption key
+          console.error('Failed to create encryption key:', error);
           setGlobalError('Failed to create encryption key. Please try again.');
           return;
         }
@@ -312,29 +310,17 @@ export const DocumentUpload: React.FC<DocumentUploadProps> = ({
             uploadedDocuments.push(document);
           }
         } catch (error) {
-          // Failed to upload file
+          console.error(`Failed to upload ${uploadFile.file.name}:`, error);
         }
       }
 
-      // Clear successful uploads first
-      setUploadFiles(prev => prev.filter(f => f.status !== 'completed'));
-
-      // Notify parent component after clearing state
+      // Notify parent component
       if (uploadedDocuments.length > 0 && onUploadComplete) {
-        // Small delay to ensure UI updates before callback
-        setTimeout(() => {
-          onUploadComplete(uploadedDocuments);
-          
-          // Auto-reset component state if enabled
-          if (autoResetAfterUpload) {
-            setTimeout(() => {
-              setUploadFiles([]);
-              setPassword('');
-              setGlobalError(null);
-            }, 1000); // Reset after 1 second
-          }
-        }, 100);
+        onUploadComplete(uploadedDocuments);
       }
+
+      // Clear successful uploads
+      setUploadFiles(prev => prev.filter(f => f.status !== 'completed'));
 
     } catch (error) {
       setGlobalError(error instanceof Error ? error.message : 'Upload failed');

@@ -7,6 +7,7 @@
 import React, { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
+import { usePermissions } from '../../hooks/usePermissions';
 import { useSecurityStatus } from '../../hooks/useSecurity';
 import { 
   FileText, 
@@ -99,6 +100,7 @@ export default function AppLayout({ children, title, subtitle }: AppLayoutProps)
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [expandedMenus, setExpandedMenus] = useState<Set<string>>(new Set());
   const { user, logout, hasRole, getRoleName } = useAuth();
+  const { canAccessAdmin, hasPermission } = usePermissions();
   const location = useLocation();
   const navigate = useNavigate();
   const securityStatus = useSecurityStatus();
@@ -144,7 +146,10 @@ export default function AppLayout({ children, title, subtitle }: AppLayoutProps)
   // Filter navigation based on user permissions
   const filteredNavigation = navigation.filter(item => {
     if (item.adminOnly) {
-      return user?.is_admin || ['super_admin', 'admin', '5', '4'].includes(user?.role || '');
+      return canAccessAdmin();
+    }
+    if (item.permission) {
+      return hasPermission(item.permission);
     }
     return true;
   });

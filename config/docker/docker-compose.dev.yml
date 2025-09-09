@@ -1,0 +1,59 @@
+version: '3.8'
+
+# Development Docker Compose - Database Only
+# Frontend and Backend run locally for faster development
+
+services:
+  # PostgreSQL Database for Development
+  securevault_postgres:
+    image: postgres:15-alpine
+    container_name: securevault_postgres
+    environment:
+      POSTGRES_USER: securevault_user
+      POSTGRES_PASSWORD: securevault_password
+      POSTGRES_DB: securevault
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+    ports:
+      - "5430:5432"
+    volumes:
+      - postgres_dev_data:/var/lib/postgresql/data
+      - ../../backend/scripts/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    networks:
+      - docsafe_dev
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U securevault_user -d securevault"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis for Development (Optional - can run locally)
+  redis:
+    image: redis:7-alpine
+    container_name: docsafe_redis_dev
+    ports:
+      - "6380:6379"
+    volumes:
+      - redis_dev_data:/data
+    networks:
+      - docsafe_dev
+    restart: unless-stopped
+    command: redis-server --requirepass redis_password
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "redis_password", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_dev_data:
+    driver: local
+    name: docsafe_postgres_dev_data
+  redis_dev_data:
+    driver: local
+    name: docsafe_redis_dev_data
+
+networks:
+  docsafe_dev:
+    driver: bridge
+    name: docsafe_dev_network

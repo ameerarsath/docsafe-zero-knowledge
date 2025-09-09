@@ -1,14 +1,23 @@
 {
   "permissions": {
     "allow": [
+      "Bash(docker-compose up:*)",
       "Bash(docker-compose:*)",
-      "Bash(npm run test:headed:*)",
-      "Bash(npx playwright test:*)",
-      "Bash(npm install)",
-      "Bash(npx playwright install:*)",
+      "Bash(docker:*)",
+      "Bash(copy .env.example .env)",
+      "Bash(cp:*)",
+      "Bash(python:*)",
+      "Bash(venvScriptsactivate.bat)",
+      "Bash(pip install:*)",
+      "Bash(.venvScriptsactivate)",
+      "Bash(source:*)",
+      "Bash(node:*)",
+      "Bash(npm:*)",
+      "Read(//d/main/com-3/commit_3/**)",
+      "Bash(uvicorn:*)",
+      "Bash(alembic upgrade:*)",
       "Bash(curl:*)",
-      "Bash(claude --model claude-opus-4-1-20250805)",
-      "Bash(claude --model opus)"
+      "Bash(alembic revision:*)"
     ],
     "deny": [],
     "ask": []

@@ -36,6 +36,8 @@ export interface Document {
   encryption_key_id?: string;
   encryption_iv?: string;
   encryption_auth_tag?: string;
+  encrypted_dek?: string;
+  is_encrypted?: boolean;
   
   // Computed fields
   path?: string;
@@ -195,37 +197,38 @@ export function useDocuments(): UseDocumentsReturn {
   const handleError = useCallback((error: any, fallbackMessage: string) => {
     // Handle documents error silently
     const errorMessage = error instanceof Error ? error.message : fallbackMessage;
-    updateState({ error: errorMessage, isLoading: false });
+    setState(prev => ({ ...prev, error: errorMessage, isLoading: false }));
     throw error;
-  }, []); // updateState is stable, no need to include it
+  }, []);
 
   /**
    * Load documents for current folder
    */
   const loadDocuments = useCallback(async (params: DocumentListParams = {}) => {
-    updateState({ isLoading: true, error: null });
+    setState(prev => ({ ...prev, isLoading: true, error: null }));
 
     try {
       const listParams = {
-        parent_id: state.currentFolder?.id || null,
-        sort_by: state.sortBy as 'name' | 'created_at' | 'updated_at' | 'file_size',
-        sort_order: state.sortOrder,
-        search: state.searchQuery || undefined,
-        tags: state.selectedTags.length > 0 ? state.selectedTags : undefined,
+        parent_id: params.parent_id !== undefined ? params.parent_id : (state.currentFolder?.id || null),
+        sort_by: (params.sort_by || state.sortBy) as 'name' | 'created_at' | 'updated_at' | 'file_size',
+        sort_order: params.sort_order || state.sortOrder,
+        search: params.search || state.searchQuery || undefined,
+        tags: params.tags || (state.selectedTags?.length > 0 ? state.selectedTags : undefined),
         ...params
       };
 
       const response = await documentsApi.listDocuments(listParams);
       
-      updateState({
+      setState(prev => ({
+        ...prev,
         documents: response.documents || [],
         totalCount: response.total || 0,
         isLoading: false
-      });
+      }));
     } catch (error) {
       handleError(error, 'Failed to load documents');
     }
-  }, [state.currentFolder?.id, state.sortBy, state.sortOrder, state.searchQuery, state.selectedTags]);
+  }, [handleError]);
 
   /**
    * Build breadcrumb trail
@@ -603,9 +606,20 @@ export function useDocuments(): UseDocumentsReturn {
   // Initialize by loading root documents
   useEffect(() => {
     if (user) {
-      navigateToFolder(null);
+      // Initialize state first
+      setState(prev => ({ 
+        ...prev,
+        currentFolder: null, 
+        breadcrumb: [], 
+        isLoading: true, 
+        error: null,
+        selectedDocuments: new Set() 
+      }));
+      
+      // Load root documents directly
+      loadDocuments({ parent_id: null });
     }
-  }, [user]); // Remove navigateToFolder from dependencies to prevent infinite loop
+  }, [user?.id, loadDocuments]); // Include loadDocuments since it's a stable callback
 
   // Computed values
   const selectedCount = state.selectedDocuments?.size || 0;

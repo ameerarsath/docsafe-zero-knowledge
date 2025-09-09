@@ -12,7 +12,7 @@
  * - Enhanced folder management
  */
 
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import { useDocuments, Document } from '../hooks/useDocuments';
 import { 
   DocumentUpload,
@@ -22,13 +22,8 @@ import {
   DocumentVersionHistory,
   FolderManagementDialog
 } from '../components/documents';
-import EncryptedDocumentUpload from '../components/documents/EncryptedDocumentUpload';
 import { RequireAuth } from '../components/auth/ProtectedRoute';
-import TagsDisplay, { TagFilter } from '../components/ui/TagsDisplay';
 import AppLayout from '../components/layout/AppLayout';
-import EnhancedSearch from '../components/search/EnhancedSearch';
-import { DocumentSearchParams, documentsApi } from '../services/api/documents';
-import { useAuth } from '../contexts/AuthContext';
 import {
   FileText,
   FolderOpen,
@@ -67,17 +62,12 @@ export default function DocumentsPage() {
 }
 
 function DocumentsContent() {
-  const { user } = useAuth();
-  const isAdmin = user?.role === 'admin' || user?.role === 'super_admin';
-  const canSearchAdvanced = user?.role && ['super_admin', 'admin', 'manager'].includes(user.role);
-  const canSearchAll = user?.role && ['super_admin', 'admin', 'manager', 'user', 'viewer'].includes(user.role);
-  
   // Add error boundary for useDocuments hook
   const documentsHookResult = (() => {
     try {
       return useDocuments();
     } catch (error) {
-      // Handle useDocuments hook error silently
+      console.error('Error in useDocuments hook:', error);
       return {
         documents: [],
         currentFolder: null,
@@ -86,9 +76,8 @@ function DocumentsContent() {
         isLoading: false,
         error: 'Failed to initialize documents. Please refresh the page.',
         searchQuery: '',
-        selectedTags: [],
         selectedDocuments: new Set(),
-        viewMode: 'list' as const,
+        viewMode: 'grid' as const,
         sortBy: 'name',
         sortOrder: 'asc' as const,
         hasSelection: false,
@@ -100,8 +89,6 @@ function DocumentsContent() {
         deleteDocument: () => Promise.resolve(),
         createFolder: () => Promise.reject('Not available'),
         searchDocuments: () => Promise.resolve(),
-        toggleTag: () => {},
-        clearTagFilters: () => {},
         setSortOrder: () => Promise.resolve(),
         selectDocument: () => {},
         selectAllDocuments: () => {},
@@ -121,7 +108,6 @@ function DocumentsContent() {
     isLoading,
     error,
     searchQuery,
-    selectedTags,
     selectedDocuments,
     viewMode,
     sortBy,
@@ -135,8 +121,6 @@ function DocumentsContent() {
     deleteDocument,
     createFolder,
     searchDocuments,
-    toggleTag,
-    clearTagFilters,
     setSortOrder,
     selectDocument,
     selectAllDocuments,
@@ -151,13 +135,6 @@ function DocumentsContent() {
   const [showCreateFolder, setShowCreateFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
   const [searchInput, setSearchInput] = useState(searchQuery);
-  const [enhancedSearchResults, setEnhancedSearchResults] = useState<Document[]>([]);
-  const [isEnhancedSearch, setIsEnhancedSearch] = useState(false);
-  const [enhancedSearchLoading, setEnhancedSearchLoading] = useState(false);
-  
-  // Get current documents to display (either search results or regular documents)
-  const displayDocuments = isEnhancedSearch && enhancedSearchResults.length > 0 ? enhancedSearchResults : documents;
-  const displayLoading = isEnhancedSearch ? enhancedSearchLoading : isLoading;
   
   // Dialog states
   const [previewDocument, setPreviewDocument] = useState<Document | null>(null);
@@ -168,21 +145,6 @@ function DocumentsContent() {
   });
   const [shareDocument, setShareDocument] = useState<Document | null>(null);
   const [versionHistoryDocument, setVersionHistoryDocument] = useState<Document | null>(null);
-
-  // Handle escape key to close modals
-  useEffect(() => {
-    const handleEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        if (showUpload) {
-          console.log('⌨️ Escape pressed - closing upload modal');
-          setShowUpload(false);
-        }
-      }
-    };
-
-    document.addEventListener('keydown', handleEscape);
-    return () => document.removeEventListener('keydown', handleEscape);
-  }, [showUpload]);
   const [folderDialog, setFolderDialog] = useState<{
     isOpen: boolean;
     folder?: Document | null;
@@ -205,43 +167,10 @@ function DocumentsContent() {
   });
 
   /**
-   * Handle enhanced search
-   */
-  const handleEnhancedSearch = useCallback(async (params: DocumentSearchParams) => {
-    console.log('🔍 Starting enhanced search with params:', params);
-    setEnhancedSearchLoading(true);
-    setIsEnhancedSearch(true);
-    
-    try {
-      console.log('📡 Calling searchDocumentsAdvanced API...');
-      const response = await documentsApi.searchDocumentsAdvanced(params);
-      console.log('✅ Enhanced search response:', response);
-      setEnhancedSearchResults(response.documents);
-    } catch (error) {
-      console.error('❌ Enhanced search failed:', error);
-      // Set empty results on error but keep enhanced search mode on to show the error
-      setEnhancedSearchResults([]);
-    } finally {
-      setEnhancedSearchLoading(false);
-    }
-  }, []);
-
-  /**
-   * Handle clear enhanced search
-   */
-  const handleClearEnhancedSearch = useCallback(() => {
-    setEnhancedSearchResults([]);
-    setIsEnhancedSearch(false);
-    setSearchInput('');
-    searchDocuments('');
-  }, [searchDocuments]);
-
-  /**
-   * Handle search submission (legacy simple search)
+   * Handle search submission
    */
   const handleSearch = useCallback((e: React.FormEvent) => {
     e.preventDefault();
-    setIsEnhancedSearch(false);
     searchDocuments(searchInput);
   }, [searchInput, searchDocuments]);
 
@@ -259,7 +188,7 @@ function DocumentsContent() {
         setNewFolderName('');
         setShowCreateFolder(false);
       } catch (error) {
-        // Handle folder creation error silently
+        console.error('Failed to create folder:', error);
       }
     }
   }, [newFolderName, currentFolder?.id, createFolder]);
@@ -407,30 +336,17 @@ function DocumentsContent() {
             Root
           </button>
           
-          {breadcrumb && breadcrumb.length > 0 && breadcrumb.map((folder, index) => {
-            // Check if this is the last item (current folder)
-            const isCurrentFolder = index === breadcrumb.length - 1;
-            
-            return (
-              <React.Fragment key={folder.id}>
-                <ChevronRight className="w-4 h-4 text-gray-400" />
-                {isCurrentFolder ? (
-                  // Current folder - not clickable
-                  <span className="text-gray-900 font-medium">
-                    {folder.name}
-                  </span>
-                ) : (
-                  // Parent folders - clickable
-                  <button
-                    onClick={() => navigateToFolder(folder.id)}
-                    className="text-blue-600 hover:text-blue-800 transition-colors"
-                  >
-                    {folder.name}
-                  </button>
-                )}
-              </React.Fragment>
-            );
-          })}
+          {breadcrumb && breadcrumb.length > 0 && breadcrumb.map((folder, index) => (
+            <React.Fragment key={folder.id}>
+              <ChevronRight className="w-4 h-4 text-gray-400" />
+              <button
+                onClick={() => navigateToFolder(folder.id)}
+                className="text-blue-600 hover:text-blue-800 transition-colors"
+              >
+                {folder.name}
+              </button>
+            </React.Fragment>
+          ))}
           
           {/* Item count */}
           <span className="text-gray-500 ml-4">
@@ -458,22 +374,9 @@ function DocumentsContent() {
         </div>
       </div>
 
-        {/* Unified Search Interface */}
-        <div className="mb-6">
-          <EnhancedSearch
-            onSearch={handleEnhancedSearch}
-            onClear={handleClearEnhancedSearch}
-            initialQuery={searchQuery}
-            isAdmin={isAdmin}
-            canSearchAdvanced={canSearchAdvanced}
-            canSearchAll={canSearchAll}
-            className="mb-4"
-          />
-        </div>
-
         {/* Search and Controls */}
         <div className="flex flex-col sm:flex-row gap-4 mb-6">
-          {/* Quick Search */}
+          {/* Search */}
           <form onSubmit={handleSearch} className="flex-1">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -481,8 +384,8 @@ function DocumentsContent() {
                 type="text"
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
-                placeholder="Quick search (or use advanced search above)..."
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-gray-50"
+                placeholder="Search documents..."
+                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               />
               {searchQuery && (
                 <button
@@ -490,7 +393,6 @@ function DocumentsContent() {
                   onClick={() => {
                     setSearchInput('');
                     searchDocuments('');
-                    handleClearEnhancedSearch();
                   }}
                   className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
                 >
@@ -584,13 +486,6 @@ function DocumentsContent() {
           </div>
         )}
 
-        {/* Tag Filter */}
-        <TagFilter
-          selectedTags={selectedTags}
-          onTagToggle={toggleTag}
-          onClearAll={clearTagFilters}
-        />
-
         {/* Error Message */}
         {error && (
           <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg flex items-center justify-between">
@@ -604,56 +499,10 @@ function DocumentsContent() {
           </div>
         )}
 
-        {/* Search Results Status */}
-        {(isEnhancedSearch || searchQuery) && (
-          <div className="mb-4 p-3 bg-slate-50 border border-slate-200 rounded-lg">
-            <div className="flex items-center justify-between">
-              <div className="text-sm text-slate-700">
-                {isEnhancedSearch ? (
-                  <>
-                    <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800 mr-2">
-                      Advanced Search
-                    </span>
-                    Found {enhancedSearchResults.length} result{enhancedSearchResults.length !== 1 ? 's' : ''}
-                  </>
-                ) : (
-                  <>
-                    <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800 mr-2">
-                      Quick Search
-                    </span>
-                    Found {documents.length} result{documents.length !== 1 ? 's' : ''} for "{searchQuery}"
-                  </>
-                )}
-              </div>
-              <button
-                onClick={() => {
-                  handleClearEnhancedSearch();
-                  setSearchInput('');
-                  searchDocuments('');
-                }}
-                className="text-xs text-slate-500 hover:text-slate-700 font-medium"
-              >
-                Clear all
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Loading State */}
-        {displayLoading && (
-          <div className="text-center py-12">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
-            <p className="text-gray-500">
-              {isEnhancedSearch ? 'Searching documents...' : 'Loading documents...'}
-            </p>
-          </div>
-        )}
-
         {/* Documents Grid/List */}
-        {!displayLoading && (
-          viewMode === 'grid' ? (
+        {viewMode === 'grid' ? (
           <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-            {displayDocuments && displayDocuments.length > 0 && displayDocuments.map((doc) => (
+            {documents && documents.length > 0 && documents.map((doc) => (
               <div
                 key={doc.id}
                 className={`relative group p-4 border border-gray-200 rounded-lg hover:shadow-md transition-shadow cursor-pointer ${
@@ -678,17 +527,6 @@ function DocumentsContent() {
                       {formatFileSize(doc.file_size)}
                     </div>
                   )}
-                  {doc.tags && doc.tags.length > 0 && (
-                    <div className="mt-1">
-                      <TagsDisplay
-                        tags={doc.tags}
-                        onTagClick={toggleTag}
-                        maxVisible={2}
-                        size="sm"
-                        className="justify-center"
-                      />
-                    </div>
-                  )}
                 </div>
 
                 {/* Quick Actions */}
@@ -697,7 +535,14 @@ function DocumentsContent() {
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
-                        handleContextMenu(e, doc);
+                        // For grid view, position menu below and slightly to the left of button
+                        const rect = e.currentTarget.getBoundingClientRect();
+                        const adjustedEvent = {
+                          ...e,
+                          clientX: rect.left + rect.width / 2,
+                          clientY: rect.bottom + 4, // 4px below the button
+                        };
+                        handleContextMenu(adjustedEvent, doc);
                       }}
                       className="p-1 bg-white shadow-sm border border-gray-200 rounded hover:bg-gray-50 transition-colors"
                     >
@@ -716,13 +561,13 @@ function DocumentsContent() {
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     <input
                       type="checkbox"
-                      checked={selectedDocuments.size > 0 && selectedDocuments.size === displayDocuments.length}
-                      ref={(input) => {
-                        if (input) {
-                          input.indeterminate = selectedDocuments.size > 0 && selectedDocuments.size < displayDocuments.length;
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          selectAllDocuments();
+                        } else {
+                          clearSelection();
                         }
                       }}
-                      onChange={() => selectAllDocuments()}
                       className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                     />
                   </th>
@@ -741,7 +586,7 @@ function DocumentsContent() {
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {displayDocuments && displayDocuments.length > 0 && displayDocuments.map((doc) => (
+                {documents && documents.length > 0 && documents.map((doc) => (
                   <tr 
                     key={doc.id} 
                     className="hover:bg-gray-50"
@@ -758,33 +603,18 @@ function DocumentsContent() {
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="flex items-center space-x-3">
                         {getFileIcon(doc)}
-                        <div className="flex flex-col">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              console.log('🖱️ Document name clicked:', doc.name);
-                              if (doc.document_type === 'folder') {
-                                navigateToFolder(doc.id);
-                              } else {
-                                handlePreview(doc);
-                              }
-                            }}
-                            className="text-sm font-medium text-gray-900 hover:text-blue-600 text-left relative z-10"
-                            style={{ pointerEvents: 'auto' }}
-                          >
-                            {doc.name}
-                          </button>
-                          {doc.tags && doc.tags.length > 0 && (
-                            <div className="mt-1">
-                              <TagsDisplay
-                                tags={doc.tags}
-                                onTagClick={toggleTag}
-                                maxVisible={3}
-                                size="sm"
-                              />
-                            </div>
-                          )}
-                        </div>
+                        <button
+                          onClick={() => {
+                            if (doc.document_type === 'folder') {
+                              navigateToFolder(doc.id);
+                            } else {
+                              handlePreview(doc);
+                            }
+                          }}
+                          className="text-sm font-medium text-gray-900 hover:text-blue-600 text-left"
+                        >
+                          {doc.name}
+                        </button>
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
@@ -837,7 +667,16 @@ function DocumentsContent() {
                           </button>
                         )}
                         <button
-                          onClick={() => handleContextMenu({ clientX: 0, clientY: 0, preventDefault: () => {} } as any, doc)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const rect = e.currentTarget.getBoundingClientRect();
+                            const fakeEvent = {
+                              clientX: rect.left + rect.width / 2,
+                              clientY: rect.bottom + 4, // 4px below the button
+                              preventDefault: () => {}
+                            } as React.MouseEvent;
+                            handleContextMenu(fakeEvent, doc);
+                          }}
                           className="text-gray-600 hover:text-gray-800"
                           title="More Actions"
                         >
@@ -850,64 +689,24 @@ function DocumentsContent() {
               </tbody>
             </table>
           </div>
-        )
         )}
 
         {/* Empty State */}
-        {!displayLoading && displayDocuments.length === 0 && (
+        {!isLoading && documents.length === 0 && (
           <div className="text-center py-12">
-            <div className="mx-auto w-24 h-24 bg-gray-100 rounded-full flex items-center justify-center mb-6">
-              {(isEnhancedSearch || searchQuery) ? (
-                <Search className="w-8 h-8 text-gray-400" />
-              ) : (
-                <FileText className="w-8 h-8 text-gray-400" />
-              )}
-            </div>
-            
-            {(isEnhancedSearch || searchQuery) ? (
-              <>
-                <h3 className="text-lg font-medium text-gray-900 mb-2">No documents found</h3>
-                <p className="text-gray-500 mb-6 max-w-md mx-auto">
-                  {isEnhancedSearch 
-                    ? 'No documents match your search criteria. Try adjusting your filters or search terms.'
-                    : `No documents found for "${searchQuery}". Try different keywords or use advanced search for more options.`
-                  }
-                </p>
-                <div className="flex flex-col sm:flex-row gap-3 justify-center">
-                  <button
-                    onClick={() => {
-                      handleClearEnhancedSearch();
-                      setSearchInput('');
-                      searchDocuments('');
-                    }}
-                    className="inline-flex items-center px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
-                  >
-                    <X className="w-4 h-4 mr-2" />
-                    Clear Search
-                  </button>
-                  <button
-                    onClick={() => setShowUpload(true)}
-                    className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                  >
-                    <Upload className="w-4 h-4 mr-2" />
-                    Upload New File
-                  </button>
-                </div>
-              </>
-            ) : (
-              <>
-                <h3 className="text-lg font-medium text-gray-900 mb-2">No documents yet</h3>
-                <p className="text-gray-500 mb-6 max-w-md mx-auto">
-                  Get started by uploading your first document. You can drag and drop files or use the upload button.
-                </p>
-                <button
-                  onClick={() => setShowUpload(true)}
-                  className="inline-flex items-center px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-base font-medium"
-                >
-                  <Upload className="w-5 h-5 mr-2" />
-                  Upload Your First Document
-                </button>
-              </>
+            <FileText className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+            <h3 className="text-lg font-medium text-gray-900 mb-2">No documents found</h3>
+            <p className="text-gray-500 mb-4">
+              {searchQuery ? 'Try adjusting your search terms' : 'Upload your first document to get started'}
+            </p>
+            {!searchQuery && (
+              <button
+                onClick={() => setShowUpload(true)}
+                className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                <Upload className="w-4 h-4 mr-2" />
+                Upload Files
+              </button>
             )}
           </div>
         )}
@@ -929,7 +728,7 @@ function DocumentsContent() {
             onClick={closeContextMenu}
           />
           <div
-            className="fixed bg-white border border-gray-200 rounded-lg shadow-lg py-1 z-[55] min-w-48"
+            className="fixed bg-white border border-gray-200 rounded-lg shadow-lg py-1 z-50 min-w-48"
             style={{
               left: `${Math.min(contextMenu.x, window.innerWidth - 200)}px`,
               top: `${Math.min(contextMenu.y, window.innerHeight - 300)}px`
@@ -1028,72 +827,16 @@ function DocumentsContent() {
 
       {/* Upload Modal */}
       {showUpload && (
-        <div 
-          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60] p-4"
-          onClick={(e) => {
-            // Close modal if clicking on backdrop
-            if (e.target === e.currentTarget) {
-              console.log('🖱️ Clicking outside modal, closing upload modal');
-              setShowUpload(false);
-            }
-          }}
-          onKeyDown={(e) => {
-            // Close modal on Escape key
-            if (e.key === 'Escape') {
-              console.log('⌨️ Escape key pressed, closing upload modal');
-              setShowUpload(false);
-            }
-          }}
-          tabIndex={0}
-        >
-          <div className="max-w-4xl w-full max-h-[90vh] overflow-y-auto bg-white rounded-lg">
-            <div className="p-6">
-              <div className="flex items-center justify-between mb-6">
-                <h2 className="text-xl font-semibold text-gray-900">Upload Documents</h2>
-                <button
-                  onClick={() => setShowUpload(false)}
-                  className="text-gray-400 hover:text-gray-600"
-                >
-                  <X className="w-6 h-6" />
-                </button>
-              </div>
-              <EncryptedDocumentUpload
-                onAllUploadsComplete={async () => {
-                  console.log('📁 All uploads completed, refreshing document list...');
-                  // Add a small delay to show the success state
-                  setTimeout(async () => {
-                    try {
-                      await refreshDocuments();
-                      console.log('✅ Document list refreshed successfully');
-                    } catch (error) {
-                      console.error('❌ Failed to refresh document list:', error);
-                    }
-                    setShowUpload(false);
-                    console.log('🔒 Upload modal closed');
-                  }, 500); // Brief delay to show success before closing
-                }}
-                onError={() => {
-                  console.log('❌ Upload error occurred, keeping modal open for retry');
-                  // Keep modal open but ensure no blocking overlays from child components
-                }}
-                onCancel={() => {
-                  console.log('🚫 Upload cancelled by user');
-                  setShowUpload(false);
-                }}
-                maxFileSize={100}
-                allowedTypes={[
-                  'application/pdf',
-                  'image/*',
-                  'text/*',
-                  'application/msword',
-                  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-                  'application/vnd.ms-excel',
-                  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-                ]}
-                autoResetAfterUpload={true}
-                parentFolderId={currentFolder?.id || null}
-              />
-            </div>
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+            <DocumentUpload
+              parentFolderId={currentFolder?.id || null}
+              onUploadComplete={() => {
+                setShowUpload(false);
+                refreshDocuments();
+              }}
+              onClose={() => setShowUpload(false)}
+            />
           </div>
         </div>
       )}

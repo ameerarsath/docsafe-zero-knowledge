@@ -610,6 +610,17 @@ export class DocumentEncryptionService {
     onProgress?: (progress: DecryptionProgress) => void
   ): Promise<void> {
     try {
+      // Check if this is a zero-knowledge or legacy encrypted document
+      const isZeroKnowledge = Boolean(document.encrypted_dek);
+      const isLegacyEncrypted = Boolean(document.encryption_key_id && document.encryption_iv && document.encryption_auth_tag);
+
+      if (!isZeroKnowledge && !isLegacyEncrypted) {
+        throw new DocumentDecryptionError(
+          'Document is not encrypted or encryption type is not supported',
+          'UNSUPPORTED_ENCRYPTION'
+        );
+      }
+
       // Report progress: Downloading
       onProgress?.({
         stage: 'downloading',
@@ -617,37 +628,91 @@ export class DocumentEncryptionService {
         message: 'Downloading encrypted document...'
       });
 
-      // Download the encrypted file
-      const response = await fetch(
-        `${import.meta.env.VITE_API_URL || 'http://localhost:8002'}/api/v1/documents/${document.id}/download`,
-        {
-          method: 'GET',
-          headers: {
-            'Authorization': `Bearer ${this.getAccessToken()}`,
-          },
+      let decryptedData: ArrayBuffer;
+      let originalFilename: string;
+      let mimeType: string;
+
+      if (isZeroKnowledge) {
+        // Handle zero-knowledge documents using the existing flow
+        console.log('📥 Processing zero-knowledge encrypted document');
+        
+        // Download the encrypted file
+        const response = await fetch(
+          `${import.meta.env.VITE_API_URL || 'http://localhost:8002'}/api/v1/documents/${document.id}/download`,
+          {
+            method: 'GET',
+            headers: {
+              'Authorization': `Bearer ${this.getAccessToken()}`,
+            },
+          }
+        );
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.detail || `Download failed: ${response.status}`);
         }
-      );
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.detail || `Download failed: ${response.status}`);
+        const encryptedDataBuffer = await response.arrayBuffer();
+
+        // Report progress: Downloaded, starting decryption
+        onProgress?.({
+          stage: 'decrypting',
+          progress: 40,
+          message: 'Decrypting zero-knowledge document...'
+        });
+
+        // Decrypt the document using zero-knowledge method
+        const decryptionResult = await this.decryptDocument(
+          document,
+          encryptedDataBuffer,
+          onProgress
+        );
+
+        decryptedData = decryptionResult.decryptedData;
+        originalFilename = decryptionResult.originalFilename;
+        mimeType = decryptionResult.mimeType;
+
+      } else {
+        // Handle legacy encrypted documents
+        console.log('📥 Processing legacy encrypted document');
+        
+        // Import legacy decryption utilities
+        const { useEncryption } = await import('../hooks/useEncryption');
+        const { documentsApi } = await import('./api/documents');
+
+        // Get user password for legacy decryption
+        const encryptionPassword = await this.getUserDecryptionPassword();
+
+        // Report progress: Downloaded, starting decryption
+        onProgress?.({
+          stage: 'decrypting',
+          progress: 40,
+          message: 'Decrypting legacy encrypted document...'
+        });
+
+        try {
+          // Download and decrypt using the legacy method
+          const encryptedBlob = await documentsApi.fetchDocumentBlob(document.id);
+          const encryptedDataArray = await encryptedBlob.arrayBuffer();
+
+          // Decrypt using the legacy encryption service
+          const legacyDecryptedData = await this.decryptLegacyDocument(
+            encryptedDataArray,
+            document,
+            encryptionPassword
+          );
+
+          decryptedData = legacyDecryptedData;
+          originalFilename = document.name;
+          mimeType = document.mime_type || 'application/octet-stream';
+
+        } catch (error) {
+          throw new DocumentDecryptionError(
+            `Failed to decrypt legacy document: ${error instanceof Error ? error.message : 'Unknown error'}`,
+            'LEGACY_DECRYPTION_FAILED'
+          );
+        }
       }
-
-      const encryptedData = await response.arrayBuffer();
-
-      // Report progress: Downloaded, starting decryption
-      onProgress?.({
-        stage: 'decrypting',
-        progress: 40,
-        message: 'Decrypting and preparing secure download...'
-      });
-
-      // Decrypt the document
-      const decryptionResult = await this.decryptDocument(
-        document,
-        encryptedData,
-        onProgress
-      );
 
       // Report progress: Creating encrypted wrapper
       onProgress?.({
@@ -657,20 +722,20 @@ export class DocumentEncryptionService {
       });
 
       // Create encrypted file wrapper that requires password to open
-      const { createEncryptedFileWrapper, ENCRYPTED_FILE_HEADER } = await import('../utils/encryptedFileWrapper');
+      const { createEncryptedFileWrapper } = await import('../utils/encryptedFileWrapper');
       
       // Use the user's decryption password as the file password
       const userPassword = await this.getUserDecryptionPassword();
       
       const encryptedWrapper = await createEncryptedFileWrapper(
-        decryptionResult.decryptedData,
-        decryptionResult.originalFilename,
-        decryptionResult.mimeType,
+        decryptedData,
+        originalFilename,
+        mimeType,
         userPassword
       );
 
       // Create filename with .docsafe extension
-      const encryptedFilename = this.addEncryptedExtension(decryptionResult.originalFilename);
+      const encryptedFilename = this.addEncryptedExtension(originalFilename);
 
       // Create and download the encrypted file
       const encryptedBlob = new Blob([encryptedWrapper.wrappedData], { 
@@ -815,6 +880,90 @@ export class DocumentEncryptionService {
     a.click();
     window.URL.revokeObjectURL(url);
     document.body.removeChild(a);
+  }
+
+  /**
+   * Decrypt a legacy encrypted document using the old encryption method
+   */
+  private async decryptLegacyDocument(
+    encryptedData: ArrayBuffer,
+    document: Document,
+    password: string
+  ): Promise<ArrayBuffer> {
+    try {
+      console.log('🔑 Decrypting legacy document:', {
+        documentId: document.id,
+        documentName: document.name,
+        encryptedSize: encryptedData.byteLength,
+        hasEncryptionKeyId: !!document.encryption_key_id,
+        hasIV: !!document.encryption_iv,
+        hasAuthTag: !!document.encryption_auth_tag
+      });
+
+      // Import the legacy decryption utilities
+      const { decrypt } = await import('../utils/encryption');
+      const { base64ToArrayBuffer } = await import('../utils/encryption');
+
+      // Validate document has legacy encryption fields
+      if (!document.encryption_key_id || !document.encryption_iv || !document.encryption_auth_tag) {
+        throw new Error('Missing legacy encryption metadata');
+      }
+
+      // Convert the encrypted data to the format expected by legacy decryption
+      const encryptedDataBase64 = await this.arrayBufferToBase64(encryptedData);
+      
+      // Construct the legacy encrypted object format
+      const legacyEncryptedObject = {
+        ciphertext: encryptedDataBase64,
+        iv: document.encryption_iv,
+        authTag: document.encryption_auth_tag
+      };
+
+      console.log('🔧 Legacy decryption parameters:', {
+        ciphertextLength: legacyEncryptedObject.ciphertext.length,
+        ivLength: legacyEncryptedObject.iv.length,
+        authTagLength: legacyEncryptedObject.authTag.length
+      });
+
+      // First derive the key from password  
+      const { deriveKeyFromPassword } = await import('../utils/encryption');
+      const salt = base64ToArrayBuffer(document.encryption_key_id!); // Use key_id as salt for legacy
+      
+      const derivedKey = await deriveKeyFromPassword({
+        password: password,
+        salt: new Uint8Array(salt),
+        iterations: 100000 // Default iterations for legacy documents
+      });
+
+      // Decrypt using the legacy method with the derived key
+      const decryptionInput = {
+        ciphertext: legacyEncryptedObject.ciphertext,
+        iv: legacyEncryptedObject.iv,
+        authTag: legacyEncryptedObject.authTag,
+        key: derivedKey
+      };
+
+      const decryptedData = await decrypt(decryptionInput);
+
+      console.log('✅ Legacy decryption successful:', {
+        originalSize: encryptedData.byteLength,
+        decryptedSize: decryptedData.byteLength
+      });
+
+      return decryptedData;
+
+    } catch (error) {
+      console.error('❌ Legacy decryption failed:', error);
+      throw new Error(`Legacy decryption failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  /**
+   * Helper method to convert ArrayBuffer to Base64
+   */
+  private async arrayBufferToBase64(buffer: ArrayBuffer): Promise<string> {
+    const { arrayBufferToBase64 } = await import('../utils/encryption');
+    return arrayBufferToBase64(buffer);
   }
 
   /**

@@ -275,3 +275,6 @@ videos/
 # Temporary files
 *.tmp
 *.temp
+
+# null files
+nul

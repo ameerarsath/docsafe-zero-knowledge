@@ -114,6 +114,8 @@ apiClient.interceptors.request.use(
       console.log('✅ API REQUEST: Authorization header added');
     } else {
       console.warn('❌ API REQUEST: No valid token available');
+      // Don't fail the request here - let the backend return 401
+      // This allows public endpoints to still work
     }
     return config;
   },
@@ -130,13 +132,17 @@ apiClient.interceptors.response.use(
   async (error: AxiosError) => {
     const originalRequest = error.config as CustomAxiosRequestConfig;
     
+    console.log('🚨 API ERROR:', error.response?.status, error.config?.url);
+    
     // Handle 401 Unauthorized - attempt token refresh
     if (error.response?.status === 401 && originalRequest && !originalRequest._retry) {
+      console.log('🔄 Attempting token refresh...');
       originalRequest._retry = true;
       
       try {
         const refreshToken = TokenManager.getRefreshToken();
         if (refreshToken) {
+          console.log('🔑 Found refresh token, attempting refresh...');
           const response = await axios.post(`${API_BASE_URL}/api/auth/refresh`, {
             refresh_token: refreshToken,
           });
@@ -149,16 +155,30 @@ apiClient.interceptors.response.use(
             TokenManager.getRememberMe()
           );
           
+          console.log('✅ Token refresh successful, retrying original request...');
+          
           // Retry original request with new token
           originalRequest.headers = originalRequest.headers || {} as AxiosRequestHeaders;
           originalRequest.headers.Authorization = `Bearer ${access_token}`;
           
           return apiClient(originalRequest);
+        } else {
+          console.warn('❌ No refresh token available');
         }
       } catch (refreshError) {
-        // Refresh failed, clear tokens and redirect to login
+        console.error('❌ Token refresh failed:', refreshError);
+        // Refresh failed, clear tokens but don't redirect immediately
         TokenManager.clearTokens();
-        window.location.href = '/login';
+        
+        // Only redirect to login if this is not a public endpoint
+        const isPublicEndpoint = originalRequest.url?.includes('/health') || 
+                                originalRequest.url?.includes('/login') ||
+                                originalRequest.url?.includes('/register');
+        
+        if (!isPublicEndpoint) {
+          console.log('🔄 Redirecting to login...');
+          window.location.href = '/login';
+        }
         return Promise.reject(refreshError);
       }
     }

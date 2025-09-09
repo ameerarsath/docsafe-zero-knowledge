@@ -13,7 +13,7 @@ services:
       - "5430:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ../../backend/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - ../../backend/scripts/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U securevault_user -d securevault"]
       interval: 10s

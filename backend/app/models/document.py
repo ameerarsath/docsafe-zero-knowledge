@@ -291,6 +291,10 @@ class Document(Base):
         if self.owner_id == user.id:
             return True
         
+        # Admin users have full access to all documents
+        if user.is_admin or user.role in ['super_admin', 'admin'] or user.role in ['5', '4']:
+            return True
+        
         # Check explicit permissions (deny takes precedence)
         explicit_permission_found = False
         for perm in self.permissions:
@@ -317,11 +321,10 @@ class Document(Base):
         """Convert document to dictionary representation."""
         import base64
         
-        print(f"🔍 Converting document {self.id} to dict:")
-        print(f"   - encryption_key_id: {self.encryption_key_id}")
-        print(f"   - encryption_iv: {self.encryption_iv}")
-        print(f"   - encryption_auth_tag: {self.encryption_auth_tag}")
-        print(f"   - is_encrypted: {self.is_encrypted}")
+        # Debug logging removed to prevent Unicode encoding issues on Windows
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.debug(f"Converting document {self.id} to dict")
         
         data = {
             "id": self.id,

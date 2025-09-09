@@ -1,7 +1,9 @@
+# Base requirements for DocSafe Backend
+# Core dependencies needed in all environments
+
 # FastAPI and ASGI server
 fastapi==0.104.1
 uvicorn[standard]==0.24.0
-gunicorn==21.2.0
 
 # Database
 sqlalchemy==2.0.23
@@ -36,27 +38,10 @@ fastapi-cors==0.0.6
 # Email
 fastapi-mail==1.4.1
 
-# Testing
-pytest==7.4.3
-pytest-asyncio==0.21.1
-pytest-cov==4.1.0
-pytest-mock==3.12.0
-pytest-timeout==2.2.0
-fakeredis==2.20.1
-freezegun==1.2.2
-factory-boy==3.3.0
-httpx==0.25.2
-
-# Code quality
-black==23.11.0
-ruff==0.1.6
-mypy==1.7.1
-isort==5.12.0
-pre-commit==3.5.0
-
-# Security scanning
-bandit==1.7.5
-safety==3.2.10
-
-# Development utilities
-watchfiles==0.21.0
+# Document processing
+PyPDF2==3.0.1
+pdf2image==1.16.3
+Pillow==10.1.0
+python-docx==1.1.0
+openpyxl==3.1.2
+python-pptx==0.6.23

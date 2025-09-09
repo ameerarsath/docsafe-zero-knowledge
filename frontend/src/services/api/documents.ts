@@ -173,35 +173,58 @@ export class DocumentsApiService {
    * List documents with optional filtering and pagination
    */
   async listDocuments(params: DocumentListParams = {}): Promise<DocumentListResponse> {
-    // Ensure deleted documents are excluded by default unless specifically requested
-    const defaultParams = {
-      status: 'active', // Exclude deleted, archived, and quarantined files by default
-      ...params
-    };
-    
-    const searchParams = new URLSearchParams();
-    
-    Object.entries(defaultParams).forEach(([key, value]) => {
-      if (value !== undefined && value !== null) {
-        if (key === 'tags' && Array.isArray(value)) {
-          // Tags should be comma-separated string for backend
-          searchParams.append(key, value.join(','));
-        } else if (Array.isArray(value)) {
-          searchParams.append(key, JSON.stringify(value));
-        } else {
-          searchParams.append(key, value.toString());
+    try {
+      // Ensure deleted documents are excluded by default unless specifically requested
+      const defaultParams = {
+        status: 'active', // Exclude deleted, archived, and quarantined files by default
+        ...params
+      };
+      
+      const searchParams = new URLSearchParams();
+      
+      Object.entries(defaultParams).forEach(([key, value]) => {
+        if (value !== undefined && value !== null) {
+          if (key === 'tags' && Array.isArray(value)) {
+            // Tags should be comma-separated string for backend
+            searchParams.append(key, value.join(','));
+          } else if (Array.isArray(value)) {
+            searchParams.append(key, JSON.stringify(value));
+          } else {
+            searchParams.append(key, value.toString());
+          }
         }
-      }
-    });
+      });
 
-    const response = await apiRequest<DocumentListResponse>('GET', `/api/v1/documents?${searchParams}`);
-    
-    if (!response.success) {
-      console.error('Documents API error:', response.error);
-      throw new Error(response.error?.detail || 'Failed to load documents');
+      const response = await apiRequest<DocumentListResponse>('GET', `/api/v1/documents/?${searchParams}`);
+      
+      if (!response.success) {
+        // Handle authentication errors gracefully
+        if (response.error?.status_code === 401) {
+          console.warn('Authentication required for document listing');
+          return {
+            documents: [],
+            total: 0,
+            page: 1,
+            size: 20,
+            has_next: false
+          };
+        }
+        console.error('Documents API error:', response.error);
+        throw new Error(response.error?.detail || 'Failed to load documents');
+      }
+      
+      return response.data!;
+    } catch (error) {
+      console.error('Error listing documents:', error);
+      // Return empty list as fallback
+      return {
+        documents: [],
+        total: 0,
+        page: 1,
+        size: 20,
+        has_next: false
+      };
     }
-    
-    return response.data!;
   }
 
   /**
@@ -221,7 +244,7 @@ export class DocumentsApiService {
    * Create a new document or folder
    */
   async createDocument(params: DocumentCreateParams): Promise<Document> {
-    const response = await apiRequest<Document>('POST', '/api/v1/documents', params);
+    const response = await apiRequest<Document>('POST', '/api/v1/documents/', params);
     
     if (!response.success) {
       throw new Error(response.error?.detail || 'Failed to create document');
@@ -546,10 +569,7 @@ export class DocumentsApiService {
    * Get all folders for folder tree
    */
   async getFolders(): Promise<Document[]> {
-    const response = await apiRequest<DocumentListResponse>('GET', '/api/v1/documents/', {
-      document_type: 'folder',
-      size: 1000 // Get all folders
-    });
+    const response = await apiRequest<DocumentListResponse>('GET', '/api/v1/documents/?document_type=folder&size=1000');
     
     if (!response.success) {
       throw new Error(response.error?.detail || 'Failed to get folders');
@@ -571,7 +591,7 @@ export class DocumentsApiService {
       }
     };
     
-    const response = await apiRequest<void>('POST', '/api/v1/documents/bulk-operation', bulkParams);
+    const response = await apiRequest<void>('POST', '/api/v1/documents/bulk-operation/', bulkParams);
     
     if (!response.success) {
       throw new Error(response.error?.detail || 'Failed to move documents');
@@ -591,7 +611,7 @@ export class DocumentsApiService {
       }
     };
     
-    const response = await apiRequest<void>('POST', '/api/v1/documents/bulk-operation', bulkParams);
+    const response = await apiRequest<void>('POST', '/api/v1/documents/bulk-operation/', bulkParams);
     
     if (!response.success) {
       throw new Error(response.error?.detail || 'Failed to copy documents');
@@ -629,7 +649,7 @@ export class DocumentsApiService {
       size: params.size || 20
     };
 
-    const response = await apiRequest<DocumentListResponse>('POST', '/api/v1/documents/search', searchPayload);
+    const response = await apiRequest<DocumentListResponse>('POST', '/api/v1/documents/search/', searchPayload);
     
     if (!response.success) {
       console.error('Enhanced search API error:', response.error);

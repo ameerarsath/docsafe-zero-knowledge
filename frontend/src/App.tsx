@@ -9,6 +9,9 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import { AuthProvider } from './contexts/AuthContext';
 import { SessionTimeoutManager } from './components/auth/SessionTimeoutWarning';
 
+// Import auth checker for debugging
+import './utils/authChecker';
+
 // Pages
 import LoginPage from './pages/LoginPage';
 import ZeroKnowledgeLoginPage from './pages/ZeroKnowledgeLoginPage';
@@ -48,7 +51,10 @@ import './App.css';
 
 function App() {
   return (
-    <Router>
+    <Router future={{ 
+      v7_startTransition: true,
+      v7_relativeSplatPath: true 
+    }}>
       <AuthProvider>
         <PermissionProvider>
           <div className="App">

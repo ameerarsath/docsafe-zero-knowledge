@@ -106,6 +106,29 @@ function ModernDashboardContent() {
       try {
         setIsLoading(true);
         
+        // Check authentication status first
+        const { AuthChecker } = await import('../utils/authChecker');
+        const authStatus = AuthChecker.checkAuthStatus();
+        
+        if (!authStatus.isAuthenticated) {
+          console.warn('User not authenticated, showing limited dashboard');
+          // Set fallback data for unauthenticated users
+          setStats({
+            documentsTotal: 0,
+            foldersTotal: 0,
+            storageUsedGB: 0,
+            storageUsedPercentage: 0,
+            storageQuotaGB: 100,
+            recentFiles: [],
+            activeUsers: 0,
+            mfaAdoption: 0,
+            securityAlerts: 1,
+            systemHealth: 'good',
+            quickActions: []
+          });
+          return;
+        }
+        
         // Get enhanced dashboard statistics
         const enhancedStats = await dashboardApi.getEnhancedDashboardStats();
         
@@ -126,15 +149,12 @@ function ModernDashboardContent() {
         try {
           if (user?.is_admin || ['super_admin', 'admin'].includes(user?.role || '')) {
             // Admin users can access MFA statistics
-            const mfaStatsResponse = await fetch('/api/v1/mfa/admin/stats', {
-              headers: {
-                'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
-                'Content-Type': 'application/json'
-              }
-            });
+            // Use the proper API service instead of direct fetch
+            const { apiRequest } = await import('../services/api');
+            const mfaStatsApiResponse = await apiRequest('GET', '/api/v1/mfa/admin/stats');
             
-            if (mfaStatsResponse.ok) {
-              const mfaStats = await mfaStatsResponse.json();
+            if (mfaStatsApiResponse.success && mfaStatsApiResponse.data) {
+              const mfaStats = mfaStatsApiResponse.data;
               activeUsers = mfaStats.total_users || enhancedStats.active_users || 1;
               mfaAdoption = mfaStats.mfa_enabled_percentage || (user?.mfa_enabled ? 100 : 0);
               securityAlerts = mfaStats.backup_codes_exhausted || (enhancedStats.sensitive_documents > 0 ? 1 : 0);

@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Preview API Debug Tool</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        .container { max-width: 800px; margin: 0 auto; }
+        .section { margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 5px; }
+        .error { color: red; }
+        .success { color: green; }
+        .info { color: blue; }
+        button { padding: 10px 15px; margin: 5px; background: #007bff; color: white; border: none; cursor: pointer; border-radius: 3px; }
+        button:hover { background: #0056b3; }
+        input { padding: 5px; margin: 5px; }
+        .log { background: #f8f9fa; padding: 10px; border-radius: 3px; white-space: pre-wrap; font-family: monospace; max-height: 400px; overflow-y: auto; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>DocSafe Preview API Debug Tool</h1>
+        <p>Test the exact API calls that the UI makes to debug preview issues.</p>
+        
+        <div class="section">
+            <h2>🔐 Authentication</h2>
+            <input type="text" id="username" placeholder="Username" value="admin">
+            <input type="password" id="password" placeholder="Password" value="admin123">
+            <button onclick="login()">Login</button>
+            <div id="authStatus"></div>
+        </div>
+        
+        <div class="section">
+            <h2>📄 Document Preview Test</h2>
+            <p>Document: Network Topologies.docx (ID: 8)</p>
+            <input type="number" id="documentId" value="8">
+            <button onclick="testInitialPreview()">Test Initial Preview</button>
+            <div id="previewStatus"></div>
+        </div>
+        
+        <div class="section">
+            <h2>🔒 Encrypted Preview Test</h2>
+            <p>Password: Ameer</p>
+            <input type="text" id="docPassword" value="Ameer">
+            <button onclick="testEncryptedPreview()">Test Encrypted Preview</button>
+            <div id="encryptedStatus"></div>
+        </div>
+        
+        <div class="section">
+            <h2>📊 API Response Log</h2>
+            <button onclick="clearLog()">Clear Log</button>
+            <div id="apiLog" class="log"></div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:8002';
+        let accessToken = '';
+        
+        function log(message, type = 'info') {
+            const logDiv = document.getElementById('apiLog');
+            const timestamp = new Date().toLocaleTimeString();
+            const emoji = type === 'error' ? '❌' : type === 'success' ? '✅' : 'ℹ️';
+            logDiv.innerHTML += `<div>[${timestamp}] ${emoji} ${message}</div>`;
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+        
+        function clearLog() {
+            document.getElementById('apiLog').innerHTML = '';
+        }
+        
+        async function login() {
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            const statusDiv = document.getElementById('authStatus');
+            
+            log(`Attempting login with username: ${username}`);
+            
+            try {
+                const formData = new FormData();
+                formData.append('username', username);
+                formData.append('password', password);
+                
+                const response = await fetch(`${API_BASE}/api/auth/login`, {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                log(`Login response: ${response.status} ${response.statusText}`);
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    accessToken = data.access_token;
+                    statusDiv.innerHTML = '<span class="success">✅ Login successful</span>';
+                    log('Access token received', 'success');
+                } else {
+                    const errorText = await response.text();
+                    statusDiv.innerHTML = '<span class="error">❌ Login failed</span>';
+                    log(`Login failed: ${errorText}`, 'error');
+                }
+            } catch (error) {
+                statusDiv.innerHTML = '<span class="error">❌ Network error</span>';
+                log(`Network error: ${error.message}`, 'error');
+            }
+        }
+        
+        async function testInitialPreview() {
+            const documentId = document.getElementById('documentId').value;
+            const statusDiv = document.getElementById('previewStatus');
+            
+            if (!accessToken) {
+                statusDiv.innerHTML = '<span class="error">❌ Please login first</span>';
+                return;
+            }
+            
+            log(`Testing initial preview for document ${documentId}...`);
+            
+            try {
+                const response = await fetch(`${API_BASE}/api/v1/documents/${documentId}/preview`, {
+                    headers: {
+                        'Authorization': `Bearer ${accessToken}`
+                    }
+                });
+                
+                log(`Initial preview response: ${response.status} ${response.statusText}`);
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    statusDiv.innerHTML = '<span class="success">✅ Initial preview successful</span>';
+                    log(`Response data: ${JSON.stringify(data, null, 2)}`, 'success');
+                } else {
+                    const errorText = await response.text();
+                    statusDiv.innerHTML = '<span class="error">❌ Initial preview failed</span>';
+                    log(`Error response: ${errorText}`, 'error');
+                }
+            } catch (error) {
+                statusDiv.innerHTML = '<span class="error">❌ Network error</span>';
+                log(`Network error: ${error.message}`, 'error');
+            }
+        }
+        
+        async function testEncryptedPreview() {
+            const documentId = document.getElementById('documentId').value;
+            const docPassword = document.getElementById('docPassword').value;
+            const statusDiv = document.getElementById('encryptedStatus');
+            
+            if (!accessToken) {
+                statusDiv.innerHTML = '<span class="error">❌ Please login first</span>';
+                return;
+            }
+            
+            log(`Testing encrypted preview with password: ${docPassword}...`);
+            
+            try {
+                const response = await fetch(`${API_BASE}/api/v1/documents/${documentId}/preview/encrypted`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${accessToken}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ password: docPassword })
+                });
+                
+                log(`Encrypted preview response: ${response.status} ${response.statusText}`);
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    statusDiv.innerHTML = '<span class="success">✅ Encrypted preview successful</span>';
+                    log(`Response data: ${JSON.stringify(data, null, 2)}`, 'success');
+                } else {
+                    const errorText = await response.text();
+                    statusDiv.innerHTML = '<span class="error">❌ Encrypted preview failed</span>';
+                    log(`Error response: ${errorText}`, 'error');
+                }
+            } catch (error) {
+                statusDiv.innerHTML = '<span class="error">❌ Network error</span>';
+                log(`Network error: ${error.message}`, 'error');
+            }
+        }
+        
+        // Test connectivity on load
+        window.onload = function() {
+            log('Testing API server connectivity...');
+            fetch(`${API_BASE}/health`)
+                .then(response => {
+                    if (response.ok) {
+                        log('API server is reachable', 'success');
+                    } else {
+                        log(`API server error: ${response.status}`, 'error');
+                    }
+                })
+                .catch(error => {
+                    log(`Cannot reach API server: ${error.message}`, 'error');
+                });
+        };
+    </script>
+</body>
+</html>

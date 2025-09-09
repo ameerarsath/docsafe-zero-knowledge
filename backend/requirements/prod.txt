@@ -1,0 +1,7 @@
+# Production requirements for DocSafe Backend
+# Includes base requirements plus production server
+
+-r base.txt
+
+# Production WSGI server
+gunicorn==21.2.0

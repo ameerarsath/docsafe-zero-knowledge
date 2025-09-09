@@ -270,18 +270,20 @@ async def login(
             must_change_password=user.must_change_password,
             mfa_required=False,
             # Zero-Knowledge encryption parameters (returned after successful stage 1 login)
-            encryption_salt=user.encryption_salt,
-            key_verification_payload=user.key_verification_payload,
-            encryption_method=user.encryption_method,
-            key_derivation_iterations=user.key_derivation_iterations
+            encryption_salt=getattr(user, 'encryption_salt', None),
+            key_verification_payload=getattr(user, 'key_verification_payload', None),
+            encryption_method=getattr(user, 'encryption_method', None),
+            key_derivation_iterations=getattr(user, 'key_derivation_iterations', None)
         )
         
     except Exception as e:
-        # Log error (in production, use proper logging)
+        # Log error with full traceback
+        import traceback
         print(f"Login error: {str(e)}")
+        print(f"Full traceback: {traceback.format_exc()}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Internal server error"
+            detail=f"Internal server error: {str(e)}"
         )
 
 
@@ -570,6 +572,9 @@ async def get_current_user_info(
     Returns:
         User information
     """
+    encryption_salt = getattr(current_user, 'encryption_salt', None)
+    key_verification_payload = getattr(current_user, 'key_verification_payload', None)
+    
     return {
         "id": current_user.id,
         "username": current_user.username,
@@ -581,12 +586,12 @@ async def get_current_user_info(
         "last_login": current_user.last_login,
         "created_at": current_user.created_at,
         # Zero-Knowledge encryption status
-        "encryption_configured": bool(current_user.encryption_salt and current_user.key_verification_payload),
-        "encryption_method": current_user.encryption_method,
-        "key_derivation_iterations": current_user.key_derivation_iterations,
+        "encryption_configured": bool(encryption_salt and key_verification_payload),
+        "encryption_method": getattr(current_user, 'encryption_method', None),
+        "key_derivation_iterations": getattr(current_user, 'key_derivation_iterations', None),
         # Zero-Knowledge encryption parameters (needed for key derivation)
-        "encryption_salt": current_user.encryption_salt,
-        "key_verification_payload": current_user.key_verification_payload
+        "encryption_salt": encryption_salt,
+        "key_verification_payload": key_verification_payload
     }
 
 
@@ -631,8 +636,8 @@ async def simple_register(
     
     def create_validation_payload(username: str, master_key: bytes) -> dict:
         """Create validation payload for key verification matching frontend format."""
-        # Create a simple validation string
-        validation_string = f"validation_{username}_{secrets.token_hex(16)}"
+        # Create a simple validation string to match frontend expectation
+        validation_string = f"validation:{username}"
         
         # Encrypt the validation string with the master key using AES-GCM
         aesgcm = AESGCM(master_key)

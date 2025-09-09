@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(psql:*)",
+      "Bash(venvScripts:*)",
+      "Bash(python test_db_connection.py:*)",
+      "Bash(\"venv\\Scripts\\activate\")",
+      "Bash(python:*)",
+      "Bash(curl:*)",
+      "Bash(rm:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

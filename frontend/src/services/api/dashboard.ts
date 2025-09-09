@@ -87,16 +87,56 @@ class DashboardAPI {
    * Get document statistics
    */
   async getDocumentStatistics(): Promise<DocumentStatistics> {
-    const response = await apiRequest<DocumentStatistics>(
-      'GET',
-      '/api/v1/documents/statistics'
-    );
-    
-    if (!response.success) {
-      throw new Error(response.error?.detail || 'Failed to fetch document statistics');
+    try {
+      const response = await apiRequest<DocumentStatistics>(
+        'GET',
+        '/api/v1/documents/statistics'
+      );
+      
+      if (!response.success) {
+        // Check if it's an authentication error
+        if (response.error?.status_code === 401) {
+          console.warn('Authentication required for document statistics');
+          // Return empty statistics instead of throwing
+          return this.getEmptyStatistics();
+        }
+        throw new Error(response.error?.detail || 'Failed to fetch document statistics');
+      }
+      
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching document statistics:', error);
+      // Return empty statistics as fallback
+      return this.getEmptyStatistics();
     }
-    
-    return response.data;
+  }
+
+  /**
+   * Get empty statistics as fallback
+   */
+  private getEmptyStatistics(): DocumentStatistics {
+    return {
+      total_documents: 0,
+      total_folders: 0,
+      total_size: 0,
+      encrypted_documents: 0,
+      shared_documents: 0,
+      sensitive_documents: 0,
+      documents_by_type: {},
+      documents_by_status: {},
+      storage_usage_by_user: {},
+      recent_activity_count: 0,
+      active_documents: 0,
+      archived_documents: 0,
+      deleted_documents: 0,
+      active_storage_size: 0,
+      archived_storage_size: 0,
+      deleted_storage_size: 0,
+      documents_created_today: 0,
+      documents_modified_today: 0,
+      avg_document_size: 0,
+      largest_document_size: 0
+    };
   }
 
   /**
