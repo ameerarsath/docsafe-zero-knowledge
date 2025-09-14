@@ -49,11 +49,13 @@ const getRoleBasedPermissions = (role: string): string[] => {
       'system:admin', 'audit:read', 'folders:admin'
     ],
     'admin': [
-      'users:read', 'users:create', 'users:update', 'users:admin',
-      'roles:read', 'roles:update', 'roles:admin',
+      'users:read', 'users:create', 'users:update', 'users:delete', 'users:admin',
+      'roles:read', 'roles:create', 'roles:update', 'roles:delete', 'roles:assign',
       'permissions:read',
       'documents:read', 'documents:create', 'documents:update', 'documents:delete',
-      'audit:read', 'folders:create', 'folders:update', 'folders:delete'
+      'system:admin', 'system:read', 'system:audit', 'system:security',
+      'audit:read', 'folders:create', 'folders:update', 'folders:delete',
+      'encryption:manage', 'mfa:manage'
     ],
     'manager': [
       'users:read',
@@ -78,11 +80,13 @@ const getRoleBasedPermissions = (role: string): string[] => {
       'system:admin', 'audit:read', 'folders:admin'
     ],
     '4': [
-      'users:read', 'users:create', 'users:update', 'users:admin',
-      'roles:read', 'roles:update', 'roles:admin',
+      'users:read', 'users:create', 'users:update', 'users:delete', 'users:admin',
+      'roles:read', 'roles:create', 'roles:update', 'roles:delete', 'roles:assign',
       'permissions:read',
       'documents:read', 'documents:create', 'documents:update', 'documents:delete',
-      'audit:read', 'folders:create', 'folders:update', 'folders:delete'
+      'system:admin', 'system:read', 'system:audit', 'system:security',
+      'audit:read', 'folders:create', 'folders:update', 'folders:delete',
+      'encryption:manage', 'mfa:manage'
     ],
     '3': [
       'users:read',

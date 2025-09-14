@@ -37,6 +37,11 @@ class MFAError(Exception):
     pass
 
 
+class TOTPError(MFAError):
+    """Base exception for TOTP operations."""
+    pass
+
+
 class MFANotEnabledError(MFAError):
     """Raised when MFA is not enabled for user."""
     pass
@@ -52,17 +57,17 @@ class InvalidMFACodeError(MFAError):
     pass
 
 
-class InvalidTOTPSecretError(MFAError):
+class InvalidTOTPSecretError(TOTPError):
     """Raised when TOTP secret is invalid."""
     pass
 
 
-class InvalidTOTPCodeError(MFAError):
+class InvalidTOTPCodeError(TOTPError):
     """Raised when TOTP code is invalid."""
     pass
 
 
-class ExpiredTOTPCodeError(MFAError):
+class ExpiredTOTPCodeError(TOTPError):
     """Raised when TOTP code has expired."""
     pass
 
@@ -381,9 +386,26 @@ def generate_qr_code(
         qr.make(fit=True)
         
         # Create image
-        image = qr.make_image(fill_color="black", back_color="white")
+        qr_image = qr.make_image(fill_color="black", back_color="white")
         
-        return image
+        # Convert to PIL Image if needed and ensure RGB mode
+        if hasattr(qr_image, '_img'):
+            pil_image = qr_image._img
+        elif hasattr(qr_image, 'get_image'):
+            pil_image = qr_image.get_image()
+        else:
+            # For direct PIL image compatibility
+            import io
+            buffer = io.BytesIO()
+            qr_image.save(buffer, format='PNG')
+            buffer.seek(0)
+            pil_image = Image.open(buffer)
+        
+        # Ensure the image is in RGB mode
+        if pil_image.mode != 'RGB':
+            pil_image = pil_image.convert('RGB')
+        
+        return pil_image
         
     except Exception as e:
         raise QRCodeError(f"Failed to generate QR code: {str(e)}")
@@ -834,6 +856,16 @@ def get_mfa_status(user_id: int) -> Dict[str, Any]:
     status_data = service.get_mfa_status(user_id)
     
     return MFAStatus(**status_data)
+
+
+def is_mfa_required(user_id: int) -> bool:
+    """Check if MFA is required for a user."""
+    # Check if user has MFA enabled
+    if is_mfa_enabled_for_user(user_id):
+        return True
+    
+    # Check if MFA is required by policy
+    return is_mfa_required_by_policy(user_id)
 
 
 def reset_mfa_for_user(user_id: int, admin_id: int) -> bool:

@@ -98,12 +98,15 @@ export function useSecurity(options: UseSecurityOptions = {}): UseSecurityReturn
     setState(prev => ({ ...prev, ...updates }));
   }, []);
 
+  // Ref to track emitting state to avoid stale closures
+  const isEmittingRef = useRef(false);
+
   /**
    * Emit security event
    */
   const emitSecurityEvent = useCallback((type: SecurityEvent['type'], data: any) => {
-    // Prevent infinite recursion by limiting event depth
-    if (state.isEmittingEvent) return;
+    // Prevent infinite recursion
+    if (isEmittingRef.current) return;
     
     const event: SecurityEvent = {
       type,
@@ -112,7 +115,7 @@ export function useSecurity(options: UseSecurityOptions = {}): UseSecurityReturn
     };
 
     // Set flag to prevent recursion
-    updateState({ isEmittingEvent: true });
+    isEmittingRef.current = true;
     
     try {
       if (eventCallbackRef.current) {
@@ -120,9 +123,9 @@ export function useSecurity(options: UseSecurityOptions = {}): UseSecurityReturn
       }
     } finally {
       // Always reset flag
-      updateState({ isEmittingEvent: false });
+      isEmittingRef.current = false;
     }
-  }, [state.isEmittingEvent, updateState]);
+  }, []);
 
   /**
    * Start security monitoring
@@ -223,6 +226,7 @@ export function useSecurity(options: UseSecurityOptions = {}): UseSecurityReturn
       return status;
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      console.error('Security headers check failed:', errorMessage);
       updateState({ error: errorMessage });
       
       emitSecurityEvent('security_warning', {
@@ -304,7 +308,8 @@ export function useSecurity(options: UseSecurityOptions = {}): UseSecurityReturn
       suspiciousActivities: [],
       isMonitoring: false,
       lastCheck: null,
-      error: null
+      error: null,
+      isEmittingEvent: false
     });
   }, []);
 
@@ -316,16 +321,20 @@ export function useSecurity(options: UseSecurityOptions = {}): UseSecurityReturn
 
     // Cleanup on unmount
     return () => {
-      if (state.isMonitoring) {
-        stopMonitoring();
+      if (listenerRef.current) {
+        SecurityMonitor.removeListener(listenerRef.current);
+        listenerRef.current = null;
       }
+      SecurityMonitor.stop();
     };
-  }, [autoStart]); // Only run on mount
+  }, [autoStart, startMonitoring]);
 
   // Initial security check
   useEffect(() => {
     if (autoStart) {
-      checkHeaders().catch(() => {}); // Silent error handling
+      checkHeaders().catch((error) => {
+        console.warn('Initial security headers check failed:', error);
+      });
     }
   }, [autoStart, checkHeaders]);
 
@@ -345,6 +354,9 @@ export function useSecurity(options: UseSecurityOptions = {}): UseSecurityReturn
     reset
   };
 }
+
+// Shared security instance to prevent multiple monitors
+let sharedSecurityInstance: UseSecurityReturn | null = null;
 
 /**
  * Hook for security status display
@@ -371,18 +383,14 @@ export function useSecurityStatus() {
           break;
 
         case 'violation':
-          setStatus('warning');
-          setMessage('Security policy violation detected');
-          break;
-
         case 'suspicious_activity':
-          setStatus('warning');
-          setMessage('Suspicious activity detected');
-          break;
-
         case 'security_warning':
           setStatus('warning');
-          setMessage(event.data.message || 'Security warning');
+          setMessage(
+            event.type === 'violation' ? 'Security policy violation detected' :
+            event.type === 'suspicious_activity' ? 'Suspicious activity detected' :
+            event.data.message || 'Security warning'
+          );
           break;
       }
     }
@@ -418,11 +426,10 @@ export function useCSPViolations() {
   }, [security.violations]);
 
   const getRecentViolations = useCallback((hours: number = 24) => {
-    const cutoff = new Date(Date.now() - hours * 60 * 60 * 1000);
-    return security.violations.filter(violation => {
-      // CSP violations don't have timestamp, so we can't filter by time
-      return true;
-    });
+    // Note: CSP violations don't have timestamps in the current implementation
+    // This function returns all violations for now, but could be enhanced
+    // to include timestamps when CSP violation reporting is improved
+    return security.violations;
   }, [security.violations]);
 
   return {

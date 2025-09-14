@@ -287,35 +287,59 @@ class Document(Base):
 
     def can_user_access(self, user, permission_type: str = "read") -> bool:
         """Check if user can access this document with given permission."""
-        # Owner has full access
-        if self.owner_id == user.id:
-            return True
-        
-        # Admin users have full access to all documents
-        if user.is_admin or user.role in ['super_admin', 'admin'] or user.role in ['5', '4']:
-            return True
-        
-        # Check explicit permissions (deny takes precedence)
-        explicit_permission_found = False
-        for perm in self.permissions:
-            if perm.user_id == user.id and perm.permission_type == permission_type:
-                explicit_permission_found = True
-                return perm.granted
-        
-        # Check inherited permissions from parent folders
-        current = self.parent
-        while current:
-            for perm in current.permissions:
-                if (perm.user_id == user.id and 
-                    perm.permission_type == permission_type and
-                    perm.inheritable):
-                    return perm.granted
-            current = current.parent
-        
-        # For document-specific access, require explicit permissions
-        # Don't fall back to RBAC for security - documents require explicit access grants
-        # RBAC permissions are for system-level operations (create, admin functions)
-        return False
+        try:
+            # Owner has full access
+            if self.owner_id == user.id:
+                return True
+            
+            # Admin users have full access to all documents
+            try:
+                # Safe admin check
+                is_admin = getattr(user, 'is_admin', False)
+                user_role = getattr(user, 'role', '')
+                
+                if (is_admin or 
+                    user_role in ['super_admin', 'admin'] or 
+                    user_role in ['5', '4']):
+                    return True
+            except Exception as e:
+                print(f"WARNING: Admin check failed in can_user_access: {e}")
+                # Continue with other checks if admin check fails
+            
+            # Check explicit permissions (deny takes precedence)
+            try:
+                explicit_permission_found = False
+                permissions = getattr(self, 'permissions', [])
+                for perm in permissions:
+                    if perm.user_id == user.id and perm.permission_type == permission_type:
+                        explicit_permission_found = True
+                        return perm.granted
+            except Exception as e:
+                print(f"WARNING: Permission check failed in can_user_access: {e}")
+            
+            # Check inherited permissions from parent folders
+            try:
+                current = getattr(self, 'parent', None)
+                while current:
+                    parent_permissions = getattr(current, 'permissions', [])
+                    for perm in parent_permissions:
+                        if (perm.user_id == user.id and 
+                            perm.permission_type == permission_type and
+                            getattr(perm, 'inheritable', False)):
+                            return perm.granted
+                    current = getattr(current, 'parent', None)
+            except Exception as e:
+                print(f"WARNING: Inherited permission check failed in can_user_access: {e}")
+            
+            # For document-specific access, require explicit permissions
+            # Don't fall back to RBAC for security - documents require explicit access grants
+            # RBAC permissions are for system-level operations (create, admin functions)
+            return False
+            
+        except Exception as e:
+            print(f"ERROR: can_user_access method failed completely: {e}")
+            # Default to no access on any error
+            return False
 
     def to_dict(self, include_children: bool = False) -> Dict[str, Any]:
         """Convert document to dictionary representation."""

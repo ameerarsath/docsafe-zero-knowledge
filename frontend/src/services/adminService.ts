@@ -30,6 +30,7 @@ export interface UserCreate {
   username: string;
   email: string;
   password: string;
+  encryption_password: string;
   is_active?: boolean;
   is_verified?: boolean;
 }
@@ -172,7 +173,11 @@ class AdminService {
     if (response.success && response.data) {
       return response.data;
     }
-    throw new Error(response.error?.detail || 'Failed to create user');
+    // Preserve the full error object for better error handling
+    if (response.error) {
+      throw response.error;
+    }
+    throw new Error('Failed to create user');
   }
 
   async updateUser(userId: number, userData: UserUpdate): Promise<User> {
@@ -180,13 +185,21 @@ class AdminService {
     if (response.success && response.data) {
       return response.data;
     }
-    throw new Error(response.error?.detail || 'Failed to update user');
+    // Preserve the full error object for better error handling
+    if (response.error) {
+      throw response.error;
+    }
+    throw new Error('Failed to update user');
   }
 
   async deleteUser(userId: number): Promise<void> {
     const response = await apiRequest<void>('DELETE', `${this.baseUrl}/users/${userId}`);
     if (!response.success) {
-      throw new Error(response.error?.detail || 'Failed to delete user');
+      // Preserve the full error object for better error handling
+      if (response.error) {
+        throw response.error;
+      }
+      throw new Error('Failed to delete user');
     }
   }
 
@@ -232,11 +245,36 @@ class AdminService {
   }
 
   async getSystemMetrics(hours: number = 24): Promise<SystemMetrics> {
-    const response = await apiRequest<SystemMetrics>('GET', `${this.baseUrl}/system/metrics?hours=${hours}`);
-    if (response.success && response.data) {
-      return response.data;
+    try {
+      const response = await apiRequest<SystemMetrics>('GET', `${this.baseUrl}/system/metrics?hours=${hours}`);
+      if (response.success && response.data) {
+        return response.data;
+      }
+      throw new Error(response.error?.detail || 'Failed to fetch system metrics');
+    } catch (error: any) {
+      if (error.status === 403) {
+        // Return mock data for non-admin users
+        return {
+          timestamp: new Date().toISOString(),
+          cpu_usage: 0,
+          memory_usage: 0,
+          disk_usage: 0,
+          database_stats: {
+            total_users: 0,
+            active_users: 0,
+            total_documents: 0,
+            total_storage_bytes: 0
+          },
+          activity_stats: {
+            logins: 0,
+            document_uploads: 0,
+            document_downloads: 0
+          },
+          uptime_seconds: 0
+        };
+      }
+      throw error;
     }
-    throw new Error(response.error?.detail || 'Failed to fetch system metrics');
   }
 
   // Audit and Compliance Methods

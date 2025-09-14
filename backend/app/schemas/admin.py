@@ -18,7 +18,8 @@ class UserCreate(BaseModel):
     """Schema for creating a new user."""
     username: str = Field(..., min_length=3, max_length=50, description="Username")
     email: EmailStr = Field(..., description="Email address")
-    password: str = Field(..., min_length=8, description="Password")
+    password: str = Field(..., min_length=8, description="Login password")
+    encryption_password: Optional[str] = Field(None, description="Encryption password for zero-knowledge storage (defaults to login password if not provided)")
     is_active: bool = Field(True, description="Whether user is active")
     is_verified: bool = Field(False, description="Whether user email is verified")
     
@@ -27,6 +28,13 @@ class UserCreate(BaseModel):
         """Validate password complexity."""
         if len(v) < 8:
             raise ValueError('Password must be at least 8 characters long')
+        return v
+
+    @validator('encryption_password')
+    def validate_encryption_password(cls, v):
+        """Validate encryption password complexity if provided."""
+        if v is not None and len(v) < 8:
+            raise ValueError('Encryption password must be at least 8 characters long')
         return v
 
 

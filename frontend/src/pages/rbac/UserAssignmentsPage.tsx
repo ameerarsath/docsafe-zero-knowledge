@@ -13,7 +13,7 @@ import MobileResponsiveRoleManagement from '../../components/rbac/MobileResponsi
 export default function UserAssignmentsPage() {
   return (
     <RequireAuth>
-      <RoleBasedComponent requiredPermission="users:admin">
+      <RoleBasedComponent anyPermissions={["users:admin", "users:update", "system:admin"]}>
         <AppLayout>
           <MobileResponsiveRoleManagement 
             initialView="assignments"

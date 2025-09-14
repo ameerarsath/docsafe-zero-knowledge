@@ -638,17 +638,17 @@ async def simple_register(
         """Create validation payload for key verification matching frontend format."""
         # Create a simple validation string to match frontend expectation
         validation_string = f"validation:{username}"
-        
+
         # Encrypt the validation string with the master key using AES-GCM
         aesgcm = AESGCM(master_key)
         iv = secrets.token_bytes(12)  # 12 bytes for GCM
         ciphertext_with_tag = aesgcm.encrypt(iv, validation_string.encode('utf-8'), None)
-        
+
         # AES-GCM returns ciphertext + auth tag combined
         # Split them: last 16 bytes are auth tag, rest is ciphertext
         ciphertext = ciphertext_with_tag[:-16]
         auth_tag = ciphertext_with_tag[-16:]
-        
+
         return {
             'ciphertext': base64.b64encode(ciphertext).decode('utf-8'),
             'iv': base64.b64encode(iv).decode('utf-8'),

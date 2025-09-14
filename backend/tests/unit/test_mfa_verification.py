@@ -35,7 +35,7 @@ from app.core.mfa import (
     MFAAlreadyEnabledError,
     BackupCodeExhaustedError,
 )
-from app.schemas.auth import MFASetupResponse, MFAStatus
+from app.schemas.mfa import MFASetupResponse, MFAStatus
 
 
 class TestMFASetup:

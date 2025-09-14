@@ -60,7 +60,7 @@ class Settings(BaseSettings):
     TEST_REDIS_URL: Optional[str] = None
     
     # CORS Settings
-    CORS_ORIGINS: List[str] = Field(default_factory=lambda: ["http://localhost:3000", "http://localhost:3005", "http://localhost:3006", "http://frontend:3000", "http://127.0.0.1:3005", "http://127.0.0.1:3006"])
+    CORS_ORIGINS: List[str] = Field(default_factory=lambda: ["http://localhost:3000", "http://localhost:3005", "http://localhost:3006", "http://localhost:3008", "http://localhost:3009", "http://localhost:3010", "http://localhost:3013", "http://frontend:3000", "http://127.0.0.1:3005", "http://127.0.0.1:3006", "http://127.0.0.1:3008", "http://127.0.0.1:3009", "http://127.0.0.1:3010", "http://127.0.0.1:3013"])
     CORS_ALLOW_CREDENTIALS: bool = True
     CORS_ALLOW_METHODS: List[str] = Field(default_factory=lambda: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"])
     CORS_ALLOW_HEADERS: List[str] = Field(default_factory=lambda: ["*"])
@@ -89,16 +89,16 @@ class Settings(BaseSettings):
     FILE_CLEANUP_INTERVAL: int = Field(default=3600, description="Temporary file cleanup interval in seconds")
     
     # Password Policy Settings
-    PASSWORD_MIN_LENGTH: int = 10
+    PASSWORD_MIN_LENGTH: int = 8
     PASSWORD_MAX_LENGTH: int = 128
-    PASSWORD_REQUIRE_UPPERCASE: bool = True
+    PASSWORD_REQUIRE_UPPERCASE: bool = False
     PASSWORD_REQUIRE_LOWERCASE: bool = True
-    PASSWORD_REQUIRE_DIGITS: bool = True
-    PASSWORD_REQUIRE_SPECIAL_CHARS: bool = True
+    PASSWORD_REQUIRE_DIGITS: bool = False
+    PASSWORD_REQUIRE_SPECIAL_CHARS: bool = False
     PASSWORD_HISTORY_COUNT: int = Field(default=5, description="Number of previous passwords to remember")
     PASSWORD_EXPIRY_DAYS: int = Field(default=90, description="Password expiry in days, 0 for no expiry")
     BCRYPT_ROUNDS: int = 12
-    PASSWORD_ENTROPY_THRESHOLD: int = 60
+    PASSWORD_ENTROPY_THRESHOLD: int = 25
     
     # Encryption Settings
     ENCRYPTION_ESCROW_ENABLED: bool = True

@@ -61,6 +61,8 @@ export default function UserManagementInterface({ onUserSelect, onBulkOperation 
   const [pageSize, setPageSize] = useState(20);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<{[key: string]: string}>({});
   
   // Search and filter state
   const [searchQuery, setSearchQuery] = useState('');
@@ -82,9 +84,146 @@ export default function UserManagementInterface({ onUserSelect, onBulkOperation 
     username: '',
     email: '',
     password: '',
+    encryption_password: '',
     is_active: true,
     is_verified: false
   });
+
+  /**
+   * Extract user-friendly error message and field errors from various error formats
+   */
+  const extractErrorMessage = useCallback((err: any, defaultMessage: string): string => {
+    console.log('Error object received:', err); // Debug logging
+    
+    // Clear previous field errors first
+    setFieldErrors({});
+    
+    if (typeof err === 'string') {
+      return err;
+    }
+    
+    // Handle direct error detail from API response
+    if (err?.detail && typeof err.detail === 'string') {
+      // Check for field-specific error patterns in the detail message
+      const detail = err.detail;
+      if (detail.includes('username') && (detail.includes('already exists') || detail.includes('already taken') || detail.includes('unique'))) {
+        setFieldErrors({ username: 'This username is already taken. Please choose a different username.' });
+        return detail;
+      }
+      if (detail.includes('email') && (detail.includes('already exists') || detail.includes('already taken') || detail.includes('unique'))) {
+        setFieldErrors({ email: 'This email address is already registered. Please use a different email.' });
+        return detail;
+      }
+      if (detail.includes('Username or email already exists')) {
+        // We need to determine which field is the problem - let's check both
+        setFieldErrors({ 
+          username: 'Username may already be taken',
+          email: 'Email may already be registered'
+        });
+        return detail;
+      }
+      return detail;
+    }
+    
+    if (err?.message && typeof err.message === 'string') {
+      return err.message;
+    }
+    
+    if (err?.error?.detail) {
+      return err.error.detail;
+    }
+    
+    if (err?.response?.data?.detail) {
+      return err.response.data.detail;
+    }
+    
+    // Handle validation errors and field-specific errors
+    if (err?.response?.data?.field_errors) {
+      const apiFieldErrors = err.response.data.field_errors;
+      const newFieldErrors: {[key: string]: string} = {};
+      
+      Object.entries(apiFieldErrors).forEach(([field, errors]: [string, any]) => {
+        const errorArray = Array.isArray(errors) ? errors : [errors];
+        newFieldErrors[field] = errorArray.join(', ');
+      });
+      
+      setFieldErrors(newFieldErrors);
+      
+      const errorMessages = Object.entries(apiFieldErrors)
+        .map(([field, errors]: [string, any]) => `${field}: ${Array.isArray(errors) ? errors.join(', ') : errors}`)
+        .join('; ');
+      return errorMessages || defaultMessage;
+    }
+    
+    // Handle status code specific messages with context-aware responses
+    if (err?.status_code || err?.response?.status) {
+      const statusCode = err.status_code || err.response?.status;
+      switch (statusCode) {
+        case 400:
+          // Check if it's a user creation conflict
+          if (defaultMessage.includes('create user') || defaultMessage.includes('Failed to create user')) {
+            return 'Invalid user data. Please check that all required fields are filled correctly.';
+          }
+          return 'Invalid request. Please check your input and try again.';
+        case 401:
+          return 'You are not authorized to perform this action. Please login again.';
+        case 403:
+          return 'Access denied. You do not have permission to perform this action.';
+        case 404:
+          return 'The requested resource was not found.';
+        case 409:
+          // Check if it's specifically about user creation
+          if (defaultMessage.includes('create user') || defaultMessage.includes('Failed to create user')) {
+            // Set generic field errors for username/email conflicts
+            setFieldErrors({ 
+              username: 'This username may already be taken',
+              email: 'This email may already be registered'
+            });
+            return 'User already exists. A user with this username or email is already registered.';
+          }
+          return 'A conflict occurred. This item may already exist.';
+        case 422:
+          // Check if we have specific validation details
+          if (defaultMessage.includes('create user')) {
+            return 'User creation failed. Please check that the username and email are unique and passwords meet requirements.';
+          }
+          return 'Validation failed. Please check your input and try again.';
+        case 429:
+          return 'Too many requests. Please wait a moment and try again.';
+        case 500:
+          return 'Internal server error. Please try again later or contact support.';
+        default:
+          return `Server error (${statusCode}). Please try again later.`;
+      }
+    }
+    
+    // Network or other errors
+    if (err?.code === 'NETWORK_ERROR' || err?.message?.includes('Network Error')) {
+      return 'Network connection failed. Please check your internet connection and try again.';
+    }
+    
+    // Look for common error patterns in the error object
+    const errorString = JSON.stringify(err);
+    if (errorString.includes('already exists') || errorString.includes('already registered')) {
+      setFieldErrors({ 
+        username: 'This username may already be taken',
+        email: 'This email may already be registered'
+      });
+      return 'User already exists. A user with this username or email is already registered.';
+    }
+    if (errorString.includes('duplicate') || errorString.includes('unique constraint')) {
+      setFieldErrors({ 
+        username: 'Username must be unique',
+        email: 'Email must be unique'
+      });
+      return 'User already exists. Username or email must be unique.';
+    }
+    if (errorString.includes('validation')) {
+      return 'Validation failed. Please check your input and try again.';
+    }
+    
+    return defaultMessage;
+  }, []);
 
   /**
    * Fetch users from API
@@ -110,17 +249,26 @@ export default function UserManagementInterface({ onUserSelect, onBulkOperation 
       setUsers(response.users);
       setTotalUsers(response.total);
     } catch (err: any) {
-      // Failed to fetch users
-      setError(err.message || 'Failed to load users');
+      setError(extractErrorMessage(err, 'Failed to load users'));
     } finally {
       setIsLoading(false);
     }
-  }, [currentPage, pageSize, searchQuery, filterMode]);
+  }, [currentPage, pageSize, searchQuery, filterMode, extractErrorMessage]);
 
   // Load users on component mount and dependency changes
   useEffect(() => {
     fetchUsers();
   }, [fetchUsers]);
+
+  // Auto-dismiss success messages after 5 seconds
+  useEffect(() => {
+    if (success) {
+      const timer = setTimeout(() => {
+        setSuccess(null);
+      }, 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [success]);
 
   /**
    * Handle search submission
@@ -135,15 +283,20 @@ export default function UserManagementInterface({ onUserSelect, onBulkOperation 
    * Handle user selection
    */
   const handleUserSelect = useCallback((userId: number) => {
-    const newSelection = new Set(selectedUsers);
-    if (newSelection.has(userId)) {
-      newSelection.delete(userId);
-    } else {
-      newSelection.add(userId);
-    }
-    setSelectedUsers(newSelection);
-    setSelectAll(newSelection.size === users.length);
-  }, [selectedUsers, users.length]);
+    setSelectedUsers(prev => {
+      const newSelection = new Set(prev);
+      if (newSelection.has(userId)) {
+        newSelection.delete(userId);
+      } else {
+        newSelection.add(userId);
+      }
+      
+      // Update selectAll state based on new selection
+      setSelectAll(newSelection.size === users.length && users.length > 0);
+      
+      return newSelection;
+    });
+  }, [users.length]);
 
   /**
    * Handle select all toggle
@@ -163,97 +316,153 @@ export default function UserManagementInterface({ onUserSelect, onBulkOperation 
    */
   const handleCreateUser = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // Basic client-side validation
+    if (!userForm.username.trim()) {
+      setError('Username is required');
+      return;
+    }
+    if (!userForm.email.trim()) {
+      setError('Email is required');
+      return;
+    }
+    if (!userForm.password) {
+      setError('Login password is required');
+      return;
+    }
+    if (!userForm.encryption_password) {
+      setError('Encryption password is required for zero-knowledge security');
+      return;
+    }
+    if (userForm.password === userForm.encryption_password) {
+      setError('Login password and encryption password must be different for security');
+      return;
+    }
+    
     try {
+      setError(null); // Clear any previous errors
+      setSuccess(null); // Clear any previous success messages
+      setFieldErrors({}); // Clear any previous field errors
       await adminService.createUser(userForm);
+      
+      // Success - close modal and refresh list
       setShowCreateUser(false);
       setUserForm({
         username: '',
         email: '',
         password: '',
+        encryption_password: '',
         is_active: true,
         is_verified: false
       });
+      setSuccess(`User "${userForm.username}" has been created successfully with zero-knowledge encryption enabled.`);
       fetchUsers();
+      
     } catch (err: any) {
-      // Failed to create user
-      // Handle different error formats
-      let errorMessage = 'Failed to create user';
-      if (err.message) {
-        errorMessage = err.message;
-      } else if (typeof err === 'string') {
-        errorMessage = err;
-      } else if (err.detail) {
-        errorMessage = err.detail;
-      }
-      setError(errorMessage);
+      setError(extractErrorMessage(err, 'Failed to create user'));
     }
-  }, [userForm, fetchUsers]);
+  }, [userForm, fetchUsers, extractErrorMessage]);
 
   /**
    * Handle user update
    */
   const handleUpdateUser = useCallback(async (userId: number, updateData: UserUpdate) => {
     try {
+      setError(null); // Clear any previous errors
+      setSuccess(null); // Clear any previous success messages
       await adminService.updateUser(userId, updateData);
       setEditingUser(null);
+      setSuccess('User information updated successfully.');
       fetchUsers();
     } catch (err: any) {
-      // Failed to update user
-      setError(err.message || 'Failed to update user');
+      setError(extractErrorMessage(err, 'Failed to update user'));
     }
-  }, [fetchUsers]);
+  }, [fetchUsers, extractErrorMessage]);
 
   /**
    * Handle user deletion
    */
   const handleDeleteUser = useCallback(async (userId: number) => {
-    if (!confirm('Are you sure you want to delete this user?')) return;
+    if (!confirm('Are you sure you want to delete this user? This action cannot be undone.')) return;
     
     try {
+      setError(null); // Clear any previous errors
+      setSuccess(null); // Clear any previous success messages
       await adminService.deleteUser(userId);
+      setSuccess('User deleted successfully.');
       fetchUsers();
     } catch (err: any) {
-      // Failed to delete user
-      setError(err.message || 'Failed to delete user');
+      setError(extractErrorMessage(err, 'Failed to delete user'));
     }
-  }, [fetchUsers]);
+  }, [fetchUsers, extractErrorMessage]);
 
   /**
    * Handle bulk operations
    */
   const handleBulkOperation = useCallback(async (operation: BulkOperation['operation']) => {
-    if (selectedUsers.size === 0) return;
+    if (selectedUsers.size === 0) {
+      setError('No users selected for bulk operation');
+      return;
+    }
+    
+    const operationLabels = {
+      activate: 'activate',
+      deactivate: 'deactivate', 
+      force_password_reset: 'reset passwords for',
+      enable_mfa: 'enable MFA for'
+    };
+    
+    const confirmMessage = `Are you sure you want to ${operationLabels[operation]} ${selectedUsers.size} user(s)?`;
+    if (!confirm(confirmMessage)) return;
     
     try {
+      setError(null); // Clear any previous errors
+      setSuccess(null); // Clear any previous success messages
       const result = await adminService.bulkUserOperation({
         operation,
         user_ids: Array.from(selectedUsers)
       });
       
-      // Bulk operation completed
+      // Show results based on success/failure
+      if (result.failed && result.failed.length > 0) {
+        const failedCount = result.failed.length;
+        const successCount = result.successful.length;
+        if (successCount > 0) {
+          setError(`Bulk operation partially completed: ${successCount} successful, ${failedCount} failed. Some users may not have been processed.`);
+        } else {
+          setError(`Bulk operation failed for all ${failedCount} users. Please check user permissions and try again.`);
+        }
+      } else {
+        const userCount = result.successful.length;
+        setSuccess(`Successfully ${operationLabels[operation]} ${userCount} user${userCount !== 1 ? 's' : ''}.`);
+      }
+      
+      // Store selected users before clearing for callback
+      const processedUserIds = Array.from(selectedUsers);
+      
       setSelectedUsers(new Set());
       setSelectAll(false);
       fetchUsers();
-      onBulkOperation?.(operation, Array.from(selectedUsers));
+      onBulkOperation?.(operation, processedUserIds);
     } catch (err: any) {
-      // Failed to perform bulk operation
-      setError(err.message || 'Failed to perform bulk operation');
+      setError(extractErrorMessage(err, `Failed to perform bulk ${operationLabels[operation]} operation`));
     }
-  }, [selectedUsers, fetchUsers, onBulkOperation]);
+  }, [selectedUsers, fetchUsers, onBulkOperation, extractErrorMessage]);
 
   /**
    * Handle user activity view
    */
   const handleViewActivity = useCallback(async (user: User) => {
     try {
+      setError(null); // Clear any previous errors
       setViewingActivity(user);
       const activity = await adminService.getUserActivity(user.id);
       setUserActivity(activity);
     } catch (err: any) {
-      // Failed to fetch user activity
-      setError(err.message || 'Failed to load user activity');
+      setError(extractErrorMessage(err, `Failed to load activity for user ${user.username}`));
+      setViewingActivity(null); // Close modal on error
     }
-  }, []);
+  }, [extractErrorMessage]);
 
   /**
    * Format date for display
@@ -293,7 +502,11 @@ export default function UserManagementInterface({ onUserSelect, onBulkOperation 
         </div>
         <div className="flex items-center space-x-3">
           <button
-            onClick={() => setShowCreateUser(true)}
+            onClick={() => {
+              setShowCreateUser(true);
+              setFieldErrors({}); // Clear field errors when opening modal
+              setError(null); // Clear general errors
+            }}
             className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
           >
             <Plus className="w-4 h-4 mr-2" />
@@ -387,11 +600,40 @@ export default function UserManagementInterface({ onUserSelect, onBulkOperation 
       {/* Error Display */}
       {error && (
         <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-          <div className="flex items-center space-x-2 text-red-800">
-            <AlertCircle className="w-5 h-5" />
-            <span className="font-medium">Error</span>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-2 text-red-800">
+              <AlertCircle className="w-5 h-5" />
+              <span className="font-medium">Error</span>
+            </div>
+            <button
+              onClick={() => setError(null)}
+              className="text-red-400 hover:text-red-600 transition-colors"
+              aria-label="Dismiss error"
+            >
+              <XCircle className="w-5 h-5" />
+            </button>
           </div>
           <p className="text-red-700 mt-1">{error}</p>
+        </div>
+      )}
+
+      {/* Success Display */}
+      {success && (
+        <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-2 text-green-800">
+              <CheckCircle className="w-5 h-5" />
+              <span className="font-medium">Success</span>
+            </div>
+            <button
+              onClick={() => setSuccess(null)}
+              className="text-green-400 hover:text-green-600 transition-colors"
+              aria-label="Dismiss success message"
+            >
+              <XCircle className="w-5 h-5" />
+            </button>
+          </div>
+          <p className="text-green-700 mt-1">{success}</p>
         </div>
       )}
 
@@ -500,6 +742,34 @@ export default function UserManagementInterface({ onUserSelect, onBulkOperation 
               </tbody>
             </table>
 
+            {/* Empty State */}
+            {users.length === 0 && !isLoading && (
+              <div className="text-center py-12">
+                <Users className="mx-auto h-12 w-12 text-gray-400" />
+                <h3 className="mt-2 text-sm font-medium text-gray-900">
+                  {error ? 'Unable to load users' : 'No users found'}
+                </h3>
+                <p className="mt-1 text-sm text-gray-500">
+                  {error ? (
+                    'There was an error loading users. Please try refreshing the page.'
+                  ) : searchQuery || filterMode !== 'all' ? (
+                    'No users match your current search or filters. Try adjusting your criteria.'
+                  ) : (
+                    'No users have been created yet. Get started by creating your first user.'
+                  )}
+                </p>
+                {!error && (
+                  <button
+                    onClick={() => setShowCreateUser(true)}
+                    className="mt-4 inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700"
+                  >
+                    <Plus className="w-4 h-4 mr-2" />
+                    Create First User
+                  </button>
+                )}
+              </div>
+            )}
+
             {/* Pagination */}
             {totalPages > 1 && (
               <div className="bg-white px-4 py-3 border-t border-gray-200 sm:px-6">
@@ -574,9 +844,23 @@ export default function UserManagementInterface({ onUserSelect, onBulkOperation 
                     type="text"
                     required
                     value={userForm.username}
-                    onChange={(e) => setUserForm(prev => ({ ...prev, username: e.target.value }))}
-                    className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-blue-500 focus:border-blue-500"
+                    onChange={(e) => {
+                      setUserForm(prev => ({ ...prev, username: e.target.value }));
+                      // Clear field error when user starts typing
+                      if (fieldErrors.username) {
+                        setFieldErrors(prev => ({ ...prev, username: '' }));
+                      }
+                    }}
+                    className={`mt-1 block w-full border rounded-md px-3 py-2 focus:ring-blue-500 focus:border-blue-500 ${
+                      fieldErrors.username ? 'border-red-300 bg-red-50' : 'border-gray-300'
+                    }`}
                   />
+                  {fieldErrors.username && (
+                    <p className="mt-1 text-sm text-red-600 flex items-center">
+                      <AlertCircle className="w-4 h-4 mr-1" />
+                      {fieldErrors.username}
+                    </p>
+                  )}
                 </div>
                 
                 <div>
@@ -585,20 +869,77 @@ export default function UserManagementInterface({ onUserSelect, onBulkOperation 
                     type="email"
                     required
                     value={userForm.email}
-                    onChange={(e) => setUserForm(prev => ({ ...prev, email: e.target.value }))}
-                    className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-blue-500 focus:border-blue-500"
+                    onChange={(e) => {
+                      setUserForm(prev => ({ ...prev, email: e.target.value }));
+                      // Clear field error when user starts typing
+                      if (fieldErrors.email) {
+                        setFieldErrors(prev => ({ ...prev, email: '' }));
+                      }
+                    }}
+                    className={`mt-1 block w-full border rounded-md px-3 py-2 focus:ring-blue-500 focus:border-blue-500 ${
+                      fieldErrors.email ? 'border-red-300 bg-red-50' : 'border-gray-300'
+                    }`}
                   />
+                  {fieldErrors.email && (
+                    <p className="mt-1 text-sm text-red-600 flex items-center">
+                      <AlertCircle className="w-4 h-4 mr-1" />
+                      {fieldErrors.email}
+                    </p>
+                  )}
                 </div>
                 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700">Password</label>
+                  <label className="block text-sm font-medium text-gray-700">Login Password</label>
                   <input
                     type="password"
                     required
                     value={userForm.password}
-                    onChange={(e) => setUserForm(prev => ({ ...prev, password: e.target.value }))}
-                    className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-blue-500 focus:border-blue-500"
+                    onChange={(e) => {
+                      setUserForm(prev => ({ ...prev, password: e.target.value }));
+                      // Clear field error when user starts typing
+                      if (fieldErrors.password) {
+                        setFieldErrors(prev => ({ ...prev, password: '' }));
+                      }
+                    }}
+                    className={`mt-1 block w-full border rounded-md px-3 py-2 focus:ring-blue-500 focus:border-blue-500 ${
+                      fieldErrors.password ? 'border-red-300 bg-red-50' : 'border-gray-300'
+                    }`}
                   />
+                  {fieldErrors.password && (
+                    <p className="mt-1 text-sm text-red-600 flex items-center">
+                      <AlertCircle className="w-4 h-4 mr-1" />
+                      {fieldErrors.password}
+                    </p>
+                  )}
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">
+                    Encryption Password 
+                    <span className="text-xs text-gray-500 ml-1">(for zero-knowledge document encryption)</span>
+                  </label>
+                  <input
+                    type="password"
+                    required
+                    value={userForm.encryption_password}
+                    onChange={(e) => {
+                      setUserForm(prev => ({ ...prev, encryption_password: e.target.value }));
+                      // Clear field error when user starts typing
+                      if (fieldErrors.encryption_password) {
+                        setFieldErrors(prev => ({ ...prev, encryption_password: '' }));
+                      }
+                    }}
+                    className={`mt-1 block w-full border rounded-md px-3 py-2 focus:ring-blue-500 focus:border-blue-500 ${
+                      fieldErrors.encryption_password ? 'border-red-300 bg-red-50' : 'border-gray-300'
+                    }`}
+                    placeholder="Enter encryption password for secure document storage"
+                  />
+                  {fieldErrors.encryption_password && (
+                    <p className="mt-1 text-sm text-red-600 flex items-center">
+                      <AlertCircle className="w-4 h-4 mr-1" />
+                      {fieldErrors.encryption_password}
+                    </p>
+                  )}
                 </div>
                 
                 
@@ -628,7 +969,11 @@ export default function UserManagementInterface({ onUserSelect, onBulkOperation 
               <div className="flex justify-end space-x-3 mt-6">
                 <button
                   type="button"
-                  onClick={() => setShowCreateUser(false)}
+                  onClick={() => {
+                    setShowCreateUser(false);
+                    setFieldErrors({}); // Clear field errors when closing modal
+                    setError(null); // Clear general errors
+                  }}
                   className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
                 >
                   Cancel
@@ -638,6 +983,99 @@ export default function UserManagementInterface({ onUserSelect, onBulkOperation 
                   className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
                 >
                   Create User
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Edit User Modal */}
+      {editingUser && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg max-w-md w-full max-h-[90vh] overflow-y-auto">
+            <form onSubmit={(e) => {
+              e.preventDefault();
+              const formData = new FormData(e.currentTarget);
+              const updateData: UserUpdate = {
+                email: formData.get('email') as string,
+                is_active: formData.get('is_active') === 'on',
+                is_verified: formData.get('is_verified') === 'on'
+              };
+              if (formData.get('password')) {
+                updateData.password = formData.get('password') as string;
+              }
+              handleUpdateUser(editingUser.id, updateData);
+            }} className="p-6">
+              <h3 className="text-lg font-medium text-gray-900 mb-4">Edit User: {editingUser.username}</h3>
+              
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Username</label>
+                  <input
+                    type="text"
+                    value={editingUser.username}
+                    disabled
+                    className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 bg-gray-100 cursor-not-allowed"
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Email</label>
+                  <input
+                    type="email"
+                    name="email"
+                    defaultValue={editingUser.email}
+                    required
+                    className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-blue-500 focus:border-blue-500"
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">New Password (leave blank to keep current)</label>
+                  <input
+                    type="password"
+                    name="password"
+                    className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-blue-500 focus:border-blue-500"
+                  />
+                </div>
+                
+                <div className="flex items-center space-x-4">
+                  <label className="flex items-center">
+                    <input
+                      type="checkbox"
+                      name="is_active"
+                      defaultChecked={editingUser.is_active}
+                      className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    />
+                    <span className="ml-2 text-sm text-gray-700">Active</span>
+                  </label>
+                  
+                  <label className="flex items-center">
+                    <input
+                      type="checkbox"
+                      name="is_verified"
+                      defaultChecked={editingUser.is_verified}
+                      className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    />
+                    <span className="ml-2 text-sm text-gray-700">Verified</span>
+                  </label>
+                </div>
+              </div>
+              
+              <div className="flex justify-end space-x-3 mt-6">
+                <button
+                  type="button"
+                  onClick={() => setEditingUser(null)}
+                  className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+                >
+                  Update User
                 </button>
               </div>
             </form>

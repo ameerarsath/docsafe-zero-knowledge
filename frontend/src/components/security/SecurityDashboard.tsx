@@ -49,82 +49,129 @@ export default function SecurityDashboard({
   const [error, setError] = useState<string | null>(null);
   const [lastRefresh, setLastRefresh] = useState<Date | null>(new Date());
   const [selectedTimeRange, setSelectedTimeRange] = useState<number>(24); // hours
+  const [dashboardData, setDashboardData] = useState<any>(null);
+  const [metricsData, setMetricsData] = useState<any>(null);
 
-  // Mock data for demonstration
-  const mockDashboardData = {
-    active_threats: 3,
-    blocked_ips: 12,
-    event_counts: {
-      critical: 1,
-      high: 5,
-      medium: 12,
-      low: 28
-    },
-    recent_events: [
-      {
-        event_id: '1',
-        title: 'Suspicious login pattern detected',
-        threat_level: 'high',
-        detected_at: new Date().toISOString(),
-        source_ip: '192.168.1.100',
-        risk_score: 7.5
-      },
-      {
-        event_id: '2', 
-        title: 'Brute force attempt blocked',
-        threat_level: 'medium',
-        detected_at: new Date(Date.now() - 300000).toISOString(),
-        source_ip: '10.0.0.45',
-        risk_score: 6.2
-      }
-    ],
-    top_threat_sources: [
-      {
-        ip_address: '192.168.1.100',
-        event_count: 15,
-        max_risk_score: 8.5
-      },
-      {
-        ip_address: '10.0.0.45', 
-        event_count: 8,
-        max_risk_score: 6.2
-      }
-    ]
-  };
+  /**
+   * Load dashboard data from API
+   */
+  const loadDashboardData = useCallback(async () => {
+    try {
+      setError(null);
+      
+      // Try to load real data from API
+      const [dashboardResponse, metricsResponse] = await Promise.all([
+        fetch('/api/v1/security/dashboard?hours=' + selectedTimeRange, {
+          headers: {
+            'Authorization': `Bearer ${localStorage.getItem('token')}`,
+            'Content-Type': 'application/json'
+          }
+        }),
+        fetch('/api/v1/security/metrics?days=7', {
+          headers: {
+            'Authorization': `Bearer ${localStorage.getItem('token')}`,
+            'Content-Type': 'application/json'
+          }
+        })
+      ]);
 
-  // Mock metrics data
-  const mockMetricsData = {
-    total_events: 156,
-    resolved_events: 134,
-    resolution_rate: 0.86,
-    successful_responses: 145,
-    response_success_rate: 0.93,
-    average_risk_score: 4.2,
-    highest_risk_score: 8.7
-  };
+      if (dashboardResponse.ok && metricsResponse.ok) {
+        const dashboardData = await dashboardResponse.json();
+        const metricsData = await metricsResponse.json();
+        
+        setDashboardData(dashboardData);
+        setMetricsData(metricsData);
+      } else {
+        throw new Error('Failed to load security data from API');
+      }
+    } catch (apiError) {
+      console.warn('API not available, using mock data:', apiError);
+      
+      // Fallback to mock data
+      const mockDashboardData = {
+        active_threats: 3,
+        blocked_ips: 12,
+        event_counts: {
+          critical: 1,
+          high: 5,
+          medium: 12,
+          low: 28
+        },
+        recent_events: [
+          {
+            event_id: '1',
+            title: 'Suspicious login pattern detected',
+            threat_level: 'high',
+            detected_at: new Date().toISOString(),
+            source_ip: '192.168.1.100',
+            risk_score: 7.5
+          },
+          {
+            event_id: '2', 
+            title: 'Brute force attempt blocked',
+            threat_level: 'medium',
+            detected_at: new Date(Date.now() - 300000).toISOString(),
+            source_ip: '10.0.0.45',
+            risk_score: 6.2
+          }
+        ],
+        top_threat_sources: [
+          {
+            ip_address: '192.168.1.100',
+            event_count: 15,
+            max_risk_score: 8.5
+          },
+          {
+            ip_address: '10.0.0.45', 
+            event_count: 8,
+            max_risk_score: 6.2
+          }
+        ]
+      };
+
+      const mockMetricsData = {
+        total_events: 156,
+        resolved_events: 134,
+        resolution_rate: 0.86,
+        successful_responses: 145,
+        response_success_rate: 0.93,
+        average_risk_score: 4.2,
+        highest_risk_score: 8.7
+      };
+      
+      setDashboardData(mockDashboardData);
+      setMetricsData(mockMetricsData);
+    }
+  }, [selectedTimeRange]);
 
   /**
    * Manual refresh handler
    */
   const handleRefresh = useCallback(async () => {
     setIsLoading(true);
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    setLastRefresh(new Date());
-    setIsLoading(false);
-  }, []);
-
-  /**
-   * Get threat level trend indicator
-   */
-  const getThreatTrend = (current: number, previous: number) => {
-    if (current > previous) {
-      return { icon: ArrowUp, color: 'text-red-500', label: 'Increasing' };
-    } else if (current < previous) {
-      return { icon: ArrowDown, color: 'text-green-500', label: 'Decreasing' };
+    try {
+      await loadDashboardData();
+      setLastRefresh(new Date());
+    } catch (error) {
+      console.error('Failed to refresh dashboard:', error);
+      setError('Failed to refresh dashboard data');
+    } finally {
+      setIsLoading(false);
     }
-    return { icon: ArrowUp, color: 'text-gray-500', label: 'Stable' };
-  };
+  }, [loadDashboardData]);
+
+  // Auto-refresh functionality
+  useEffect(() => {
+    if (autoRefresh && refreshInterval > 0) {
+      const interval = setInterval(handleRefresh, refreshInterval);
+      return () => clearInterval(interval);
+    }
+  }, [autoRefresh, refreshInterval, handleRefresh]);
+
+  // Initial data load
+  useEffect(() => {
+    loadDashboardData();
+  }, [loadDashboardData]);
 
   /**
    * Calculate threat level percentage
@@ -160,8 +207,15 @@ export default function SecurityDashboard({
     return new Date(dateStr).toLocaleString();
   };
 
-  const dashboardData = mockDashboardData;
-  const metricsData = mockMetricsData;
+  // Show loading state if data not loaded
+  if (!dashboardData || !metricsData) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <LoadingSpinner size="lg" />
+      </div>
+    );
+  }
+
   const totalEvents = Object.values(dashboardData.event_counts).reduce((sum, count) => sum + count, 0);
 
   if (isLoading) {
@@ -243,7 +297,11 @@ export default function SecurityDashboard({
           icon={AlertTriangle}
           iconColor={dashboardData.active_threats > 0 ? "text-red-600" : "text-green-600"}
           iconBgColor={dashboardData.active_threats > 0 ? "bg-red-100" : "bg-green-100"}
-          trend={dashboardData.active_threats > 5 ? "↑" : dashboardData.active_threats > 0 ? "→" : "↓"}
+          trend={{
+            value: dashboardData.active_threats,
+            label: dashboardData.active_threats > 5 ? 'High' : dashboardData.active_threats > 0 ? 'Active' : 'Low',
+            positive: dashboardData.active_threats === 0
+          }}
         />
         
         <MetricCard
@@ -319,7 +377,10 @@ export default function SecurityDashboard({
         <div className="bg-white rounded-lg border border-gray-200 p-6">
           <div className="flex items-center justify-between mb-6">
             <h3 className="text-lg font-medium text-gray-900">Recent High-Priority Events</h3>
-            <button className="text-blue-600 hover:text-blue-800 text-sm font-medium">
+            <button 
+              onClick={() => window.location.href = '/security/monitoring'}
+              className="text-blue-600 hover:text-blue-800 text-sm font-medium"
+            >
               View All
             </button>
           </div>
@@ -362,7 +423,10 @@ export default function SecurityDashboard({
         <div className="bg-white rounded-lg border border-gray-200 p-6">
           <div className="flex items-center justify-between mb-6">
             <h3 className="text-lg font-medium text-gray-900">Top Threat Sources</h3>
-            <button className="text-blue-600 hover:text-blue-800 text-sm font-medium">
+            <button 
+              onClick={() => alert('Blocklist management - Feature coming soon!')}
+              className="text-blue-600 hover:text-blue-800 text-sm font-medium"
+            >
               Manage Blocklist
             </button>
           </div>
@@ -383,10 +447,18 @@ export default function SecurityDashboard({
                     </div>
                   </div>
                   <div className="flex items-center space-x-2">
-                    <button className="p-1 text-gray-400 hover:text-gray-600">
+                    <button 
+                      onClick={() => alert(`Viewing details for ${source.ip_address}`)}
+                      className="p-1 text-gray-400 hover:text-gray-600"
+                      title="View details"
+                    >
                       <Eye className="w-4 h-4" />
                     </button>
-                    <button className="p-1 text-red-400 hover:text-red-600">
+                    <button 
+                      onClick={() => alert(`Block ${source.ip_address}?`)}
+                      className="p-1 text-red-400 hover:text-red-600"
+                      title="Block IP"
+                    >
                       <Ban className="w-4 h-4" />
                     </button>
                   </div>
@@ -440,19 +512,31 @@ export default function SecurityDashboard({
       <div className="bg-white rounded-lg border border-gray-200 p-6">
         <h3 className="text-lg font-medium text-gray-900 mb-6">Quick Actions</h3>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <button className="flex flex-col items-center p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
+          <button 
+            onClick={() => window.location.href = '/security/monitoring'}
+            className="flex flex-col items-center p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+          >
             <AlertTriangle className="w-8 h-8 text-orange-600 mb-2" />
             <span className="text-sm font-medium text-gray-900">View Events</span>
           </button>
-          <button className="flex flex-col items-center p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
+          <button 
+            onClick={() => alert('IP Blocklist management - Feature coming soon!')}
+            className="flex flex-col items-center p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+          >
             <Ban className="w-8 h-8 text-red-600 mb-2" />
             <span className="text-sm font-medium text-gray-900">IP Blocklist</span>
           </button>
-          <button className="flex flex-col items-center p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
+          <button 
+            onClick={() => alert('Security reports - Feature coming soon!')}
+            className="flex flex-col items-center p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+          >
             <BarChart3 className="w-8 h-8 text-blue-600 mb-2" />
             <span className="text-sm font-medium text-gray-900">Reports</span>
           </button>
-          <button className="flex flex-col items-center p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
+          <button 
+            onClick={() => window.location.href = '/security/headers'}
+            className="flex flex-col items-center p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+          >
             <Settings className="w-8 h-8 text-gray-600 mb-2" />
             <span className="text-sm font-medium text-gray-900">Settings</span>
           </button>

@@ -27,9 +27,48 @@ interface Props {
   refreshInterval?: number;
 }
 
+// Static headers configuration to prevent recreation on each render
+const SECURITY_HEADERS = [
+  { 
+    name: 'HSTS', 
+    key: 'strict-transport-security',
+    description: 'HTTP Strict Transport Security',
+    icon: Lock
+  },
+  { 
+    name: 'CSP', 
+    key: 'content-security-policy',
+    description: 'Content Security Policy',
+    icon: Shield
+  },
+  { 
+    name: 'X-Frame-Options', 
+    key: 'x-frame-options',
+    description: 'Clickjacking Protection',
+    icon: Globe
+  },
+  { 
+    name: 'X-Content-Type-Options', 
+    key: 'x-content-type-options',
+    description: 'MIME Sniffing Protection',
+    icon: Eye
+  },
+  { 
+    name: 'X-XSS-Protection', 
+    key: 'x-xss-protection',
+    description: 'XSS Filter',
+    icon: Shield
+  },
+  { 
+    name: 'Referrer-Policy', 
+    key: 'referrer-policy',
+    description: 'Referrer Information Control',
+    icon: Globe
+  }
+];
+
 export default function SecurityHeadersStatus({ 
-  showDetails = false, 
-  refreshInterval = 30000 
+  showDetails = false 
 }: Props) {
   const security = useSecurity({ 
     autoStart: true,
@@ -79,50 +118,11 @@ export default function SecurityHeadersStatus({
    * Render security header details
    */
   const renderHeaderDetails = (headersStatus: HeadersStatus) => {
-    const headers = [
-      { 
-        name: 'HSTS', 
-        key: 'strict-transport-security',
-        description: 'HTTP Strict Transport Security',
-        icon: Lock
-      },
-      { 
-        name: 'CSP', 
-        key: 'content-security-policy',
-        description: 'Content Security Policy',
-        icon: Shield
-      },
-      { 
-        name: 'X-Frame-Options', 
-        key: 'x-frame-options',
-        description: 'Clickjacking Protection',
-        icon: Globe
-      },
-      { 
-        name: 'X-Content-Type-Options', 
-        key: 'x-content-type-options',
-        description: 'MIME Sniffing Protection',
-        icon: Eye
-      },
-      { 
-        name: 'X-XSS-Protection', 
-        key: 'x-xss-protection',
-        description: 'XSS Filter',
-        icon: Shield
-      },
-      { 
-        name: 'Referrer-Policy', 
-        key: 'referrer-policy',
-        description: 'Referrer Information Control',
-        icon: Globe
-      }
-    ];
-
     return (
       <div className="mt-4 space-y-3">
         <h4 className="font-medium text-gray-900">Security Headers Status</h4>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {headers.map(header => {
+          {SECURITY_HEADERS.map(header => {
             const value = headersStatus.headers[header.key];
             const isPresent = !!value;
             const Icon = header.icon;
@@ -181,7 +181,6 @@ export default function SecurityHeadersStatus({
       );
     }
 
-    const recentCount = cspViolations.recentViolations.length;
     const violationTypes = Object.keys(cspViolations.violationsByDirective);
 
     return (

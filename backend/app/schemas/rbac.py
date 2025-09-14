@@ -91,7 +91,7 @@ class Permission(PermissionBase):
     updated_at: datetime
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 # Role schemas
@@ -133,7 +133,7 @@ class Role(RoleBase):
     permissions: List[Permission] = Field(default_factory=list, description="Permissions assigned to this role")
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 class RoleWithStats(Role):
@@ -164,7 +164,7 @@ class UserRoleAssignmentResponse(UserRoleAssignmentBase):
     role: Role = Field(description="Role details")
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 # Resource permission schemas
@@ -203,7 +203,7 @@ class ResourcePermission(ResourcePermissionBase):
     inherited_from: Optional[int] = Field(None, description="ID of parent permission if inherited")
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 # Permission check schemas
@@ -262,7 +262,7 @@ class RoleAuditEntry(BaseModel):
     details: Optional[Dict[str, Any]] = Field(None, description="Additional details")
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 class PermissionAuditEntry(BaseModel):
@@ -277,7 +277,7 @@ class PermissionAuditEntry(BaseModel):
     source: str = Field(description="Source of permission decision")
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 class AccessDeniedLog(BaseModel):
@@ -293,7 +293,7 @@ class AccessDeniedLog(BaseModel):
     attempted_at: datetime
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 # Statistics and reporting schemas

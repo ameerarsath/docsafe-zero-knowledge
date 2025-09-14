@@ -31,6 +31,8 @@ import RBACAdminPage from './pages/RBACAdminPage';
 import RoleManagementPage from './pages/rbac/RoleManagementPage';
 import UserAssignmentsPage from './pages/rbac/UserAssignmentsPage';
 import PermissionMatrixPage from './pages/rbac/PermissionMatrixPage';
+import PermissionMatrixPageDebug from './pages/rbac/PermissionMatrixPageDebug';
+import PermissionMatrixPageFixed from './pages/rbac/PermissionMatrixPageFixed';
 import RoleHierarchyPage from './pages/rbac/RoleHierarchyPage';
 import AuditTrailPage from './pages/rbac/AuditTrailPage';
 
@@ -45,6 +47,7 @@ import SecurityDashboardPage from './pages/SecurityDashboardPage';
 import SecurityHeadersPage from './pages/SecurityHeadersPage';
 import SecurityMonitoringPage from './pages/SecurityMonitoringPage';
 import KeyManagementPage from './pages/KeyManagementPage';
+import SecurityDashboardTest from './components/security/SecurityDashboardTest';
 
 // Styles
 import './App.css';
@@ -85,7 +88,9 @@ function App() {
             <Route path="/admin/rbac" element={<RBACAdminPage />} />
             <Route path="/admin/rbac/roles" element={<RoleManagementPage />} />
             <Route path="/admin/rbac/assignments" element={<UserAssignmentsPage />} />
-            <Route path="/admin/rbac/matrix" element={<PermissionMatrixPage />} />
+            <Route path="/admin/rbac/matrix" element={<PermissionMatrixPageFixed />} />
+            <Route path="/admin/rbac/matrix-debug" element={<PermissionMatrixPageDebug />} />
+            <Route path="/admin/rbac/matrix-original" element={<PermissionMatrixPage />} />
             <Route path="/admin/rbac/hierarchy" element={<RoleHierarchyPage />} />
             <Route path="/admin/rbac/audit-trail" element={<AuditTrailPage />} />
             
@@ -95,6 +100,7 @@ function App() {
             <Route path="/security/headers" element={<SecurityHeadersPage />} />
             <Route path="/security/monitoring" element={<SecurityMonitoringPage />} />
             <Route path="/security/keys" element={<KeyManagementPage />} />
+            <Route path="/security/test" element={<SecurityDashboardTest />} />
             
             {/* Default redirect */}
             <Route path="/" element={<Navigate to="/login" replace />} />

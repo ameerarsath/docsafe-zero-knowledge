@@ -459,21 +459,21 @@ function DocumentsContent() {
                 onClick={handleBulkMove}
                 className="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors flex items-center space-x-1"
               >
-                <Move className="w-4 h-4" />
+                <Move className="w-4 h-4 text-indigo-500" />
                 <span>Move</span>
               </button>
               <button
                 onClick={handleBulkCopy}
                 className="px-3 py-1 text-sm bg-gray-600 text-white rounded hover:bg-gray-700 transition-colors flex items-center space-x-1"
               >
-                <Copy className="w-4 h-4" />
+                <Copy className="w-4 h-4 text-orange-500" />
                 <span>Copy</span>
               </button>
               <button
                 onClick={() => bulkDelete(Array.from(selectedDocuments) as number[])}
                 className="px-3 py-1 text-sm bg-red-600 text-white rounded hover:bg-red-700 transition-colors flex items-center space-x-1"
               >
-                <Trash2 className="w-4 h-4" />
+                <Trash2 className="w-4 h-4 text-red-500" />
                 <span>Delete</span>
               </button>
               <button
@@ -632,28 +632,28 @@ function DocumentsContent() {
                               className="text-gray-600 hover:text-gray-800"
                               title="Preview"
                             >
-                              <Eye className="w-4 h-4" />
+                              <Eye className="w-4 h-4 text-blue-500" />
                             </button>
                             <button
                               onClick={() => downloadDocument(doc.id)}
                               className="text-blue-600 hover:text-blue-800"
                               title="Download"
                             >
-                              <Download className="w-4 h-4" />
+                              <Download className="w-4 h-4 text-green-500" />
                             </button>
                             <button
                               onClick={() => handleShare(doc)}
                               className="text-green-600 hover:text-green-800"
                               title="Share"
                             >
-                              <Share2 className="w-4 h-4" />
+                              <Share2 className="w-4 h-4 text-purple-500" />
                             </button>
                             <button
                               onClick={() => handleVersionHistory(doc)}
                               className="text-purple-600 hover:text-purple-800"
                               title="Version History"
                             >
-                              <History className="w-4 h-4" />
+                              <History className="w-4 h-4 text-cyan-500" />
                             </button>
                           </>
                         )}
@@ -728,40 +728,50 @@ function DocumentsContent() {
             onClick={closeContextMenu}
           />
           <div
-            className="fixed bg-white border border-gray-200 rounded-lg shadow-lg py-1 z-50 min-w-48"
+            className="fixed bg-white border border-gray-200 rounded-lg shadow-lg py-2 z-50"
             style={{
-              left: `${Math.min(contextMenu.x, window.innerWidth - 200)}px`,
-              top: `${Math.min(contextMenu.y, window.innerHeight - 300)}px`
+              left: `${Math.min(contextMenu.x, window.innerWidth - 220)}px`,
+              top: `${Math.min(contextMenu.y, window.innerHeight - 350)}px`,
+              width: '200px',
+              maxWidth: '90vw',
+              maxHeight: '80vh',
+              overflowY: 'auto'
             }}
           >
+            {/* Menu Header */}
+            <div className="px-3 py-2 border-b border-gray-100 bg-gray-50">
+              <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+                Document Actions
+              </p>
+            </div>
             {contextMenu.document.document_type === 'document' ? (
               <>
                 <button
                   onClick={() => handlePreview(contextMenu.document!)}
-                  className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center space-x-2"
+                  className="w-full px-3 py-2.5 text-left text-sm text-gray-700 hover:bg-gray-50 hover:text-gray-900 flex items-center space-x-3 transition-colors duration-150"
                 >
-                  <Eye className="w-4 h-4" />
+                  <Eye className="w-4 h-4 text-blue-500" />
                   <span>Preview</span>
                 </button>
                 <button
                   onClick={() => downloadDocument(contextMenu.document!.id)}
-                  className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center space-x-2"
+                  className="w-full px-3 py-2.5 text-left text-sm text-gray-700 hover:bg-gray-50 hover:text-gray-900 flex items-center space-x-3 transition-colors duration-150"
                 >
-                  <Download className="w-4 h-4" />
+                  <Download className="w-4 h-4 text-green-500" />
                   <span>Download</span>
                 </button>
                 <button
                   onClick={() => handleShare(contextMenu.document!)}
-                  className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center space-x-2"
+                  className="w-full px-3 py-2.5 text-left text-sm text-gray-700 hover:bg-gray-50 hover:text-gray-900 flex items-center space-x-3 transition-colors duration-150"
                 >
-                  <Share2 className="w-4 h-4" />
+                  <Share2 className="w-4 h-4 text-purple-500" />
                   <span>Share</span>
                 </button>
                 <button
                   onClick={() => handleVersionHistory(contextMenu.document!)}
-                  className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center space-x-2"
+                  className="w-full px-3 py-2.5 text-left text-sm text-gray-700 hover:bg-gray-50 hover:text-gray-900 flex items-center space-x-3 transition-colors duration-150"
                 >
-                  <History className="w-4 h-4" />
+                  <History className="w-4 h-4 text-cyan-500" />
                   <span>Version History</span>
                 </button>
                 <div className="border-t border-gray-100 my-1" />
@@ -770,21 +780,21 @@ function DocumentsContent() {
               <>
                 <button
                   onClick={() => navigateToFolder(contextMenu.document!.id)}
-                  className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center space-x-2"
+                  className="w-full px-3 py-2.5 text-left text-sm text-gray-700 hover:bg-gray-50 hover:text-gray-900 flex items-center space-x-3 transition-colors duration-150"
                 >
                   <FolderOpen className="w-4 h-4" />
                   <span>Open</span>
                 </button>
                 <button
                   onClick={() => handleFolderOperation(contextMenu.document!, 'edit')}
-                  className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center space-x-2"
+                  className="w-full px-3 py-2.5 text-left text-sm text-gray-700 hover:bg-gray-50 hover:text-gray-900 flex items-center space-x-3 transition-colors duration-150"
                 >
                   <Edit3 className="w-4 h-4" />
                   <span>Edit</span>
                 </button>
                 <button
                   onClick={() => handleFolderOperation(contextMenu.document!, 'permissions')}
-                  className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center space-x-2"
+                  className="w-full px-3 py-2.5 text-left text-sm text-gray-700 hover:bg-gray-50 hover:text-gray-900 flex items-center space-x-3 transition-colors duration-150"
                 >
                   <Settings className="w-4 h-4" />
                   <span>Permissions</span>
@@ -796,14 +806,14 @@ function DocumentsContent() {
               onClick={() => handleMove([contextMenu.document!])}
               className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center space-x-2"
             >
-              <Move className="w-4 h-4" />
+              <Move className="w-4 h-4 text-indigo-500" />
               <span>Move</span>
             </button>
             <button
               onClick={() => handleCopy([contextMenu.document!])}
               className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center space-x-2"
             >
-              <Copy className="w-4 h-4" />
+              <Copy className="w-4 h-4 text-orange-500" />
               <span>Copy</span>
             </button>
             <div className="border-t border-gray-100 my-1" />
@@ -818,7 +828,7 @@ function DocumentsContent() {
               }}
               className="w-full px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50 flex items-center space-x-2"
             >
-              <Trash2 className="w-4 h-4" />
+              <Trash2 className="w-4 h-4 text-red-500" />
               <span>Delete</span>
             </button>
           </div>
@@ -831,7 +841,7 @@ function DocumentsContent() {
           <div className="max-w-4xl w-full max-h-[90vh] overflow-y-auto">
             <DocumentUpload
               parentFolderId={currentFolder?.id || null}
-              onUploadComplete={() => {
+              onUploadComplete={(documents) => {
                 setShowUpload(false);
                 refreshDocuments();
               }}
@@ -849,6 +859,12 @@ function DocumentsContent() {
           onClose={() => setPreviewDocument(null)}
           onDownload={(documentId) => downloadDocument(documentId)}
           onShare={(document) => setShareDocument(document)}
+          customSize={{
+            maxWidth: '90vw',
+            maxHeight: '90vh',
+            width: 'auto',
+            height: 'auto'
+          }}
         />
       )}
 

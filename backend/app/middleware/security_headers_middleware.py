@@ -16,7 +16,7 @@ import logging
 from typing import Dict, Optional, List
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
-from starlette.responses import Response
+from starlette.responses import Response, JSONResponse
 
 from ..core.config import settings
 
@@ -24,13 +24,15 @@ logger = logging.getLogger(__name__)
 
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
-    """Middleware to add comprehensive security headers to all responses."""
+    """FIXED: Enhanced middleware with HMAC validation and strict headers."""
     
     def __init__(self, app, config: Optional[Dict] = None):
         super().__init__(app)
         self.config = config or {}
         self.environment = settings.ENVIRONMENT
         self.is_production = self.environment == "production"
+        self.hmac_secret = settings.HMAC_SECRET_KEY if hasattr(settings, 'HMAC_SECRET_KEY') else "your-secret-key"
+        self.disable_hmac = self.config.get("disable_hmac", False)  # FIXED: Allow disabling HMAC
         
         # Configure CSP based on environment
         self.csp_policy = self._build_csp_policy()
@@ -148,7 +150,81 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         # Server header removal/modification
         headers["Server"] = "SecureVault"
         
+        # FIXED: Add missing security headers
+        headers["X-Permitted-Cross-Domain-Policies"] = "none"
+        headers["X-Download-Options"] = "noopen"
+        headers["Expect-CT"] = "max-age=86400, enforce" if self.is_production else "max-age=0"
+        
         return headers
+    
+    async def _validate_hmac(self, request: Request) -> bool:
+        """FIXED: Validate HMAC signature for API requests."""
+        try:
+            import hmac
+            import hashlib
+            import time
+            
+            # Get HMAC components from headers
+            signature = request.headers.get("X-HMAC-Signature")
+            timestamp = request.headers.get("X-Timestamp")
+            nonce = request.headers.get("X-Nonce")
+            
+            if not all([signature, timestamp, nonce]):
+                return False
+            
+            # Check timestamp (prevent replay attacks)
+            try:
+                request_time = int(timestamp)
+                current_time = int(time.time())
+                if abs(current_time - request_time) > 300:  # 5 minute window
+                    return False
+            except ValueError:
+                return False
+            
+            # Get request body
+            body = await request.body()
+            
+            # Create message to sign
+            message = f"{request.method}|{request.url.path}|{timestamp}|{nonce}|{body.decode('utf-8') if body else ''}"
+            
+            # Calculate expected signature
+            expected_signature = hmac.new(
+                self.hmac_secret.encode('utf-8'),
+                message.encode('utf-8'),
+                hashlib.sha256
+            ).hexdigest()
+            
+            # Compare signatures (constant time)
+            return hmac.compare_digest(signature, expected_signature)
+            
+        except Exception as e:
+            logger.error(f"HMAC validation error: {e}")
+            return False
+    
+    def _generate_response_hmac(self, response: Response) -> str:
+        """FIXED: Generate HMAC signature for response."""
+        try:
+            import hmac
+            import hashlib
+            import time
+            
+            timestamp = str(int(time.time()))
+            
+            # Create message from response
+            message = f"{response.status_code}|{timestamp}"
+            
+            # Generate signature
+            signature = hmac.new(
+                self.hmac_secret.encode('utf-8'),
+                message.encode('utf-8'),
+                hashlib.sha256
+            ).hexdigest()
+            
+            return f"{signature}:{timestamp}"
+            
+        except Exception as e:
+            logger.error(f"Response HMAC generation error: {e}")
+            return "error"
     
     def _is_sensitive_endpoint(self, path: str) -> bool:
         """Check if endpoint contains sensitive data."""
@@ -165,8 +241,18 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         return any(pattern in path for pattern in sensitive_patterns)
     
     async def dispatch(self, request: Request, call_next):
-        """Add security headers to response."""
+        """FIXED: Add HMAC validation and enhanced security headers."""
         try:
+            # FIXED: Only validate HMAC if not disabled (for debugging)
+            if (not self.disable_hmac and 
+                self._is_sensitive_endpoint(request.url.path) and 
+                request.method in ["POST", "PUT", "DELETE"]):
+                if not await self._validate_hmac(request):
+                    return JSONResponse(
+                        status_code=401,
+                        content={"detail": "Invalid HMAC signature", "error_code": "INVALID_HMAC"}
+                    )
+            
             # Process the request
             response = await call_next(request)
             
@@ -176,15 +262,14 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             for header_name, header_value in security_headers.items():
                 response.headers[header_name] = header_value
             
-            # Log security header application for debugging
-            if settings.DEBUG and logger.isEnabledFor(logging.DEBUG):
-                logger.debug(f"Applied security headers to {request.url.path}: {list(security_headers.keys())}")
+            # Add HMAC signature to response for API endpoints
+            if request.url.path.startswith("/api/"):
+                response.headers["X-HMAC-Signature"] = self._generate_response_hmac(response)
             
             return response
             
         except Exception as e:
             logger.error(f"Error in security headers middleware: {e}")
-            # Don't block requests due to security header errors
             return await call_next(request)
 
 

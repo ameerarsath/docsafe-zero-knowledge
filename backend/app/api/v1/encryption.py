@@ -63,10 +63,12 @@ async def create_encryption_key(
     background_tasks: BackgroundTasks = BackgroundTasks()
 ):
     """Create a new user encryption key."""
-    if not has_permission(current_user, "encryption:manage", db):
+    # Users can create their own encryption keys for document upload
+    # Only admin-level users need encryption:manage for system-wide key management
+    if not (current_user.id or has_permission(current_user, "encryption:manage", db)):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Insufficient privileges to manage encryption keys"
+            detail="Authentication required to create encryption keys"
         )
     
     try:
@@ -206,37 +208,51 @@ async def list_user_encryption_keys(
     db: Session = Depends(get_db)
 ):
     """List user's encryption keys."""
-    query = db.query(UserEncryptionKey).filter(UserEncryptionKey.user_id == current_user.id)
-    
-    if not include_inactive:
-        query = query.filter(UserEncryptionKey.is_active == True)
-    
-    keys = query.order_by(desc(UserEncryptionKey.created_at)).all()
-    
-    key_responses = []
-    for key in keys:
-        key_responses.append(EncryptionKeyResponse(
-            key_id=key.key_id,
-            algorithm=key.algorithm,
-            key_derivation_method=key.key_derivation_method,
-            iterations=key.iterations,
-            salt=key.salt,
-            hint=key.hint,
-            is_active=key.is_active,
-            created_at=key.created_at,
-            expires_at=key.expires_at,
-            deactivated_at=key.deactivated_at,
-            deactivated_reason=key.deactivated_reason,
-            escrow_available=bool(
-                db.query(KeyEscrow).filter(KeyEscrow.key_id == key.key_id).first()
-            )
-        ))
-    
-    return EncryptionKeyList(
-        keys=key_responses,
-        total=len(key_responses),
-        active_count=len([k for k in key_responses if k.is_active])
-    )
+    try:
+        print(f"🔑 ENCRYPTION KEYS REQUEST: User {current_user.username} (ID: {current_user.id})")
+        query = db.query(UserEncryptionKey).filter(UserEncryptionKey.user_id == current_user.id)
+        
+        if not include_inactive:
+            query = query.filter(UserEncryptionKey.is_active == True)
+        
+        print(f"🔑 EXECUTING QUERY: {query}")
+        keys = query.order_by(desc(UserEncryptionKey.created_at)).all()
+        print(f"🔑 FOUND KEYS: {len(keys)} encryption keys")
+        
+        key_responses = []
+        for key in keys:
+            print(f"🔑 PROCESSING KEY: {key.key_id}")
+            key_responses.append(EncryptionKeyResponse(
+                key_id=key.key_id,
+                algorithm=key.algorithm,
+                key_derivation_method=key.key_derivation_method,
+                iterations=key.iterations,
+                salt=key.salt,
+                hint=key.hint,
+                is_active=key.is_active,
+                created_at=key.created_at,
+                expires_at=key.expires_at,
+                deactivated_at=key.deactivated_at,
+                deactivated_reason=key.deactivated_reason,
+                escrow_available=bool(
+                    db.query(KeyEscrow).filter(KeyEscrow.key_id == key.key_id).first()
+                )
+            ))
+        
+        print(f"🔑 RETURNING: {len(key_responses)} key responses")
+        return EncryptionKeyList(
+            keys=key_responses,
+            total=len(key_responses),
+            active_count=len([k for k in key_responses if k.is_active])
+        )
+    except Exception as e:
+        print(f"❌ ENCRYPTION KEYS ERROR: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to list encryption keys: {str(e)}"
+        )
 
 
 @router.get("/keys/{key_id}", response_model=EncryptionKeyResponse)

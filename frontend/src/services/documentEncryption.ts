@@ -214,28 +214,29 @@ export class DocumentEncryptionService {
     this.keyRestored = true;
     
     try {
-      // Export the key for storage (to survive HMR)
-      const keyBuffer = await window.crypto.subtle.exportKey('raw', masterKey);
-      const keyData = {
-        keyBuffer: Array.from(new Uint8Array(keyBuffer)),
-        timestamp: Date.now()
-      };
+      // Check if key is extractable before attempting export
+      if (masterKey.extractable) {
+        const keyBuffer = await window.crypto.subtle.exportKey('raw', masterKey);
+        const keyData = {
+          keyBuffer: Array.from(new Uint8Array(keyBuffer)),
+          timestamp: Date.now()
+        };
+        sessionStorage.setItem('temp_master_key_data', JSON.stringify(keyData));
+      } else {
+        console.warn('Master key is not extractable, skipping persistence');
+      }
       
-      // Store in session storage for HMR resilience
-      sessionStorage.setItem('temp_master_key_data', JSON.stringify(keyData));
       sessionStorage.setItem('has_master_key', 'true');
       sessionStorage.setItem('master_key_set_at', Date.now().toString());
       
-      console.log(`✅ Master key set and persisted on instance ${this.instanceId}. hasMasterKey():`, this.hasMasterKey());
+      console.log(`✅ Master key set on instance ${this.instanceId}. hasMasterKey():`, this.hasMasterKey());
       
     } catch (error) {
       console.error(`❌ Failed to persist master key:`, error);
-      // Still set the flags for this session
       sessionStorage.setItem('has_master_key', 'true');
       sessionStorage.setItem('master_key_set_at', Date.now().toString());
     }
     
-    // Notify all listeners that the master key has changed
     this.notifyMasterKeyChange();
   }
 

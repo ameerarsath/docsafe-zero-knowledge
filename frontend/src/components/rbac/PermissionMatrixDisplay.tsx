@@ -74,10 +74,22 @@ const PermissionMatrixDisplay: React.FC<PermissionMatrixProps> = ({
         hierarchy: matrixData.hierarchy,
         isLoading: false
       }));
-    } catch (error) {
+    } catch (error: any) {
+      let errorMessage = 'Failed to load permission matrix';
+      
+      if (error?.status === 403) {
+        errorMessage = 'Access denied. You do not have permission to view the permission matrix.';
+      } else if (error?.status === 404) {
+        errorMessage = 'Permission matrix API not found. Please contact your administrator.';
+      } else if (error?.status === 500) {
+        errorMessage = 'Server error occurred while loading permission matrix. Please try again later.';
+      } else if (error?.message?.includes('Network Error')) {
+        errorMessage = 'Network connection failed. Please check your connection and try again.';
+      }
+      
       setState(prev => ({
         ...prev,
-        error: 'Failed to load permission matrix',
+        error: errorMessage,
         isLoading: false
       }));
     }

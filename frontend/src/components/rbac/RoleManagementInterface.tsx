@@ -11,6 +11,9 @@ import {
   Pencil, 
   Trash, 
   Eye,
+  Copy,
+  Download,
+  Upload,
   SlidersHorizontal,
   Users,
   ShieldCheck,
@@ -77,6 +80,9 @@ const RoleManagementInterface: React.FC<RoleManagementProps> = ({
   const [formErrors, setFormErrors] = useState<RoleFormErrors>({});
   const [sortBy, setSortBy] = useState<'name' | 'hierarchy_level' | 'created_at'>('hierarchy_level');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
+  const [selectedRoles, setSelectedRoles] = useState<Set<number>>(new Set());
+  const [showBulkActions, setShowBulkActions] = useState(false);
+  const [permissionSearch, setPermissionSearch] = useState('');
 
   // Load roles data
   const loadRoles = useCallback(async () => {
@@ -101,10 +107,23 @@ const RoleManagementInterface: React.FC<RoleManagementProps> = ({
         },
         isLoading: false
       }));
-    } catch (error) {
+    } catch (error: any) {
+      let errorMessage = 'Failed to load roles';
+      
+      // Handle specific error cases
+      if (error?.status === 403) {
+        errorMessage = 'Access denied. You do not have permission to view roles.';
+      } else if (error?.status === 404) {
+        errorMessage = 'Roles endpoint not found. Please contact your administrator.';
+      } else if (error?.status === 500) {
+        errorMessage = 'Server error occurred while loading roles. Please try again later.';
+      } else if (error?.message?.includes('Network Error') || error?.code === 'NETWORK_ERROR') {
+        errorMessage = 'Network connection failed. Please check your internet connection and try again.';
+      }
+      
       setState(prev => ({
         ...prev,
-        error: 'Failed to load roles',
+        error: errorMessage,
         isLoading: false
       }));
     }
@@ -151,8 +170,21 @@ const RoleManagementInterface: React.FC<RoleManagementProps> = ({
       setState(prev => ({ ...prev, showCreateDialog: false }));
       resetForm();
       loadRoles();
-    } catch (error) {
-      setFormErrors({ name: 'Failed to create role. Name may already exist.' });
+    } catch (error: any) {
+      let errorMessage = 'Failed to create role';
+      
+      if (error?.status === 403) {
+        errorMessage = 'Access denied. You do not have permission to create roles.';
+      } else if (error?.status === 409 || error?.detail?.includes('already exists')) {
+        setFormErrors({ name: 'Role name already exists. Please choose a different name.' });
+        return;
+      } else if (error?.status === 422) {
+        errorMessage = 'Invalid role data. Please check all fields and try again.';
+      } else if (error?.status === 500) {
+        errorMessage = 'Server error occurred while creating role. Please try again later.';
+      }
+      
+      setFormErrors({ name: errorMessage });
     }
   };
 
@@ -177,8 +209,20 @@ const RoleManagementInterface: React.FC<RoleManagementProps> = ({
       setState(prev => ({ ...prev, showEditDialog: false, selectedRole: undefined }));
       resetForm();
       loadRoles();
-    } catch (error) {
-      setFormErrors({ name: 'Failed to update role' });
+    } catch (error: any) {
+      let errorMessage = 'Failed to update role';
+      
+      if (error?.status === 403) {
+        errorMessage = 'Access denied. You do not have permission to update roles.';
+      } else if (error?.status === 404) {
+        errorMessage = 'Role not found. It may have been deleted by another user.';
+      } else if (error?.status === 422) {
+        errorMessage = 'Invalid role data. Please check all fields and try again.';
+      } else if (error?.status === 500) {
+        errorMessage = 'Server error occurred while updating role. Please try again later.';
+      }
+      
+      setFormErrors({ name: errorMessage });
     }
   };
 
@@ -190,8 +234,20 @@ const RoleManagementInterface: React.FC<RoleManagementProps> = ({
       await rbacService.deleteRole(state.selectedRole.id);
       setState(prev => ({ ...prev, showDeleteDialog: false, selectedRole: undefined }));
       loadRoles();
-    } catch (error) {
-      setState(prev => ({ ...prev, error: 'Failed to delete role' }));
+    } catch (error: any) {
+      let errorMessage = 'Failed to delete role';
+      
+      if (error?.status === 403) {
+        errorMessage = 'Access denied. You do not have permission to delete roles.';
+      } else if (error?.status === 404) {
+        errorMessage = 'Role not found. It may have already been deleted.';
+      } else if (error?.status === 409) {
+        errorMessage = 'Cannot delete role. It may still be assigned to users.';
+      } else if (error?.status === 500) {
+        errorMessage = 'Server error occurred while deleting role. Please try again later.';
+      }
+      
+      setState(prev => ({ ...prev, error: errorMessage }));
     }
   };
 
@@ -209,22 +265,117 @@ const RoleManagementInterface: React.FC<RoleManagementProps> = ({
 
   const openCreateDialog = () => {
     resetForm();
+    setPermissionSearch('');
     setState(prev => ({ ...prev, showCreateDialog: true }));
   };
 
-  const openEditDialog = (role: Role) => {
-    setFormData({
-      name: role.name,
-      display_name: role.display_name,
-      description: role.description,
-      hierarchy_level: role.hierarchy_level,
-      permissions: [] // TODO: Load existing permissions
-    });
-    setState(prev => ({ ...prev, selectedRole: role, showEditDialog: true }));
+  const openEditDialog = async (role: Role) => {
+    try {
+      // Load role with permissions
+      const roleWithPermissions = await rbacService.getRole(role.id);
+      const existingPermissions = roleWithPermissions.permissions?.map(p => p.name) || [];
+      
+      setFormData({
+        name: role.name,
+        display_name: role.display_name,
+        description: role.description,
+        hierarchy_level: role.hierarchy_level,
+        permissions: existingPermissions
+      });
+      setState(prev => ({ ...prev, selectedRole: role, showEditDialog: true }));
+    } catch (error) {
+      setState(prev => ({ ...prev, error: 'Failed to load role permissions for editing' }));
+    }
   };
 
   const openDeleteDialog = (role: Role) => {
     setState(prev => ({ ...prev, selectedRole: role, showDeleteDialog: true }));
+  };
+
+  const handleCloneRole = async (sourceRole: Role) => {
+    try {
+      // Load the source role with permissions
+      const roleWithPermissions = await rbacService.getRole(sourceRole.id);
+      const existingPermissions = roleWithPermissions.permissions?.map(p => p.name) || [];
+      
+      setFormData({
+        name: `${sourceRole.name}_copy`,
+        display_name: `${sourceRole.display_name} (Copy)`,
+        description: `Copy of ${sourceRole.description}`,
+        hierarchy_level: sourceRole.hierarchy_level,
+        permissions: existingPermissions
+      });
+      setState(prev => ({ ...prev, showCreateDialog: true }));
+    } catch (error: any) {
+      setState(prev => ({ ...prev, error: 'Failed to clone role. Please try again.' }));
+    }
+  };
+
+  // Handle role selection for bulk operations
+  const handleRoleSelection = (roleId: number) => {
+    setSelectedRoles(prev => {
+      const newSelection = new Set(prev);
+      if (newSelection.has(roleId)) {
+        newSelection.delete(roleId);
+      } else {
+        newSelection.add(roleId);
+      }
+      return newSelection;
+    });
+  };
+
+  // Handle bulk enable/disable
+  const handleBulkToggleActive = async (makeActive: boolean) => {
+    if (selectedRoles.size === 0) return;
+    
+    try {
+      const roleIds = Array.from(selectedRoles);
+      // Since there's no bulk API yet, we'll do individual updates
+      await Promise.all(
+        roleIds.map(async (roleId) => {
+          const role = state.roles.find(r => r.id === roleId);
+          if (role && role.is_active !== makeActive) {
+            await rbacService.updateRole(roleId, { is_active: makeActive } as any);
+          }
+        })
+      );
+      
+      setSelectedRoles(new Set());
+      setState(prev => ({ ...prev, error: undefined }));
+      loadRoles();
+    } catch (error: any) {
+      setState(prev => ({ 
+        ...prev, 
+        error: `Failed to ${makeActive ? 'enable' : 'disable'} selected roles. Some may have been processed.` 
+      }));
+    }
+  };
+
+  // Handle export roles
+  const handleExportRoles = () => {
+    try {
+      const exportData = state.roles.map(role => ({
+        name: role.name,
+        display_name: role.display_name,
+        description: role.description,
+        hierarchy_level: role.hierarchy_level,
+        is_active: role.is_active,
+        is_system: role.is_system,
+        created_at: role.created_at
+      }));
+
+      const dataStr = JSON.stringify(exportData, null, 2);
+      const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
+      
+      const exportFileDefaultName = `roles_export_${new Date().toISOString().split('T')[0]}.json`;
+      
+      const linkElement = document.createElement('a');
+      linkElement.setAttribute('href', dataUri);
+      linkElement.setAttribute('download', exportFileDefaultName);
+      linkElement.click();
+    } catch (error) {
+      setState(prev => ({ ...prev, error: 'Failed to export roles data' }));
+    }
   };
 
   // Filtering and sorting
@@ -303,16 +454,57 @@ const RoleManagementInterface: React.FC<RoleManagementProps> = ({
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Role Management</h1>
           <p className="text-gray-600">Manage system roles and permissions</p>
+          {selectedRoles.size > 0 && (
+            <p className="text-sm text-blue-600 mt-1">
+              {selectedRoles.size} role{selectedRoles.size !== 1 ? 's' : ''} selected
+            </p>
+          )}
         </div>
-        {allowCreate && (
+        <div className="flex items-center space-x-3">
+          {/* Bulk Actions */}
+          {selectedRoles.size > 0 && (
+            <div className="flex items-center space-x-2 mr-4">
+              <button
+                onClick={() => handleBulkToggleActive(true)}
+                className="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded text-green-700 bg-green-100 hover:bg-green-200"
+              >
+                Enable Selected
+              </button>
+              <button
+                onClick={() => handleBulkToggleActive(false)}
+                className="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded text-red-700 bg-red-100 hover:bg-red-200"
+              >
+                Disable Selected
+              </button>
+              <button
+                onClick={() => setSelectedRoles(new Set())}
+                className="inline-flex items-center px-3 py-1.5 border border-gray-300 text-xs font-medium rounded text-gray-700 bg-white hover:bg-gray-50"
+              >
+                Clear
+              </button>
+            </div>
+          )}
+          
+          {/* Export Button */}
           <button
-            onClick={openCreateDialog}
-            className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+            onClick={handleExportRoles}
+            className="inline-flex items-center px-3 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
           >
-            <Plus className="w-4 h-4 mr-2" />
-            Create Role
+            <Download className="w-4 h-4 mr-2" />
+            Export
           </button>
-        )}
+          
+          {/* Create Role Button */}
+          {allowCreate && (
+            <button
+              onClick={openCreateDialog}
+              className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+            >
+              <Plus className="w-4 h-4 mr-2" />
+              Create Role
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Error Alert */}
@@ -396,6 +588,20 @@ const RoleManagementInterface: React.FC<RoleManagementProps> = ({
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <input
+                    type="checkbox"
+                    checked={selectedRoles.size === filteredAndSortedRoles.length && filteredAndSortedRoles.length > 0}
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        setSelectedRoles(new Set(filteredAndSortedRoles.map(r => r.id)));
+                      } else {
+                        setSelectedRoles(new Set());
+                      }
+                    }}
+                    className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                  />
+                </th>
                 <th
                   onClick={() => handleSort('name')}
                   className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
@@ -447,6 +653,14 @@ const RoleManagementInterface: React.FC<RoleManagementProps> = ({
             <tbody className="bg-white divide-y divide-gray-200">
               {filteredAndSortedRoles.map((role) => (
                 <tr key={role.id} className="hover:bg-gray-50">
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <input
+                      type="checkbox"
+                      checked={selectedRoles.has(role.id)}
+                      onChange={() => handleRoleSelection(role.id)}
+                      className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                    />
+                  </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="flex items-center">
                       <ShieldCheck className="h-5 w-5 text-gray-400 mr-2" />
@@ -508,6 +722,15 @@ const RoleManagementInterface: React.FC<RoleManagementProps> = ({
                       >
                         <Eye className="h-4 w-4" />
                       </button>
+                      {allowCreate && (
+                        <button
+                          onClick={() => handleCloneRole(role)}
+                          className="text-purple-400 hover:text-purple-600"
+                          title="Clone Role"
+                        >
+                          <Copy className="h-4 w-4" />
+                        </button>
+                      )}
                       {allowEdit && !role.is_system && (
                         <button
                           onClick={() => openEditDialog(role)}
@@ -534,15 +757,30 @@ const RoleManagementInterface: React.FC<RoleManagementProps> = ({
           </table>
         </div>
 
-        {filteredAndSortedRoles.length === 0 && (
+        {filteredAndSortedRoles.length === 0 && !state.isLoading && (
           <div className="text-center py-12">
             <ShieldCheck className="mx-auto h-12 w-12 text-gray-400" />
-            <h3 className="mt-2 text-sm font-medium text-gray-900">No roles found</h3>
+            <h3 className="mt-2 text-sm font-medium text-gray-900">
+              {state.error ? 'Unable to load roles' : 'No roles found'}
+            </h3>
             <p className="mt-1 text-sm text-gray-500">
-              {state.filters.search || state.filters.hierarchy_level
-                ? 'Try adjusting your filters.'
-                : 'Get started by creating a new role.'}
+              {state.error ? (
+                'There was an error loading roles. Please try refreshing the page.'
+              ) : state.filters.search || state.filters.hierarchy_level ? (
+                'No roles match your current filters. Try adjusting your search or filters.'
+              ) : (
+                'No roles have been created yet. Get started by creating your first role.'
+              )}
             </p>
+            {!state.error && allowCreate && (
+              <button
+                onClick={openCreateDialog}
+                className="mt-4 inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700"
+              >
+                <Plus className="w-4 h-4 mr-2" />
+                Create First Role
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -695,7 +933,11 @@ const RoleManagementInterface: React.FC<RoleManagementProps> = ({
                 <div>
                   <label className="block text-sm font-medium text-gray-700">Permissions</label>
                   <div className="mt-2 max-h-48 overflow-y-auto border border-gray-300 rounded-md p-3">
-                    {rbacService.groupPermissionsByResource(permissions) && 
+                    {permissions.length === 0 ? (
+                      <div className="text-center py-4 text-gray-500">
+                        <div className="text-sm">Loading permissions...</div>
+                      </div>
+                    ) : (
                       Object.entries(rbacService.groupPermissionsByResource(permissions)).map(([resourceType, resourcePermissions]) => (
                         <div key={resourceType} className="mb-4">
                           <h4 className="font-medium text-gray-900 capitalize mb-2">{resourceType}</h4>
@@ -727,7 +969,8 @@ const RoleManagementInterface: React.FC<RoleManagementProps> = ({
                             ))}
                           </div>
                         </div>
-                      ))}
+                      ))
+                    )}
                   </div>
                 </div>
               </div>
@@ -820,7 +1063,11 @@ const RoleManagementInterface: React.FC<RoleManagementProps> = ({
                 <div>
                   <label className="block text-sm font-medium text-gray-700">Permissions</label>
                   <div className="mt-2 max-h-48 overflow-y-auto border border-gray-300 rounded-md p-3">
-                    {rbacService.groupPermissionsByResource(permissions) && 
+                    {permissions.length === 0 ? (
+                      <div className="text-center py-4 text-gray-500">
+                        <div className="text-sm">Loading permissions...</div>
+                      </div>
+                    ) : (
                       Object.entries(rbacService.groupPermissionsByResource(permissions)).map(([resourceType, resourcePermissions]) => (
                         <div key={resourceType} className="mb-4">
                           <h4 className="font-medium text-gray-900 capitalize mb-2">{resourceType}</h4>
@@ -852,7 +1099,8 @@ const RoleManagementInterface: React.FC<RoleManagementProps> = ({
                             ))}
                           </div>
                         </div>
-                      ))}
+                      ))
+                    )}
                   </div>
                 </div>
               </div>

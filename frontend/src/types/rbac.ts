@@ -16,6 +16,7 @@ export interface Role {
   created_at: string;
   updated_at: string;
   created_by?: number;
+  permissions?: Permission[];
 }
 
 export interface RoleWithStats extends Role {

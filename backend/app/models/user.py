@@ -112,6 +112,22 @@ class User(Base):
             self.is_verified
         )
     
+    def has_permission(self, permission: str, db=None) -> bool:
+        """Check if user has a specific permission."""
+        from ..core.rbac import has_permission
+        return has_permission(self, permission, db)
+    
+    def get_highest_hierarchy_level(self, db=None) -> int:
+        """Get the highest hierarchy level for this user."""
+        role_levels = {
+            'viewer': 1,
+            'user': 2,
+            'manager': 3,
+            'admin': 4,
+            'super_admin': 5
+        }
+        return role_levels.get(self.role, 0)
+    
     def __repr__(self) -> str:
         """String representation of user."""
         return f"<User(id={self.id}, username='{self.username}', role='{self.role}')>"

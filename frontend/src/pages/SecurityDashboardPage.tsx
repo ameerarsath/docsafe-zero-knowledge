@@ -56,17 +56,26 @@ export default function SecurityDashboardPage() {
             <div className="bg-white rounded-lg border border-gray-200 p-6">
               <h3 className="text-lg font-medium text-gray-900 mb-4">Quick Actions</h3>
               <div className="space-y-3">
-                <button className="w-full text-left p-3 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors">
+                <button 
+                  onClick={() => window.location.href = '/security/headers'}
+                  className="w-full text-left p-3 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors"
+                >
                   <div className="font-medium text-blue-900">Security Headers</div>
                   <div className="text-sm text-blue-700">View headers status</div>
                 </button>
                 
-                <button className="w-full text-left p-3 bg-green-50 hover:bg-green-100 rounded-lg transition-colors">
+                <button 
+                  onClick={() => window.location.href = '/security/monitoring'}
+                  className="w-full text-left p-3 bg-green-50 hover:bg-green-100 rounded-lg transition-colors"
+                >
                   <div className="font-medium text-green-900">Event Monitoring</div>
                   <div className="text-sm text-green-700">Real-time events</div>
                 </button>
                 
-                <button className="w-full text-left p-3 bg-purple-50 hover:bg-purple-100 rounded-lg transition-colors">
+                <button 
+                  onClick={() => alert('Threat Analysis - Feature coming soon!')}
+                  className="w-full text-left p-3 bg-purple-50 hover:bg-purple-100 rounded-lg transition-colors"
+                >
                   <div className="font-medium text-purple-900">Threat Analysis</div>
                   <div className="text-sm text-purple-700">Security analysis</div>
                 </button>

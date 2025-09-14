@@ -17,13 +17,15 @@ interface CustomAxiosRequestConfig extends InternalAxiosRequestConfig {
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8002';
 const API_TIMEOUT = 10000; // 10 seconds
 
-// Create axios instance with default configuration
+// FIXED: Create axios instance with CORS-friendly configuration
 const apiClient: AxiosInstance = axios.create({
   baseURL: API_BASE_URL,
   timeout: API_TIMEOUT,
   headers: {
     'Content-Type': 'application/json',
+    'Accept': 'application/json',
   },
+  withCredentials: true, // Enable credentials for CORS
 });
 
 // Token management utility
@@ -145,6 +147,12 @@ apiClient.interceptors.response.use(
           console.log('🔑 Found refresh token, attempting refresh...');
           const response = await axios.post(`${API_BASE_URL}/api/auth/refresh`, {
             refresh_token: refreshToken,
+          }, {
+            withCredentials: true,
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json'
+            }
           });
           
           const { access_token, refresh_token: newRefreshToken, expires_in } = response.data;

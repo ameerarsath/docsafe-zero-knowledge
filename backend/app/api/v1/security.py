@@ -262,9 +262,36 @@ async def get_security_dashboard(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Get security dashboard summary."""
+    """FIXED: Get comprehensive security dashboard with sessions and audit logs."""
     try:
         since_time = datetime.utcnow() - timedelta(hours=hours)
+        
+        # FIXED: Get active sessions from database
+        active_sessions = db.query(func.count(func.distinct(DocumentAccessLog.session_id))).filter(
+            and_(
+                DocumentAccessLog.accessed_at >= datetime.utcnow() - timedelta(minutes=30),
+                DocumentAccessLog.session_id.isnot(None)
+            )
+        ).scalar() or 0
+        
+        # FIXED: Get last login times per user
+        last_logins = db.query(
+            DocumentAccessLog.user_id,
+            func.max(DocumentAccessLog.accessed_at).label('last_login')
+        ).filter(
+            and_(
+                DocumentAccessLog.action == 'login',
+                DocumentAccessLog.accessed_at >= since_time
+            )
+        ).group_by(DocumentAccessLog.user_id).all()
+        
+        # FIXED: Get key usage statistics
+        key_operations = db.query(func.count(DocumentAccessLog.id)).filter(
+            and_(
+                DocumentAccessLog.action.in_(['encrypt', 'decrypt', 'key_rotation']),
+                DocumentAccessLog.accessed_at >= since_time
+            )
+        ).scalar() or 0
         
         # Event counts by threat level
         event_counts = {
@@ -315,12 +342,16 @@ async def get_security_dashboard(
             desc(func.count(SecurityEvent.id))
         ).limit(10).all()
         
-        return SecurityDashboardResponse(
-            period_hours=hours,
-            event_counts=event_counts,
-            active_threats=active_threats,
-            blocked_ips=blocked_ips,
-            recent_events=[
+        # FIXED: Enhanced dashboard response with sessions and audit data
+        return {
+            "period_hours": hours,
+            "event_counts": event_counts,
+            "active_threats": active_threats,
+            "blocked_ips": blocked_ips,
+            "active_sessions": active_sessions,
+            "key_operations": key_operations,
+            "total_users_active": len(last_logins),
+            "recent_events": [
                 {
                     "event_id": event.event_id,
                     "title": event.title,
@@ -331,15 +362,33 @@ async def get_security_dashboard(
                 }
                 for event in recent_events
             ],
-            top_threat_sources=[
+            "top_threat_sources": [
                 {
                     "ip_address": source.source_ip,
                     "event_count": source.event_count,
                     "max_risk_score": source.max_risk
                 }
                 for source in threat_sources if source.source_ip
-            ]
-        )
+            ],
+            "last_logins": [
+                {
+                    "user_id": login.user_id,
+                    "last_login": login.last_login.isoformat()
+                }
+                for login in last_logins[:10]  # Top 10 recent logins
+            ],
+            "audit_summary": {
+                "total_events": db.query(DocumentAccessLog).filter(
+                    DocumentAccessLog.accessed_at >= since_time
+                ).count(),
+                "unique_users": db.query(func.count(func.distinct(DocumentAccessLog.user_id))).filter(
+                    DocumentAccessLog.accessed_at >= since_time
+                ).scalar() or 0,
+                "unique_ips": db.query(func.count(func.distinct(DocumentAccessLog.ip_address))).filter(
+                    DocumentAccessLog.accessed_at >= since_time
+                ).scalar() or 0
+            }
+        }
         
     except Exception as e:
         raise HTTPException(

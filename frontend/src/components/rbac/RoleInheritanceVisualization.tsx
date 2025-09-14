@@ -57,8 +57,20 @@ const RoleInheritanceVisualization: React.FC<RoleInheritanceVisualizationProps> 
         const data = await rbacService.getPermissionMatrix();
         setMatrixData(data);
         buildHierarchyTree(data);
-      } catch (err) {
-        setError('Failed to load role hierarchy data');
+      } catch (err: any) {
+        let errorMessage = 'Failed to load role hierarchy data';
+        
+        if (err?.status === 403) {
+          errorMessage = 'Access denied. You do not have permission to view role hierarchy.';
+        } else if (err?.status === 404) {
+          errorMessage = 'Role hierarchy API not found. Please contact your administrator.';
+        } else if (err?.status === 500) {
+          errorMessage = 'Server error occurred while loading role hierarchy. Please try again later.';
+        } else if (err?.message?.includes('Network Error')) {
+          errorMessage = 'Network connection failed. Please check your connection and try again.';
+        }
+        
+        setError(errorMessage);
       } finally {
         setIsLoading(false);
       }

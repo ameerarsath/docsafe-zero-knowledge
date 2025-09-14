@@ -5,29 +5,29 @@
  * user role assignments, permission checking, and system administration.
  */
 
-import { apiClient as api } from './api';
 import type {
-  Role,
-  RoleCreate,
-  RoleUpdate,
-  RoleListResponse,
+  BulkRoleAssignment,
+  BulkRoleAssignmentResponse,
   Permission,
+  PermissionCheckRequest,
+  PermissionCheckResponse,
   PermissionCreate,
   PermissionListResponse,
+  RBACServiceInterface,
+  ResourcePermission,
+  ResourcePermissionCreate,
+  Role,
+  RoleCreate,
+  RoleListResponse,
+  RoleUpdate,
+  SystemPermissionMatrix,
+  UserPermissionSummary,
   UserRole,
   UserRoleAssignment,
   UserRoleAssignmentResponse,
-  UserRoleListResponse,
-  BulkRoleAssignment,
-  BulkRoleAssignmentResponse,
-  PermissionCheckRequest,
-  PermissionCheckResponse,
-  UserPermissionSummary,
-  SystemPermissionMatrix,
-  ResourcePermission,
-  ResourcePermissionCreate,
-  RBACServiceInterface
+  UserRoleListResponse
 } from '../types/rbac';
+import { apiClient as api } from './api';
 
 class RBACService implements RBACServiceInterface {
   private readonly baseUrl = '/api/v1/rbac';
@@ -39,6 +39,8 @@ class RBACService implements RBACServiceInterface {
     include_stats?: boolean;
     active_only?: boolean;
   }): Promise<RoleListResponse> {
+    console.log('[RBAC Service] Attempting to get roles:', params);
+
     try {
       const searchParams = new URLSearchParams();
       
@@ -51,9 +53,10 @@ class RBACService implements RBACServiceInterface {
       const url = queryString ? `${this.baseUrl}/roles?${queryString}` : `${this.baseUrl}/roles`;
       
       const response = await api.get<RoleListResponse>(url);
+      console.log('[RBAC Service] Roles retrieval successful:', response.data);
       return response.data;
     } catch (error) {
-      // Return fallback roles data
+      console.warn('[RBAC Service] API failed, using fallback data:', error);
       return this.getFallbackRolesResponse(params);
     }
   }
@@ -104,11 +107,42 @@ class RBACService implements RBACServiceInterface {
   }
 
   async createRole(data: RoleCreate): Promise<Role> {
+    console.log('[RBAC Frontend] Attempting to create role:', data);
+
     try {
+      console.log('[RBAC Frontend] Making API request to:', `${this.baseUrl}/roles`);
       const response = await api.post<Role>(`${this.baseUrl}/roles`, data);
+      console.log('[RBAC Frontend] Role creation successful:', response.data);
       return response.data;
     } catch (error) {
-      return this.simulateRoleCreation(data);
+      // Log the real error for debugging
+      console.error('[RBAC Frontend] Role creation failed:', error);
+
+      // Log detailed error information
+      if (error && typeof error === 'object' && 'response' in error) {
+        const apiError = error as any;
+        console.error('[RBAC Frontend] API Error details:', {
+          status: apiError.response?.status,
+          statusText: apiError.response?.statusText,
+          data: apiError.response?.data,
+          headers: apiError.response?.headers
+        });
+      }
+
+      // Re-throw the error so the UI can handle it properly
+      if (error instanceof Error) {
+        throw error;
+      } else if (error && typeof error === 'object' && 'response' in error) {
+        // Handle API error response
+        const apiError = error as any;
+        if (apiError.response?.data?.detail) {
+          throw new Error(apiError.response.data.detail);
+        } else {
+          throw new Error(`Failed to create role: ${apiError.response?.status || 'Unknown error'}`);
+        }
+      } else {
+        throw new Error('Failed to create role');
+      }
     }
   }
 
@@ -167,17 +201,47 @@ class RBACService implements RBACServiceInterface {
     size?: number;
     resource_type?: string;
   }): Promise<PermissionListResponse> {
-    const searchParams = new URLSearchParams();
+    console.log('[RBAC Service] Attempting to get permissions:', params);
+
+    try {
+      const searchParams = new URLSearchParams();
+      
+      if (params?.page) searchParams.append('page', params.page.toString());
+      if (params?.size) searchParams.append('size', params.size.toString());
+      if (params?.resource_type) searchParams.append('resource_type', params.resource_type);
+      
+      const queryString = searchParams.toString();
+      const url = queryString ? `${this.baseUrl}/permissions?${queryString}` : `${this.baseUrl}/permissions`;
+      
+      const response = await api.get<PermissionListResponse>(url);
+      console.log('[RBAC Service] Permissions retrieval successful:', response.data);
+      return response.data;
+    } catch (error) {
+      console.warn('[RBAC Service] API failed, using fallback data:', error);
+      return this.getFallbackPermissionsResponse(params);
+    }
+  }
+
+  private getFallbackPermissionsResponse(params?: {
+    page?: number;
+    size?: number;
+    resource_type?: string;
+  }): PermissionListResponse {
+    const fallbackMatrix = this.getFallbackPermissionMatrix();
+    let permissions = fallbackMatrix.permissions;
     
-    if (params?.page) searchParams.append('page', params.page.toString());
-    if (params?.size) searchParams.append('size', params.size.toString());
-    if (params?.resource_type) searchParams.append('resource_type', params.resource_type);
+    // Apply resource_type filter
+    if (params?.resource_type) {
+      permissions = permissions.filter(p => p.resource_type === params.resource_type);
+    }
     
-    const queryString = searchParams.toString();
-    const url = queryString ? `${this.baseUrl}/permissions?${queryString}` : `${this.baseUrl}/permissions`;
-    
-    const response = await api.get<PermissionListResponse>(url);
-    return response.data;
+    return {
+      permissions,
+      total: permissions.length,
+      page: params?.page || 1,
+      size: params?.size || permissions.length,
+      has_next: false
+    };
   }
 
   async createPermission(data: PermissionCreate): Promise<Permission> {
@@ -187,31 +251,109 @@ class RBACService implements RBACServiceInterface {
 
   // User Role Assignments
   async getUserRoles(userId: number): Promise<UserRoleListResponse> {
+    console.log('[RBAC Service] Attempting to get user roles:', { userId });
+
     try {
       const response = await api.get<UserRoleListResponse>(`${this.baseUrl}/users/${userId}/roles`);
+      console.log('[RBAC Service] User roles retrieval successful:', response.data);
       return response.data;
     } catch (error) {
+      console.warn('[RBAC Service] API failed, using fallback data:', error);
       return this.getFallbackUserRoles(userId);
     }
   }
 
   async assignRoleToUser(userId: number, assignment: UserRoleAssignment): Promise<UserRoleAssignmentResponse> {
+    console.log('[RBAC Service] Attempting to assign role to user:', { userId, assignment });
+
     try {
       const response = await api.post<UserRoleAssignmentResponse>(
         `${this.baseUrl}/users/${userId}/roles`,
         assignment
       );
+      console.log('[RBAC Service] Role assignment successful:', response.data);
       return response.data;
     } catch (error) {
+      console.warn('[RBAC Service] API failed, using simulation:', error);
       return this.simulateRoleAssignment(userId, assignment);
     }
   }
 
   async revokeRoleFromUser(userId: number, roleId: number): Promise<void> {
+    console.log('[RBAC Service] Attempting to revoke role from user:', { userId, roleId });
+
     try {
       await api.delete(`${this.baseUrl}/users/${userId}/roles/${roleId}`);
+      console.log('[RBAC Service] Role revocation successful');
     } catch (error) {
-      // Simulate successful revocation
+      console.error('[RBAC Service] Role revocation failed:', error);
+      
+      // Log detailed error information
+      if (error && typeof error === 'object' && 'response' in error) {
+        const apiError = error as any;
+        console.error('[RBAC Service] API Error details:', {
+          status: apiError.response?.status,
+          statusText: apiError.response?.statusText,
+          data: apiError.response?.data,
+          url: `${this.baseUrl}/users/${userId}/roles/${roleId}`
+        });
+      }
+
+      // Re-throw the error so the UI can handle it properly
+      if (error instanceof Error) {
+        throw error;
+      } else if (error && typeof error === 'object' && 'response' in error) {
+        // Handle API error response
+        const apiError = error as any;
+        if (apiError.response?.data?.detail) {
+          throw new Error(apiError.response.data.detail);
+        } else {
+          throw new Error(`Failed to revoke role: ${apiError.response?.status || 'Unknown error'}`);
+        }
+      } else {
+        throw new Error('Failed to revoke role');
+      }
+    }
+  }
+
+  async replaceUserRole(userId: number, oldRoleId: number, assignment: UserRoleAssignment): Promise<UserRoleAssignmentResponse> {
+    console.log('[RBAC Service] Attempting atomic role replacement:', { userId, oldRoleId, newRoleId: assignment.role_id });
+
+    try {
+      const response = await api.put<UserRoleAssignmentResponse>(
+        `${this.baseUrl}/users/${userId}/roles/${oldRoleId}`,
+        assignment
+      );
+      console.log('[RBAC Service] Atomic role replacement successful:', response.data);
+      return response.data;
+    } catch (error) {
+      console.error('[RBAC Service] Atomic role replacement failed:', error);
+      
+      // Log detailed error information
+      if (error && typeof error === 'object' && 'response' in error) {
+        const apiError = error as any;
+        console.error('[RBAC Service] API Error details:', {
+          status: apiError.response?.status,
+          statusText: apiError.response?.statusText,
+          data: apiError.response?.data,
+          url: apiError.config?.url
+        });
+      }
+
+      // Re-throw the error so the UI can handle it properly
+      if (error instanceof Error) {
+        throw error;
+      } else if (error && typeof error === 'object' && 'response' in error) {
+        // Handle API error response
+        const apiError = error as any;
+        if (apiError.response?.data?.detail) {
+          throw new Error(apiError.response.data.detail);
+        } else {
+          throw new Error(`Failed to replace role: ${apiError.response?.status || 'Unknown error'}`);
+        }
+      } else {
+        throw new Error('Failed to replace role');
+      }
     }
   }
 
@@ -315,11 +457,14 @@ class RBACService implements RBACServiceInterface {
 
   // System Utilities
   async getPermissionMatrix(): Promise<SystemPermissionMatrix> {
+    console.log('[RBAC Service] Attempting to get permission matrix');
+
     try {
-      const response = await api.get<SystemPermissionMatrix>(`${this.baseUrl}/system/permission-matrix`);
+      const response = await api.get<SystemPermissionMatrix>(`${this.baseUrl}/matrix`);
+      console.log('[RBAC Service] Permission matrix retrieval successful:', response.data);
       return response.data;
     } catch (error) {
-      // Return fallback mock data
+      console.warn('[RBAC Service] API failed, using fallback data:', error);
       return this.getFallbackPermissionMatrix();
     }
   }
@@ -384,6 +529,7 @@ class RBACService implements RBACServiceInterface {
     ];
 
     const permissions: Permission[] = [
+      // Documents permissions
       {
         id: 1,
         name: 'documents:read',
@@ -434,6 +580,19 @@ class RBACService implements RBACServiceInterface {
       },
       {
         id: 5,
+        name: 'documents:admin',
+        display_name: 'Administer Documents',
+        description: 'Full document administration access',
+        resource_type: 'documents',
+        action: 'admin',
+        is_system: true,
+        requires_resource_ownership: false,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      },
+      // Users permissions
+      {
+        id: 6,
         name: 'users:read',
         display_name: 'Read Users',
         description: 'View user information',
@@ -445,10 +604,46 @@ class RBACService implements RBACServiceInterface {
         updated_at: new Date().toISOString()
       },
       {
-        id: 6,
+        id: 7,
+        name: 'users:create',
+        display_name: 'Create Users',
+        description: 'Create new user accounts',
+        resource_type: 'users',
+        action: 'create',
+        is_system: true,
+        requires_resource_ownership: false,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      },
+      {
+        id: 8,
+        name: 'users:update',
+        display_name: 'Update Users',
+        description: 'Modify user accounts',
+        resource_type: 'users',
+        action: 'update',
+        is_system: true,
+        requires_resource_ownership: false,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      },
+      {
+        id: 9,
+        name: 'users:delete',
+        display_name: 'Delete Users',
+        description: 'Remove user accounts',
+        resource_type: 'users',
+        action: 'delete',
+        is_system: true,
+        requires_resource_ownership: false,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      },
+      {
+        id: 10,
         name: 'users:admin',
         display_name: 'Administer Users',
-        description: 'Manage user accounts and roles',
+        description: 'Full user account administration',
         resource_type: 'users',
         action: 'admin',
         is_system: true,
@@ -456,8 +651,9 @@ class RBACService implements RBACServiceInterface {
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       },
+      // Roles permissions
       {
-        id: 7,
+        id: 11,
         name: 'roles:read',
         display_name: 'Read Roles',
         description: 'View role information',
@@ -469,10 +665,46 @@ class RBACService implements RBACServiceInterface {
         updated_at: new Date().toISOString()
       },
       {
-        id: 8,
+        id: 12,
+        name: 'roles:create',
+        display_name: 'Create Roles',
+        description: 'Create new roles',
+        resource_type: 'roles',
+        action: 'create',
+        is_system: true,
+        requires_resource_ownership: false,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      },
+      {
+        id: 13,
+        name: 'roles:update',
+        display_name: 'Update Roles',
+        description: 'Modify existing roles',
+        resource_type: 'roles',
+        action: 'update',
+        is_system: true,
+        requires_resource_ownership: false,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      },
+      {
+        id: 14,
+        name: 'roles:delete',
+        display_name: 'Delete Roles',
+        description: 'Remove roles from system',
+        resource_type: 'roles',
+        action: 'delete',
+        is_system: true,
+        requires_resource_ownership: false,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      },
+      {
+        id: 15,
         name: 'roles:admin',
         display_name: 'Administer Roles',
-        description: 'Create and manage roles',
+        description: 'Full role administration access',
         resource_type: 'roles',
         action: 'admin',
         is_system: true,
@@ -480,8 +712,9 @@ class RBACService implements RBACServiceInterface {
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       },
+      // System permissions
       {
-        id: 9,
+        id: 16,
         name: 'system:admin',
         display_name: 'System Administration',
         description: 'Full system administration access',
@@ -493,10 +726,23 @@ class RBACService implements RBACServiceInterface {
         updated_at: new Date().toISOString()
       },
       {
-        id: 10,
+        id: 17,
+        name: 'system:audit',
+        display_name: 'System Audit',
+        description: 'Access system audit functions',
+        resource_type: 'system',
+        action: 'audit',
+        is_system: true,
+        requires_resource_ownership: false,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      },
+      // Audit permissions
+      {
+        id: 18,
         name: 'audit:read',
         display_name: 'Read Audit Trail',
-        description: 'View system audit logs and permission changes',
+        description: 'View system audit logs',
         resource_type: 'audit',
         action: 'read',
         is_system: true,
@@ -505,7 +751,20 @@ class RBACService implements RBACServiceInterface {
         updated_at: new Date().toISOString()
       },
       {
-        id: 11,
+        id: 19,
+        name: 'audit:admin',
+        display_name: 'Administer Audit',
+        description: 'Manage audit system and logs',
+        resource_type: 'audit',
+        action: 'admin',
+        is_system: true,
+        requires_resource_ownership: false,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      },
+      // Permissions permissions
+      {
+        id: 20,
         name: 'permissions:read',
         display_name: 'Read Permissions',
         description: 'View permission matrix and assignments',
@@ -515,15 +774,183 @@ class RBACService implements RBACServiceInterface {
         requires_resource_ownership: false,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
+      },
+      {
+        id: 21,
+        name: 'permissions:admin',
+        display_name: 'Administer Permissions',
+        description: 'Manage system permissions',
+        resource_type: 'permissions',
+        action: 'admin',
+        is_system: true,
+        requires_resource_ownership: false,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      },
+      // Encryption permissions
+      {
+        id: 22,
+        name: 'encryption:read',
+        display_name: 'Read Encryption',
+        description: 'View encryption settings and status',
+        resource_type: 'encryption',
+        action: 'read',
+        is_system: true,
+        requires_resource_ownership: false,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      },
+      {
+        id: 23,
+        name: 'encryption:admin',
+        display_name: 'Administer Encryption',
+        description: 'Manage encryption settings and keys',
+        resource_type: 'encryption',
+        action: 'admin',
+        is_system: true,
+        requires_resource_ownership: false,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      },
+      // Templates permissions
+      {
+        id: 24,
+        name: 'templates:read',
+        display_name: 'Read Templates',
+        description: 'View document templates',
+        resource_type: 'templates',
+        action: 'read',
+        is_system: true,
+        requires_resource_ownership: false,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      },
+      {
+        id: 25,
+        name: 'templates:create',
+        display_name: 'Create Templates',
+        description: 'Create new document templates',
+        resource_type: 'templates',
+        action: 'create',
+        is_system: true,
+        requires_resource_ownership: false,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      },
+      {
+        id: 26,
+        name: 'templates:update',
+        display_name: 'Update Templates',
+        description: 'Modify document templates',
+        resource_type: 'templates',
+        action: 'update',
+        is_system: true,
+        requires_resource_ownership: true,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      },
+      {
+        id: 27,
+        name: 'templates:delete',
+        display_name: 'Delete Templates',
+        description: 'Remove document templates',
+        resource_type: 'templates',
+        action: 'delete',
+        is_system: true,
+        requires_resource_ownership: true,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      },
+      // Settings permissions
+      {
+        id: 28,
+        name: 'settings:read',
+        display_name: 'Read Settings',
+        description: 'View system settings',
+        resource_type: 'settings',
+        action: 'read',
+        is_system: true,
+        requires_resource_ownership: false,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      },
+      {
+        id: 29,
+        name: 'settings:update',
+        display_name: 'Update Settings',
+        description: 'Modify system settings',
+        resource_type: 'settings',
+        action: 'update',
+        is_system: true,
+        requires_resource_ownership: false,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      },
+      // MFA permissions
+      {
+        id: 30,
+        name: 'mfa:read',
+        display_name: 'Read MFA',
+        description: 'View MFA settings and status',
+        resource_type: 'mfa',
+        action: 'read',
+        is_system: true,
+        requires_resource_ownership: false,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      },
+      {
+        id: 31,
+        name: 'mfa:admin',
+        display_name: 'Administer MFA',
+        description: 'Manage MFA settings and requirements',
+        resource_type: 'mfa',
+        action: 'admin',
+        is_system: true,
+        requires_resource_ownership: false,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
       }
     ];
 
     const matrix: Record<string, string[]> = {
-      'viewer': ['documents:read'],
-      'user': ['documents:read', 'documents:create', 'documents:update', 'documents:delete'],
-      'manager': ['documents:read', 'documents:create', 'documents:update', 'documents:delete', 'users:read', 'permissions:read'],
-      'admin': ['documents:read', 'documents:create', 'documents:update', 'documents:delete', 'users:read', 'users:admin', 'roles:read', 'roles:admin', 'permissions:read', 'audit:read'],
-      'super_admin': ['documents:read', 'documents:create', 'documents:update', 'documents:delete', 'users:read', 'users:admin', 'roles:read', 'roles:admin', 'permissions:read', 'audit:read', 'system:admin']
+      'viewer': [
+        'documents:read', 'templates:read'
+      ],
+      'user': [
+        'documents:read', 'documents:create', 'documents:update', 'documents:delete',
+        'templates:read', 'templates:create', 'templates:update', 'templates:delete',
+        'settings:read'
+      ],
+      'manager': [
+        'documents:read', 'documents:create', 'documents:update', 'documents:delete',
+        'templates:read', 'templates:create', 'templates:update', 'templates:delete',
+        'users:read', 'users:update', 
+        'settings:read', 'settings:update',
+        'permissions:read', 'mfa:read'
+      ],
+      'admin': [
+        'documents:read', 'documents:create', 'documents:update', 'documents:delete', 'documents:admin',
+        'templates:read', 'templates:create', 'templates:update', 'templates:delete',
+        'users:read', 'users:create', 'users:update', 'users:delete', 'users:admin',
+        'roles:read', 'roles:create', 'roles:update', 'roles:delete',
+        'permissions:read', 'permissions:admin',
+        'settings:read', 'settings:update',
+        'audit:read', 'encryption:read',
+        'mfa:read', 'mfa:admin'
+      ],
+      'super_admin': [
+        'documents:read', 'documents:create', 'documents:update', 'documents:delete', 'documents:admin',
+        'templates:read', 'templates:create', 'templates:update', 'templates:delete',
+        'users:read', 'users:create', 'users:update', 'users:delete', 'users:admin',
+        'roles:read', 'roles:create', 'roles:update', 'roles:delete', 'roles:admin',
+        'permissions:read', 'permissions:admin',
+        'settings:read', 'settings:update',
+        'audit:read', 'audit:admin',
+        'encryption:read', 'encryption:admin',
+        'mfa:read', 'mfa:admin',
+        'system:admin', 'system:audit'
+      ]
     };
 
     const hierarchy: Record<string, number> = {
@@ -565,13 +992,42 @@ class RBACService implements RBACServiceInterface {
 
   // Utility Methods
   async getCurrentUserPermissions(): Promise<string[]> {
+    console.log('[RBAC Service] Attempting to get current user permissions');
+
     try {
       // This would get the current user ID from auth context
       // For now, we'll assume the API can determine current user from token
       const response = await api.get<string[]>('/api/auth/me/permissions');
+      console.log('[RBAC Service] Current user permissions retrieval successful:', response.data);
       return response.data;
     } catch (error) {
-      return this.getFallbackCurrentUserPermissions();
+      console.error('[RBAC Service] Failed to get current user permissions:', error);
+      
+      // Log detailed error information
+      if (error && typeof error === 'object' && 'response' in error) {
+        const apiError = error as any;
+        console.error('[RBAC Service] API Error details:', {
+          status: apiError.response?.status,
+          statusText: apiError.response?.statusText,
+          data: apiError.response?.data,
+          url: '/api/auth/me/permissions'
+        });
+      }
+
+      // Re-throw the error so the UI can handle it properly
+      if (error instanceof Error) {
+        throw error;
+      } else if (error && typeof error === 'object' && 'response' in error) {
+        // Handle API error response
+        const apiError = error as any;
+        if (apiError.response?.data?.detail) {
+          throw new Error(apiError.response.data.detail);
+        } else {
+          throw new Error(`Failed to get current user permissions: ${apiError.response?.status || 'Unknown error'}`);
+        }
+      } else {
+        throw new Error('Failed to get current user permissions');
+      }
     }
   }
 

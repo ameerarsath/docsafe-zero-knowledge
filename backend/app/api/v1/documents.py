@@ -402,7 +402,7 @@ async def get_document(
     db.commit()
     
     # Update last accessed time
-    document.accessed_at = func.now()
+    document.accessed_at = datetime.now()
     db.commit()
     
     # Return with permission flags
@@ -556,7 +556,6 @@ async def update_document(
             document.share_type = document_data.share_type
         
         document.updated_by = current_user.id
-        document.updated_at = func.now()
         
         db.commit()
         db.refresh(document)
@@ -629,7 +628,7 @@ async def delete_document(
         else:
             # Archive the document
             document.status = DocumentStatus.DELETED
-            document.deleted_at = func.now()
+            document.deleted_at = datetime.now()
             action = "delete"
         
         # Create access log
@@ -923,7 +922,7 @@ async def download_file(
     db.commit()
 
     # Update last accessed time
-    document.accessed_at = func.now()
+    document.accessed_at = datetime.now()
     db.commit()
 
     # Read file content directly to avoid Content-Length issues
@@ -1559,10 +1558,10 @@ async def bulk_document_operation(
             # Perform operation
             if operation.operation == "delete":
                 document.status = DocumentStatus.DELETED
-                document.deleted_at = func.now()
+                document.deleted_at = datetime.now()
             elif operation.operation == "archive":
                 document.status = DocumentStatus.ARCHIVED
-                document.archived_at = func.now()
+                document.archived_at = datetime.now()
             elif operation.operation == "restore":
                 document.status = DocumentStatus.ACTIVE
             elif operation.operation == "move":
@@ -1580,7 +1579,6 @@ async def bulk_document_operation(
                 # Move document
                 document.parent_id = target_parent_id
                 document.updated_by = current_user.id
-                document.updated_at = func.now()
                 if document.document_type == DocumentType.FOLDER:
                     document.update_path()
             elif operation.operation == "copy":
@@ -1860,14 +1858,12 @@ async def bulk_move_folders(
                     folder.parent_id = request.target_parent_id
                     folder.update_path()
                     folder.updated_by = current_user.id
-                    folder.updated_at = func.now()
                     successful.append(folder_id)
             else:
                 # Moving to root level
                 folder.parent_id = None
                 folder.update_path()
                 folder.updated_by = current_user.id
-                folder.updated_at = func.now()
                 successful.append(folder_id)
             
         except Exception as e:

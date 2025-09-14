@@ -117,11 +117,13 @@ export const DocumentUpload: React.FC<DocumentUploadProps> = ({
    * Handle file drop/selection
    */
   const onDrop = useCallback((acceptedFiles: File[]) => {
+    console.log('Files dropped:', acceptedFiles.length);
     setGlobalError(null);
 
     // Check total file count
     const totalFiles = uploadFiles.length + acceptedFiles.length;
     if (totalFiles > maxFiles) {
+      console.error(`Too many files: ${totalFiles} > ${maxFiles}`);
       setGlobalError(`Maximum ${maxFiles} files allowed. Please remove some files first.`);
       return;
     }
@@ -144,8 +146,15 @@ export const DocumentUpload: React.FC<DocumentUploadProps> = ({
 
     // Show password prompt if we have valid files and no current encryption key
     const hasValidFiles = newUploadFiles.some(f => f.status === 'pending');
+    console.log('Upload validation:', { hasValidFiles, currentKey: !!currentKey, isInitialized });
+    
     if (hasValidFiles && !currentKey) {
+      console.log('Showing password prompt');
       setShowPasswordPrompt(true);
+    } else if (!hasValidFiles) {
+      console.log('No valid files to upload');
+    } else {
+      console.log('Current key exists, proceeding without password prompt');
     }
   }, [uploadFiles.length, maxFiles, validateFile, currentKey]);
 
@@ -194,15 +203,19 @@ export const DocumentUpload: React.FC<DocumentUploadProps> = ({
 
       // Encrypt file
       updateFileStatus(id, 'encrypting', 10);
+      console.log(`Starting encryption for ${file.name}`);
       
       const encryptionResult = await encryptFileForUpload(
         file,
         password,
         (progress) => {
+          console.log(`Encryption progress for ${file.name}: ${progress}%`);
           updateFileStatus(id, 'encrypting', 10 + (progress * 0.3)); // 10-40%
         },
         encryptionKey
       );
+      
+      console.log(`Encryption completed for ${file.name}`, encryptionResult);
 
       if (controller.signal.aborted) return;
 
@@ -240,13 +253,17 @@ export const DocumentUpload: React.FC<DocumentUploadProps> = ({
       formData.append('upload_data', JSON.stringify(uploadMetadata));
 
       // Upload file
+      console.log(`Starting upload for ${file.name}`);
       const response = await documentsApi.uploadDocument(
         formData,
         (progress) => {
+          console.log(`Upload progress for ${file.name}: ${progress}%`);
           updateFileStatus(id, 'uploading', 40 + (progress * 0.6)); // 40-100%
         },
         controller.signal
       );
+      
+      console.log(`Upload completed for ${file.name}`, response);
 
       if (controller.signal.aborted) return;
 
@@ -268,7 +285,17 @@ export const DocumentUpload: React.FC<DocumentUploadProps> = ({
    * Start upload process
    */
   const startUpload = useCallback(async (encryptionPassword: string) => {
-    if (!isInitialized || uploadFiles.length === 0) return;
+    if (!isInitialized) {
+      console.error('Upload failed: Encryption not initialized');
+      setGlobalError('Encryption system not initialized. Please try again.');
+      return;
+    }
+    
+    if (uploadFiles.length === 0) {
+      console.error('Upload failed: No files to upload');
+      setGlobalError('No files selected for upload.');
+      return;
+    }
 
     setIsUploading(true);
     setShowPasswordPrompt(false);
@@ -335,8 +362,12 @@ export const DocumentUpload: React.FC<DocumentUploadProps> = ({
   const handlePasswordSubmit = useCallback((e: React.FormEvent) => {
     e.preventDefault();
     if (password.trim()) {
+      console.log('Starting upload with password...');
       startUpload(password);
       setPassword('');
+    } else {
+      console.error('Password is empty');
+      setGlobalError('Please enter a password');
     }
   }, [password, startUpload]);
 
@@ -587,7 +618,10 @@ export const DocumentUpload: React.FC<DocumentUploadProps> = ({
               </button>
               {hasValidFiles && !currentKey && (
                 <button
-                  onClick={() => setShowPasswordPrompt(true)}
+                  onClick={() => {
+                    console.log('Start Upload clicked - no current key');
+                    setShowPasswordPrompt(true);
+                  }}
                   className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
                   disabled={isUploading}
                 >
@@ -596,7 +630,10 @@ export const DocumentUpload: React.FC<DocumentUploadProps> = ({
               )}
               {hasValidFiles && currentKey && (
                 <button
-                  onClick={() => setShowPasswordPrompt(true)}
+                  onClick={() => {
+                    console.log('Upload Files clicked - current key exists');
+                    setShowPasswordPrompt(true);
+                  }}
                   className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
                   disabled={isUploading}
                 >

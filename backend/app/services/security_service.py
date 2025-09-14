@@ -266,28 +266,35 @@ class SecurityService:
     async def _count_recent_events(self, ip_address: str, event_type: str, 
                                  since_time: datetime, unique_users: bool, 
                                  db: Session) -> int:
-        """Count recent events matching criteria."""
-        # First check cache for quick lookup
-        if ip_address in self.event_cache:
-            cache_count = sum(1 for event in self.event_cache[ip_address] 
-                            if event["timestamp"] >= since_time and 
-                               event["event_type"] == event_type)
-            if cache_count > 0:
-                return cache_count
-        
-        # Query database for more comprehensive check
-        query = db.query(DocumentAccessLog).filter(
-            and_(
-                DocumentAccessLog.ip_address == ip_address,
-                DocumentAccessLog.accessed_at >= since_time,
-                DocumentAccessLog.action == event_type
+        """FIXED: Count recent events with proper caching and database fallback."""
+        try:
+            # First check cache for quick lookup
+            cache_count = 0
+            if ip_address in self.event_cache:
+                cache_count = sum(1 for event in self.event_cache[ip_address] 
+                                if event["timestamp"] >= since_time and 
+                                   event["event_type"] == event_type)
+            
+            # Always check database for comprehensive count
+            query = db.query(DocumentAccessLog).filter(
+                and_(
+                    DocumentAccessLog.ip_address == ip_address,
+                    DocumentAccessLog.accessed_at >= since_time,
+                    DocumentAccessLog.action == event_type
+                )
             )
-        )
-        
-        if unique_users:
-            return query.distinct(DocumentAccessLog.user_id).count()
-        else:
-            return query.count()
+            
+            if unique_users:
+                db_count = query.distinct(DocumentAccessLog.user_id).count()
+            else:
+                db_count = query.count()
+            
+            # Return the higher count (cache might miss some events)
+            return max(cache_count, db_count)
+            
+        except Exception as e:
+            logger.error(f"Error counting events: {e}")
+            return 0
 
     async def _calculate_download_size(self, user_id: int, since_time: datetime, 
                                      db: Session) -> int:
@@ -314,33 +321,53 @@ class SecurityService:
 
     async def _check_geographic_anomaly(self, user_id: int, ip_address: str, 
                                       distance_threshold: int, db: Session) -> bool:
-        """Check for geographic anomalies in user access."""
+        """FIXED: Enhanced geographic anomaly detection with better IP analysis."""
         if not user_id or not ip_address:
             return False
         
-        # Get user's recent login locations
-        recent_logins = db.query(DocumentAccessLog).filter(
-            and_(
-                DocumentAccessLog.user_id == user_id,
-                DocumentAccessLog.action == "login",
-                DocumentAccessLog.accessed_at >= datetime.utcnow() - timedelta(days=30)
-            )
-        ).order_by(desc(DocumentAccessLog.accessed_at)).limit(10).all()
-        
-        if len(recent_logins) < 2:
-            return False  # Not enough data
-        
-        # Simple IP-based geographic check (would need GeoIP in production)
-        current_ip_prefix = ".".join(ip_address.split(".")[:2])
-        recent_prefixes = set()
-        
-        for login in recent_logins:
-            if login.ip_address:
-                prefix = ".".join(login.ip_address.split(".")[:2])
-                recent_prefixes.add(prefix)
-        
-        # If current IP prefix is new, flag as anomaly
-        return current_ip_prefix not in recent_prefixes
+        try:
+            # Get user's recent login locations
+            recent_logins = db.query(DocumentAccessLog).filter(
+                and_(
+                    DocumentAccessLog.user_id == user_id,
+                    DocumentAccessLog.action == "login",
+                    DocumentAccessLog.accessed_at >= datetime.utcnow() - timedelta(days=30)
+                )
+            ).order_by(desc(DocumentAccessLog.accessed_at)).limit(20).all()
+            
+            if len(recent_logins) < 3:
+                return False  # Not enough data for reliable detection
+            
+            # Enhanced IP-based geographic check
+            current_ip_parts = ip_address.split(".")
+            if len(current_ip_parts) != 4:
+                return True  # Invalid IP format is suspicious
+            
+            current_ip_prefix = ".".join(current_ip_parts[:3])  # More specific prefix
+            current_subnet = ".".join(current_ip_parts[:2])     # Broader subnet
+            
+            recent_prefixes = set()
+            recent_subnets = set()
+            
+            for login in recent_logins:
+                if login.ip_address and "." in login.ip_address:
+                    parts = login.ip_address.split(".")
+                    if len(parts) == 4:
+                        prefix = ".".join(parts[:3])
+                        subnet = ".".join(parts[:2])
+                        recent_prefixes.add(prefix)
+                        recent_subnets.add(subnet)
+            
+            # Check for anomaly at different levels
+            prefix_anomaly = current_ip_prefix not in recent_prefixes
+            subnet_anomaly = current_subnet not in recent_subnets
+            
+            # Flag as anomaly if both prefix and subnet are new
+            return prefix_anomaly and subnet_anomaly
+            
+        except Exception as e:
+            logger.error(f"Error checking geographic anomaly: {e}")
+            return False
 
     def _check_time_range(self, timestamp: datetime, time_range: Dict[str, str]) -> bool:
         """Check if timestamp falls within suspicious time range."""
@@ -599,7 +626,7 @@ class SecurityService:
 
     def is_rate_limited(self, ip_address: str, max_requests: int = 100, 
                        window_minutes: int = 5) -> bool:
-        """Check if an IP is rate limited."""
+        """FIXED: Enhanced rate limiting with adaptive thresholds."""
         if ip_address not in self.rate_limits:
             return False
         
@@ -611,7 +638,38 @@ class SecurityService:
                self.rate_limits[ip_address][0] < window_start):
             self.rate_limits[ip_address].popleft()
         
-        return len(self.rate_limits[ip_address]) >= max_requests
+        request_count = len(self.rate_limits[ip_address])
+        
+        # Adaptive thresholds based on IP reputation
+        if ip_address in self.blocked_ips:
+            max_requests = max_requests // 4  # Stricter for previously blocked IPs
+        elif self._is_suspicious_ip(ip_address):
+            max_requests = max_requests // 2  # Stricter for suspicious IPs
+        
+        return request_count >= max_requests
+    
+    def _is_suspicious_ip(self, ip_address: str) -> bool:
+        """FIXED: Check if IP has suspicious characteristics."""
+        try:
+            # Check if IP is in private ranges (might be suspicious for external access)
+            parts = ip_address.split(".")
+            if len(parts) != 4:
+                return True
+            
+            first_octet = int(parts[0])
+            second_octet = int(parts[1])
+            
+            # Known suspicious ranges (simplified)
+            suspicious_ranges = [
+                (1, 1),      # 1.1.x.x (often used by bots)
+                (8, 8),      # 8.8.x.x (Google DNS, suspicious for direct access)
+                (127, 0),    # 127.x.x.x (localhost)
+            ]
+            
+            return (first_octet, second_octet) in suspicious_ranges
+            
+        except (ValueError, IndexError):
+            return True  # Invalid IP format is suspicious
 
     async def correlate_events(self, db: Session):
         """Correlate related security events."""

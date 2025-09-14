@@ -11,9 +11,15 @@ from .v1.security import router as security_router
 from .v1.security_headers import router as security_headers_router
 from .v1.templates import router as templates_router
 from .v1.document_preview import router as document_preview_router
+from .v1.cors_debug import router as cors_debug_router
+from .v1.monitoring import router as monitoring_router
+from .v1.key_management import router as key_management_router
 
 # Create main API router
 api_router = APIRouter()
+
+# FIXED: Add CORS debug router first
+api_router.include_router(cors_debug_router, prefix="/v1", tags=["debug"])
 
 # Include sub-routers
 api_router.include_router(auth_router, prefix="/auth", tags=["authentication"])
@@ -26,5 +32,7 @@ api_router.include_router(security_router, prefix="/v1", tags=["security"])
 api_router.include_router(security_headers_router, prefix="/v1", tags=["security-headers"])
 api_router.include_router(templates_router, prefix="/v1/templates", tags=["templates"])
 api_router.include_router(document_preview_router, prefix="/v1", tags=["document-preview"])
+api_router.include_router(monitoring_router, prefix="/v1", tags=["monitoring"])
+api_router.include_router(key_management_router, prefix="/v1", tags=["key-management"])
 
 __all__ = ["api_router"]

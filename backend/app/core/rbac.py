@@ -66,26 +66,12 @@ class RBACService:
                     detail="Insufficient privileges to assign this role"
                 )
             
-            # Check if user already has this role
-            existing = self.db.query(UserRole).filter(
-                and_(UserRole.user_id == user_id, UserRole.role_id == role.id)
-            ).first()
-            
-            if existing:
-                if existing.is_active:
-                    raise HTTPException(
-                        status_code=status.HTTP_409_CONFLICT,
-                        detail=f"User already has role '{role_name}'"
-                    )
-                else:
-                    # Reactivate existing assignment
-                    existing.is_active = True
-                    existing.assigned_at = datetime.utcnow()
-                    existing.expires_at = expires_at
-                    existing.assigned_by = assigning_user.id if assigning_user else None
-                    self.db.commit()
-                    return True
-            
+            # SINGLE ROLE POLICY: Remove all existing role assignments for this user
+            # This ensures one user has exactly one role at a time
+            existing_roles = self.db.query(UserRole).filter(UserRole.user_id == user_id).all()
+            for existing_role in existing_roles:
+                self.db.delete(existing_role)
+
             # Create new role assignment
             user_role = UserRole(
                 user_id=user_id,
@@ -143,8 +129,9 @@ class RBACService:
                     detail="Insufficient privileges to revoke this role"
                 )
             
-            # Deactivate instead of delete for audit trail
-            user_role.is_active = False
+            # Delete the role assignment completely for single role policy
+            # This ensures user truly has "no role assigned" state
+            self.db.delete(user_role)
             self.db.commit()
             
             # Clear permission cache for user
@@ -165,14 +152,32 @@ class RBACService:
     
     def create_role(self, role_data, creating_user: Optional[User] = None) -> Role:
         """Create a new role."""
+        logger.info(f"[RBACService] Creating role: name='{role_data.name}', display_name='{role_data.display_name}'")
+
         try:
             # Check permissions
-            if creating_user and not creating_user.has_permission("roles:create"):
+            if creating_user:
+                logger.info(f"[RBACService] Checking permissions for user {creating_user.id} ({creating_user.username})")
+                has_permission = creating_user.has_permission("roles:create", self.db)
+                logger.info(f"[RBACService] User has 'roles:create' permission: {has_permission}")
+
+                if not has_permission:
+                    logger.warning(f"[RBACService] Permission denied for user {creating_user.id}")
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Insufficient privileges to create roles"
+                    )
+
+            # Check if role already exists
+            existing_role = self.db.query(Role).filter(Role.name == role_data.name).first()
+            if existing_role:
+                logger.warning(f"[RBACService] Role '{role_data.name}' already exists")
                 raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Insufficient privileges to create roles"
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=f"Role '{role_data.name}' already exists"
                 )
-            
+
+            logger.info(f"[RBACService] Creating role object")
             # Create role
             role = Role(
                 name=role_data.name,
@@ -181,27 +186,37 @@ class RBACService:
                 hierarchy_level=role_data.hierarchy_level or 1,
                 created_by=creating_user.id if creating_user else None
             )
-            
+
+            logger.info(f"[RBACService] Adding role to database")
             self.db.add(role)
             self.db.flush()  # Get the role ID
-            
+            logger.info(f"[RBACService] Role created with ID: {role.id}")
+
             # Assign permissions if provided
             if hasattr(role_data, 'permissions') and role_data.permissions:
+                logger.info(f"[RBACService] Assigning permissions: {role_data.permissions}")
                 self._assign_permissions_to_role(role.id, role_data.permissions)
-            
+            else:
+                logger.info(f"[RBACService] No permissions provided for role")
+
+            logger.info(f"[RBACService] Committing transaction")
             self.db.commit()
-            
+
             # Audit log
             audit_logger.info(
                 f"Role created: name={role_data.name}, "
                 f"created_by={creating_user.id if creating_user else None}"
             )
-            
+
+            logger.info(f"[RBACService] Role creation successful")
             return role
-            
+
+        except HTTPException:
+            logger.info(f"[RBACService] HTTPException raised, re-raising")
+            raise
         except Exception as e:
+            logger.error(f"[RBACService] Failed to create role {role_data.name}: {e}", exc_info=True)
             self.db.rollback()
-            logger.error(f"Failed to create role {role_data.name}: {e}")
             raise
     
     def update_role(self, role_id: int, update_data, updating_user: Optional[User] = None) -> Role:
@@ -215,7 +230,7 @@ class RBACService:
                 )
             
             # Check permissions
-            if updating_user and not updating_user.has_permission("roles:update"):
+            if updating_user and not updating_user.has_permission("roles:update", self.db):
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Insufficient privileges to update roles"
@@ -268,7 +283,7 @@ class RBACService:
                 )
             
             # Check permissions
-            if deleting_user and not deleting_user.has_permission("roles:delete"):
+            if deleting_user and not deleting_user.has_permission("roles:delete", self.db):
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Insufficient privileges to delete roles"
@@ -308,11 +323,11 @@ class RBACService:
     
     def _can_assign_role(self, assigning_user: User, role: Role) -> bool:
         """Check if user can assign the specified role."""
-        return assigning_user.get_highest_hierarchy_level() > role.hierarchy_level
+        return assigning_user.get_highest_hierarchy_level(self.db) > role.hierarchy_level
     
     def _can_revoke_role(self, revoking_user: User, role: Role) -> bool:
         """Check if user can revoke the specified role."""
-        return revoking_user.get_highest_hierarchy_level() > role.hierarchy_level
+        return revoking_user.get_highest_hierarchy_level(self.db) > role.hierarchy_level
     
     def _assign_permissions_to_role(self, role_id: int, permission_names: List[str]):
         """Assign permissions to a role."""
@@ -364,6 +379,19 @@ def get_user_permissions(user: User, db: Session = None) -> Set[str]:
         and_(UserRole.user_id == user.id, UserRole.is_active == True)
     ).all()
     
+    # SECURITY FIX: Users without any active roles get NO permissions
+    # This prevents privilege escalation vulnerabilities
+    if not user_roles:
+        security_logger.warning(
+            f"User {user.id} ({user.username}) has no active roles - denying all permissions"
+        )
+        # Cache the empty result to prevent repeated database queries
+        _permission_cache[cache_key] = {
+            'permissions': set(),
+            'timestamp': datetime.utcnow()
+        }
+        return set()
+    
     for user_role in user_roles:
         if not user_role.is_expired:
             # Get role permissions
@@ -374,9 +402,11 @@ def get_user_permissions(user: User, db: Session = None) -> Set[str]:
             for perm in role_permissions:
                 permissions.add(perm.name)
     
-    # Add permissions based on role hierarchy (inheritance)
-    inherited_permissions = _get_inherited_permissions(user, db)
-    permissions.update(inherited_permissions)
+    # Only add inherited permissions if user has at least one valid role
+    # This prevents privilege escalation for users without roles
+    if permissions:  # Only if user has explicit role-based permissions
+        inherited_permissions = _get_inherited_permissions(user, db)
+        permissions.update(inherited_permissions)
     
     # Cache the result
     _permission_cache[cache_key] = {
@@ -412,6 +442,8 @@ def _get_legacy_role_permissions(role_name: str) -> Set[str]:
             "users:create", 
             "users:update", 
             "roles:read",
+            "system:read",
+            "audit:read",
         },
         "super_admin": {
             "documents:read", 
@@ -679,6 +711,13 @@ def _get_inherited_permissions(user: User, db: Session) -> Set[str]:
     permissions = set()
     user_level = user.get_highest_hierarchy_level(db)
     
+    # SECURITY FIX: Users with hierarchy level 0 (no roles) get no inherited permissions
+    if user_level <= 0:
+        security_logger.info(
+            f"User {user.id} ({user.username}) has hierarchy level {user_level} - no inherited permissions granted"
+        )
+        return set()
+    
     # Define permission inheritance rules
     inheritance_rules = {
         5: {'system:admin', 'roles:delete', 'users:delete'},  # Super admin
@@ -692,6 +731,17 @@ def _get_inherited_permissions(user: User, db: Session) -> Set[str]:
     for level in range(1, user_level + 1):
         if level in inheritance_rules:
             permissions.update(inheritance_rules[level])
+    
+    # Additional security check: verify user actually has active roles
+    active_roles = db.query(UserRole).filter(
+        and_(UserRole.user_id == user.id, UserRole.is_active == True)
+    ).count()
+    
+    if active_roles == 0:
+        security_logger.warning(
+            f"SECURITY: User {user.id} ({user.username}) has hierarchy level {user_level} but no active roles - blocking inherited permissions"
+        )
+        return set()
     
     return permissions
 
@@ -798,6 +848,7 @@ def initialize_default_permissions(db: Session):
             ("roles:update", "Update roles", "roles", "update"),
             ("roles:delete", "Delete roles", "roles", "delete"),
             ("system:admin", "System administration", "system", "admin"),
+            ("audit:read", "Read audit logs", "audit", "read"),
         ]
         
         for perm_name, display_name, resource_type, action in default_permissions:
