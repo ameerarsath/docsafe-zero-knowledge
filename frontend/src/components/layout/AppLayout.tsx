@@ -143,10 +143,12 @@ export default function AppLayout({ children, title, subtitle }: AppLayoutProps)
     navigate('/login');
   };
 
-  // Filter navigation based on user permissions
+  // Filter navigation based on user permissions with stricter role checking
   const filteredNavigation = navigation.filter(item => {
     if (item.adminOnly) {
-      return canAccessAdmin();
+      // Only show admin items to actual admin/manager roles (hierarchy level 3+)
+      const isManagerOrAbove = user?.role && ['super_admin', 'admin', 'manager', '5', '4', '3'].includes(user.role);
+      return isManagerOrAbove && canAccessAdmin();
     }
     if (item.permission) {
       return hasPermission(item.permission);
@@ -240,10 +242,16 @@ export default function AppLayout({ children, title, subtitle }: AppLayoutProps)
         {/* Navigation */}
         <nav className="flex-1 mt-6 px-3 overflow-y-auto">
           <div className="space-y-2 pb-4">
-            {filteredNavigation.map((item, index) => (
+            {filteredNavigation.map((item, index) => {
+              // Check if this is the first admin item to add the section label
+              const isFirstAdminItem = item.adminOnly &&
+                index > 0 &&
+                !filteredNavigation.slice(0, index).some(prevItem => prevItem.adminOnly);
+
+              return (
               <div key={item.name}>
-                {/* Add section labels for better organization */}
-                {index === 3 && (
+                {/* Add section labels for admin items */}
+                {isFirstAdminItem && (
                   <div className="pt-4 pb-2">
                     <div className="border-t border-gray-200 mb-4"></div>
                     <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider px-3">
@@ -307,7 +315,8 @@ export default function AppLayout({ children, title, subtitle }: AppLayoutProps)
                   </div>
                 )}
               </div>
-            ))}
+              );
+            })}
           </div>
         </nav>
 

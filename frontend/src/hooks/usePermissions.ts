@@ -122,7 +122,9 @@ export const usePermissions = (): PermissionsHook => {
   };
 
   const canAccessAdmin = (): boolean => {
-    return isAdmin() || hasAnyPermission(['users:read', 'roles:read', 'system:audit']);
+    // Only allow admin access for Manager level and above
+    const isManagerOrAbove = ['super_admin', 'admin', 'manager', '5', '4', '3'].includes(user?.role || '');
+    return isManagerOrAbove && (isAdmin() || hasAnyPermission(['users:read', 'roles:read', 'system:audit']));
   };
 
   const refresh = async (): Promise<void> => {
