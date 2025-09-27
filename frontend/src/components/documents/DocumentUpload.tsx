@@ -17,16 +17,20 @@ import { useDropzone } from 'react-dropzone';
 import { useEncryption } from '../../hooks/useEncryption';
 import useAuthStore from '../../stores/authStore';
 import { documentsApi } from '../../services/api/documents';
+import { ALLOWED_MIME_TYPES } from '../../utils/fileValidation';
+import { encryptedBackupService } from '../../services/encryptedBackupService';
 
 // Types
 interface UploadFile {
   id: string;
   file: File;
-  status: 'pending' | 'encrypting' | 'uploading' | 'completed' | 'error';
+  status: 'pending' | 'encrypting' | 'uploading' | 'completed' | 'error' | 'backing_up';
   progress: number;
   error?: string;
   encryptedSize?: number;
   keyId?: string;
+  backupId?: string;
+  isBackedUp?: boolean;
 }
 
 interface DocumentUploadProps {
@@ -37,23 +41,10 @@ interface DocumentUploadProps {
   maxFileSize?: number; // in bytes
   maxFiles?: number;
   className?: string;
+  enableAutoBackup?: boolean; // New option for automatic backup
 }
 
-const DEFAULT_ACCEPTED_TYPES = [
-  'application/pdf',
-  'application/msword',
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  'application/vnd.ms-excel',
-  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-  'application/vnd.ms-powerpoint',
-  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-  'text/plain',
-  'text/csv',
-  'image/jpeg',
-  'image/png',
-  'image/gif',
-  'image/webp'
-];
+const DEFAULT_ACCEPTED_TYPES = Object.keys(ALLOWED_MIME_TYPES);
 
 const DEFAULT_MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB
 const DEFAULT_MAX_FILES = 10;
@@ -65,7 +56,8 @@ export const DocumentUpload: React.FC<DocumentUploadProps> = ({
   acceptedFileTypes = DEFAULT_ACCEPTED_TYPES,
   maxFileSize = DEFAULT_MAX_FILE_SIZE,
   maxFiles = DEFAULT_MAX_FILES,
-  className = ''
+  className = '',
+  enableAutoBackup = true
 }) => {
   const user = useAuthStore((state) => state.user);
   const {
@@ -270,6 +262,40 @@ export const DocumentUpload: React.FC<DocumentUploadProps> = ({
       updateFileStatus(id, 'completed', 100);
       abortControllersRef.current.delete(id);
 
+      // Schedule automatic backup if enabled
+      if (enableAutoBackup && response && encryptionResult) {
+        try {
+          updateFileStatus(id, 'backing_up', 100);
+          console.log(`Scheduling backup for ${file.name}`);
+
+          const backupId = await encryptedBackupService.scheduleBackup(
+            response.id,
+            file.name,
+            encryptionResult.encryptedFile,
+            encryptionResult.encryptionMetadata.keyId,
+            {
+              enableAutoBackup: true,
+              verifyIntegrity: true,
+              compressionEnabled: false
+            }
+          );
+
+          updateFileStatus(id, 'completed', 100, undefined, {
+            backupId,
+            isBackedUp: false // Will be updated when backup completes
+          });
+
+          console.log(`Backup scheduled for ${file.name} with ID: ${backupId}`);
+        } catch (backupError) {
+          console.error(`Failed to schedule backup for ${file.name}:`, backupError);
+          // Don't fail the upload if backup fails
+          updateFileStatus(id, 'completed', 100, undefined, {
+            isBackedUp: false
+          });
+        }
+      }
+
+      abortControllersRef.current.delete(id);
       return response;
     } catch (error) {
       if (!abortControllersRef.current.get(id)?.signal.aborted) {
@@ -316,8 +342,22 @@ export const DocumentUpload: React.FC<DocumentUploadProps> = ({
           });
           activeKey = newKey;
           console.log('Created new encryption key:', newKey.keyId);
-        } catch (error) {
+        } catch (error: any) {
           console.error('Failed to create encryption key:', error);
+
+          // Handle 409 conflict - user already has a key
+          if (error.statusCode === 409 || error.message?.includes('already has an active encryption key')) {
+            console.log('User already has encryption key, attempting to reload keys...');
+            // Try to reload keys and use the existing one
+            try {
+              // This should reload the encryption keys and set currentKey
+              window.location.reload(); // Simple solution: reload page to re-initialize
+              return;
+            } catch (reloadError) {
+              console.error('Failed to reload encryption keys:', reloadError);
+            }
+          }
+
           setGlobalError('Failed to create encryption key. Please try again.');
           return;
         }
@@ -375,13 +415,8 @@ export const DocumentUpload: React.FC<DocumentUploadProps> = ({
    * Get file type icon
    */
   const getFileIcon = useCallback((file: File) => {
-    if (file.type.startsWith('image/')) return '🖼️';
-    if (file.type.includes('pdf')) return '📄';
-    if (file.type.includes('word') || file.type.includes('document')) return '📝';
-    if (file.type.includes('excel') || file.type.includes('sheet')) return '📊';
-    if (file.type.includes('powerpoint') || file.type.includes('presentation')) return '📋';
-    if (file.type.includes('text')) return '📃';
-    return '📁';
+    const fileInfo = ALLOWED_MIME_TYPES[file.type as keyof typeof ALLOWED_MIME_TYPES];
+    return fileInfo?.icon || '📁';
   }, []);
 
   /**
@@ -412,6 +447,43 @@ export const DocumentUpload: React.FC<DocumentUploadProps> = ({
       passwordInputRef.current.focus();
     }
   }, [showPasswordPrompt]);
+
+  // Listen for backup events
+  useEffect(() => {
+    const handleBackupCompleted = (event: CustomEvent) => {
+      const { documentId, fileName } = event.detail;
+      console.log(`Backup completed for document ${documentId}: ${fileName}`);
+
+      // Update file status to show backup is complete
+      setUploadFiles(prev => prev.map(f => {
+        if (f.file.name === fileName && f.status === 'completed') {
+          return { ...f, isBackedUp: true };
+        }
+        return f;
+      }));
+    };
+
+    const handleBackupFailed = (event: CustomEvent) => {
+      const { documentId, fileName, error } = event.detail;
+      console.error(`Backup failed for document ${documentId}: ${fileName}`, error);
+
+      // Update file status to show backup failed
+      setUploadFiles(prev => prev.map(f => {
+        if (f.file.name === fileName && f.status === 'completed') {
+          return { ...f, isBackedUp: false };
+        }
+        return f;
+      }));
+    };
+
+    window.addEventListener('backupCompleted', handleBackupCompleted as EventListener);
+    window.addEventListener('backupFailed', handleBackupFailed as EventListener);
+
+    return () => {
+      window.removeEventListener('backupCompleted', handleBackupCompleted as EventListener);
+      window.removeEventListener('backupFailed', handleBackupFailed as EventListener);
+    };
+  }, []);
 
   // Clean up abort controllers on unmount
   useEffect(() => {
@@ -459,6 +531,9 @@ export const DocumentUpload: React.FC<DocumentUploadProps> = ({
             {currentKey && (
               <span className="text-green-600">• Active key: {currentKey.keyId.substring(0, 8)}...</span>
             )}
+            {enableAutoBackup && (
+              <span className="text-blue-600">• Auto-backup enabled</span>
+            )}
           </div>
         </div>
       )}
@@ -495,7 +570,7 @@ export const DocumentUpload: React.FC<DocumentUploadProps> = ({
                 {isDragActive ? 'Drop files here' : 'Drop files here or click to browse'}
               </p>
               <p className="text-sm text-gray-500 mt-1">
-                Supported formats: PDF, Word, Excel, PowerPoint, Images, Text files
+                All common file types supported: Documents, Images, Videos, Audio, Code, Archives, and more
               </p>
             </div>
           </div>
@@ -541,8 +616,26 @@ export const DocumentUpload: React.FC<DocumentUploadProps> = ({
                       </p>
                       <div className="flex items-center space-x-2">
                         {/* Status Icon */}
-                        {uploadFile.status === 'completed' && (
+                        {uploadFile.status === 'completed' && uploadFile.isBackedUp && (
+                          <div className="flex items-center space-x-1">
+                            <CheckCircle className="w-4 h-4 text-green-500" />
+                            <div className="w-2 h-2 bg-blue-500 rounded-full" title="Backed up" />
+                          </div>
+                        )}
+                        {uploadFile.status === 'completed' && uploadFile.isBackedUp === false && (
+                          <div className="flex items-center space-x-1">
+                            <CheckCircle className="w-4 h-4 text-green-500" />
+                            <AlertCircle className="w-2 h-2 text-orange-500" />
+                          </div>
+                        )}
+                        {uploadFile.status === 'completed' && uploadFile.isBackedUp === undefined && (
                           <CheckCircle className="w-4 h-4 text-green-500" />
+                        )}
+                        {uploadFile.status === 'backing_up' && (
+                          <div className="flex items-center space-x-1">
+                            <CheckCircle className="w-4 h-4 text-green-500" />
+                            <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" title="Creating backup" />
+                          </div>
                         )}
                         {uploadFile.status === 'error' && (
                           <AlertCircle className="w-4 h-4 text-red-500" />
@@ -573,7 +666,10 @@ export const DocumentUpload: React.FC<DocumentUploadProps> = ({
                         {uploadFile.status === 'pending' && 'Ready'}
                         {uploadFile.status === 'encrypting' && 'Encrypting...'}
                         {uploadFile.status === 'uploading' && 'Uploading...'}
-                        {uploadFile.status === 'completed' && 'Completed'}
+                        {uploadFile.status === 'backing_up' && 'Creating backup...'}
+                        {uploadFile.status === 'completed' && uploadFile.isBackedUp && 'Completed & Backed up'}
+                        {uploadFile.status === 'completed' && uploadFile.isBackedUp === false && 'Completed (backup failed)'}
+                        {uploadFile.status === 'completed' && uploadFile.isBackedUp === undefined && 'Completed'}
                         {uploadFile.status === 'error' && 'Error'}
                       </p>
                     </div>

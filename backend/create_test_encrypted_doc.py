@@ -66,7 +66,7 @@ def create_test_encrypted_document():
         db.add(test_doc)
         db.commit()
         
-        print(f"✅ Created encrypted test document: {test_doc.id} - {test_doc.name}")
+        print(f"SUCCESS: Created encrypted test document: {test_doc.id} - {test_doc.name}")
         print(f"   - Encrypted: {test_doc.is_encrypted}")
         print(f"   - Has DEK: {bool(test_doc.encrypted_dek)}")
         print(f"   - Owner: {test_doc.owner_id}")
@@ -74,7 +74,7 @@ def create_test_encrypted_document():
         return test_doc.id
         
     except Exception as e:
-        print(f"❌ Error creating test document: {e}")
+        print(f"ERROR: Error creating test document: {e}")
         db.rollback()
         return None
         
@@ -87,4 +87,4 @@ if __name__ == "__main__":
         print(f"\n🔐 Test encrypted document created with ID: {doc_id}")
         print("   You can now test zero-knowledge preview with this document!")
     else:
-        print("\n❌ Failed to create test document")
+        print("\nERROR: Failed to create test document")

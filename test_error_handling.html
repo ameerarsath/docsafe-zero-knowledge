@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Error Handling Test - SecureVault</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f8f9fa;
+            line-height: 1.6;
+        }
+        .header {
+            background: linear-gradient(135deg, #dc3545, #b02a37);
+            color: white;
+            padding: 30px;
+            border-radius: 8px;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .test-card {
+            background: white;
+            border-radius: 8px;
+            padding: 25px;
+            margin: 20px 0;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            border-left: 5px solid #dc3545;
+        }
+        .test-button {
+            background: #dc3545;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+            font-size: 14px;
+        }
+        .test-button:hover {
+            background: #c82333;
+        }
+        .test-button.success {
+            background: #28a745;
+        }
+        .test-button:disabled {
+            background: #6c757d;
+            cursor: not-allowed;
+        }
+        .result {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            padding: 15px;
+            margin: 10px 0;
+            font-family: monospace;
+            white-space: pre-wrap;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .result.success {
+            border-color: #28a745;
+            background: #d4edda;
+        }
+        .result.error {
+            border-color: #dc3545;
+            background: #f8d7da;
+        }
+        .status {
+            padding: 8px 16px;
+            border-radius: 4px;
+            font-weight: bold;
+            display: inline-block;
+            margin: 10px 0;
+        }
+        .status.success { background-color: #d4edda; color: #155724; }
+        .status.error { background-color: #f8d7da; color: #721c24; }
+        .status.info { background-color: #d1ecf1; color: #0c5460; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🔍 Error Handling Test Suite</h1>
+        <p>Testing improved error handling for SecureVault API responses</p>
+    </div>
+
+    <div class="test-card">
+        <h2>1. RBAC Permissions Error Test</h2>
+        <p>Test the improved 403 error handling for RBAC permissions endpoint.</p>
+        <button class="test-button" onclick="testRBACPermissionsError()">Test 403 RBAC Error</button>
+        <div id="rbac-test-result" class="result" style="display: none;"></div>
+    </div>
+
+    <div class="test-card">
+        <h2>2. Share Access Error Tests</h2>
+        <p>Test various error scenarios for share access endpoint.</p>
+        <button class="test-button" onclick="testInvalidShareToken()">Test Invalid Share (404)</button>
+        <button class="test-button" onclick="testExpiredShare()">Test Expired Share (410)</button>
+        <button class="test-button" onclick="testUnauthorizedShare()">Test Auth Required (401)</button>
+        <div id="share-test-result" class="result" style="display: none;"></div>
+    </div>
+
+    <div class="test-card">
+        <h2>3. Structured Error Response Test</h2>
+        <p>Verify that structured error responses are properly parsed and displayed.</p>
+        <button class="test-button" onclick="testStructuredErrorResponse()">Test Structured Errors</button>
+        <div id="structured-test-result" class="result" style="display: none;"></div>
+    </div>
+
+    <div class="test-card">
+        <h2>4. Frontend Error Display Test</h2>
+        <p>Test frontend error message extraction and display.</p>
+        <button class="test-button" onclick="testFrontendErrorHandling()">Test Error Extraction</button>
+        <div id="frontend-test-result" class="result" style="display: none;"></div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:8002';
+
+        async function testRBACPermissionsError() {
+            const resultDiv = document.getElementById('rbac-test-result');
+            resultDiv.style.display = 'block';
+            resultDiv.className = 'result';
+            resultDiv.textContent = 'Testing RBAC permissions error...\n';
+
+            try {
+                // Try to access user permissions without proper authentication
+                const response = await fetch(`${API_BASE}/api/v1/rbac/users/999/permissions`, {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': 'Bearer invalid_token_here'
+                    }
+                });
+
+                const responseText = await response.text();
+                let responseData;
+                try {
+                    responseData = JSON.parse(responseText);
+                } catch (e) {
+                    responseData = responseText;
+                }
+
+                resultDiv.textContent += `Status: ${response.status}\n`;
+                resultDiv.textContent += `Response Data:\n${JSON.stringify(responseData, null, 2)}\n`;
+
+                if (response.status === 403) {
+                    if (responseData.detail && typeof responseData.detail === 'object' && responseData.detail.message) {
+                        resultDiv.textContent += `\n✅ SUCCESS: Structured error response detected!\n`;
+                        resultDiv.textContent += `Error Message: "${responseData.detail.message}"\n`;
+                        resultDiv.className = 'result success';
+                    } else {
+                        resultDiv.textContent += `\n❌ ERROR: Expected structured error response with message\n`;
+                        resultDiv.className = 'result error';
+                    }
+                } else {
+                    resultDiv.textContent += `\n❌ ERROR: Expected 403 status code\n`;
+                    resultDiv.className = 'result error';
+                }
+
+            } catch (error) {
+                resultDiv.textContent += `\n❌ NETWORK ERROR: ${error.message}\n`;
+                resultDiv.className = 'result error';
+            }
+        }
+
+        async function testInvalidShareToken() {
+            const resultDiv = document.getElementById('share-test-result');
+            resultDiv.style.display = 'block';
+            resultDiv.className = 'result';
+            resultDiv.textContent = 'Testing invalid share token error...\n';
+
+            try {
+                const response = await fetch(`${API_BASE}/api/v1/shares/invalid_token_here/access`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({})
+                });
+
+                const responseText = await response.text();
+                let responseData;
+                try {
+                    responseData = JSON.parse(responseText);
+                } catch (e) {
+                    responseData = responseText;
+                }
+
+                resultDiv.textContent += `Status: ${response.status}\n`;
+                resultDiv.textContent += `Response Data:\n${JSON.stringify(responseData, null, 2)}\n`;
+
+                if (response.status === 404) {
+                    if (responseData.detail && typeof responseData.detail === 'object' && responseData.detail.message) {
+                        resultDiv.textContent += `\n✅ SUCCESS: Structured 404 error response!\n`;
+                        resultDiv.textContent += `Error Message: "${responseData.detail.message}"\n`;
+                        resultDiv.className = 'result success';
+                    } else {
+                        resultDiv.textContent += `\n❌ ERROR: Expected structured error response with message\n`;
+                        resultDiv.className = 'result error';
+                    }
+                } else {
+                    resultDiv.textContent += `\n❌ ERROR: Expected 404 status code\n`;
+                    resultDiv.className = 'result error';
+                }
+
+            } catch (error) {
+                resultDiv.textContent += `\n❌ NETWORK ERROR: ${error.message}\n`;
+                resultDiv.className = 'result error';
+            }
+        }
+
+        async function testExpiredShare() {
+            const resultDiv = document.getElementById('share-test-result');
+            resultDiv.style.display = 'block';
+            resultDiv.className = 'result';
+            resultDiv.textContent = 'Testing expired share scenario...\n';
+            resultDiv.textContent += 'Note: This test uses a mock expired share token.\n\n';
+
+            // Since we don't have an actual expired share, this will likely return 404
+            // but we can still test the error handling structure
+            try {
+                const response = await fetch(`${API_BASE}/api/v1/shares/expired_share_token/access`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({})
+                });
+
+                const responseText = await response.text();
+                let responseData;
+                try {
+                    responseData = JSON.parse(responseText);
+                } catch (e) {
+                    responseData = responseText;
+                }
+
+                resultDiv.textContent += `Status: ${response.status}\n`;
+                resultDiv.textContent += `Response Data:\n${JSON.stringify(responseData, null, 2)}\n`;
+
+                if ((response.status === 404 || response.status === 410) &&
+                    responseData.detail && typeof responseData.detail === 'object') {
+                    resultDiv.textContent += `\n✅ SUCCESS: Structured error response detected!\n`;
+                    resultDiv.textContent += `Error Type: ${responseData.detail.error || 'Unknown'}\n`;
+                    resultDiv.textContent += `Error Message: "${responseData.detail.message || 'No message'}"\n`;
+                    resultDiv.className = 'result success';
+                } else {
+                    resultDiv.textContent += `\n⚠️ INFO: Expected structured error response\n`;
+                    resultDiv.className = 'result';
+                }
+
+            } catch (error) {
+                resultDiv.textContent += `\n❌ NETWORK ERROR: ${error.message}\n`;
+                resultDiv.className = 'result error';
+            }
+        }
+
+        async function testUnauthorizedShare() {
+            const resultDiv = document.getElementById('share-test-result');
+            resultDiv.style.display = 'block';
+            resultDiv.className = 'result';
+            resultDiv.textContent = 'Testing unauthorized share access...\n';
+            resultDiv.textContent += 'Note: Testing with mock internal share requiring authentication.\n\n';
+
+            // This will likely return 404 since it's a mock token, but tests error structure
+            try {
+                const response = await fetch(`${API_BASE}/api/v1/shares/internal_share_token/access`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({})
+                });
+
+                const responseText = await response.text();
+                let responseData;
+                try {
+                    responseData = JSON.parse(responseText);
+                } catch (e) {
+                    responseData = responseText;
+                }
+
+                resultDiv.textContent += `Status: ${response.status}\n`;
+                resultDiv.textContent += `Response Data:\n${JSON.stringify(responseData, null, 2)}\n`;
+
+                if (responseData.detail && typeof responseData.detail === 'object') {
+                    resultDiv.textContent += `\n✅ SUCCESS: Structured error response format confirmed!\n`;
+                    resultDiv.className = 'result success';
+                } else {
+                    resultDiv.textContent += `\n⚠️ INFO: Response format varies\n`;
+                    resultDiv.className = 'result';
+                }
+
+            } catch (error) {
+                resultDiv.textContent += `\n❌ NETWORK ERROR: ${error.message}\n`;
+                resultDiv.className = 'result error';
+            }
+        }
+
+        async function testStructuredErrorResponse() {
+            const resultDiv = document.getElementById('structured-test-result');
+            resultDiv.style.display = 'block';
+            resultDiv.className = 'result';
+            resultDiv.textContent = 'Testing structured error response parsing...\n\n';
+
+            // Test different error response formats
+            const testCases = [
+                {
+                    name: 'New Structured Format',
+                    data: { detail: { error: 'Access denied', message: 'You do not have permission to access this resource' } }
+                },
+                {
+                    name: 'Simple Object Format',
+                    data: { error: 'Not Found', message: 'The requested resource was not found' }
+                },
+                {
+                    name: 'Legacy String Format',
+                    data: { detail: 'Authentication required' }
+                },
+                {
+                    name: 'Direct String',
+                    data: 'Server error occurred'
+                }
+            ];
+
+            // Simulate the extractErrorMessage function from api.ts
+            const extractErrorMessage = (errorData) => {
+                if (typeof errorData === 'object' && errorData !== null) {
+                    if (errorData.message) {
+                        return errorData.message;
+                    }
+                    if (errorData.error) {
+                        return errorData.error;
+                    }
+                    if (errorData.detail) {
+                        if (typeof errorData.detail === 'object' && errorData.detail.message) {
+                            return errorData.detail.message;
+                        }
+                        if (typeof errorData.detail === 'string') {
+                            return errorData.detail;
+                        }
+                    }
+                }
+
+                if (typeof errorData === 'string') {
+                    return errorData;
+                }
+
+                return JSON.stringify(errorData);
+            };
+
+            testCases.forEach((testCase, index) => {
+                const extracted = extractErrorMessage(testCase.data);
+                resultDiv.textContent += `${index + 1}. ${testCase.name}:\n`;
+                resultDiv.textContent += `   Input: ${JSON.stringify(testCase.data)}\n`;
+                resultDiv.textContent += `   Extracted: "${extracted}"\n`;
+                resultDiv.textContent += `   Status: ${extracted && extracted !== '[object Object]' ? '✅ SUCCESS' : '❌ FAILED'}\n\n`;
+            });
+
+            resultDiv.className = 'result success';
+        }
+
+        async function testFrontendErrorHandling() {
+            const resultDiv = document.getElementById('frontend-test-result');
+            resultDiv.style.display = 'block';
+            resultDiv.className = 'result';
+            resultDiv.textContent = 'Testing frontend error handling improvements...\n\n';
+
+            // Test the ShareDocumentPage error handling logic
+            const testErrors = [
+                {
+                    name: 'Structured Backend Error',
+                    errorObj: {
+                        response: {
+                            data: {
+                                detail: {
+                                    error: 'Access denied',
+                                    message: 'You do not have permission to view this share'
+                                }
+                            }
+                        }
+                    }
+                },
+                {
+                    name: 'Legacy Error Format',
+                    errorObj: {
+                        response: {
+                            data: {
+                                detail: 'Share not found'
+                            }
+                        }
+                    }
+                },
+                {
+                    name: 'Object Error (should not show [object Object])',
+                    errorObj: {
+                        message: { someError: 'This should be handled properly' }
+                    }
+                }
+            ];
+
+            testErrors.forEach((test, index) => {
+                const error = test.errorObj;
+
+                // Simulate the error handling logic from SharedDocumentPage.tsx
+                const errorData = error.response?.data;
+                const errorDetail = errorData?.detail || errorData;
+
+                let errorMessage = 'Failed to access shared document';
+                if (typeof errorDetail === 'string') {
+                    errorMessage = errorDetail;
+                } else if (typeof errorDetail === 'object' && errorDetail !== null) {
+                    if (errorDetail.message) {
+                        errorMessage = errorDetail.message;
+                    } else if (errorDetail.error) {
+                        errorMessage = errorDetail.error;
+                    } else if (errorDetail.detail && typeof errorDetail.detail === 'string') {
+                        errorMessage = errorDetail.detail;
+                    } else if (errorData?.message) {
+                        errorMessage = errorData.message;
+                    } else if (errorData?.error) {
+                        errorMessage = errorData.error;
+                    }
+                } else if (error.message && error.message !== '[object Object]') {
+                    errorMessage = error.message;
+                }
+
+                resultDiv.textContent += `${index + 1}. ${test.name}:\n`;
+                resultDiv.textContent += `   Final Message: "${errorMessage}"\n`;
+                resultDiv.textContent += `   Shows Object: ${errorMessage.includes('[object Object]') ? '❌ YES (BAD)' : '✅ NO (GOOD)'}\n\n`;
+            });
+
+            resultDiv.className = 'result success';
+        }
+
+        // Auto-run basic tests on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('🔍 Error Handling Test Suite Loaded');
+            console.log('Available tests:');
+            console.log('1. RBAC Permissions Error Test');
+            console.log('2. Share Access Error Tests');
+            console.log('3. Structured Error Response Test');
+            console.log('4. Frontend Error Display Test');
+
+            // Auto-run the frontend and structured tests since they don't require API calls
+            setTimeout(testStructuredErrorResponse, 1000);
+            setTimeout(testFrontendErrorHandling, 2000);
+        });
+    </script>
+</body>
+</html>

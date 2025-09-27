@@ -1,0 +1,27 @@
+Sample Document for External Sharing Test
+
+This is a test document created to demonstrate the external sharing functionality in SecureVault.
+
+Key Features Being Tested:
+- Document upload via UI
+- External share creation
+- Share link generation
+- Preview functionality
+- Download permissions
+
+Test Details:
+- Document Type: Text Document (.txt)
+- File Size: Small (< 1KB)
+- Content: Plain text for easy verification
+- Encryption: Zero-knowledge client-side encryption
+- Share Type: External (no authentication required)
+- Permissions: Preview + Download
+
+Expected Behavior:
+1. Document should upload successfully
+2. External share should be created via UI
+3. Share link should be accessible without login
+4. Preview should display content
+5. Download should work correctly
+
+This document serves as a simple test case before testing more complex file formats like Word documents, PDFs, and images.

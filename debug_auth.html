@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Auth Debug Tool</title>
+</head>
+<body>
+    <h1>SecureVault Authentication Debug</h1>
+
+    <div id="token-status"></div>
+    <div id="api-test"></div>
+
+    <button onclick="checkTokens()">Check Stored Tokens</button>
+    <button onclick="testSharesAPI()">Test Shares API</button>
+    <button onclick="clearTokens()">Clear All Tokens</button>
+
+    <script>
+        function checkTokens() {
+            const accessToken = localStorage.getItem('access_token') || sessionStorage.getItem('access_token');
+            const refreshToken = localStorage.getItem('refresh_token') || sessionStorage.getItem('refresh_token');
+            const expiresAt = localStorage.getItem('expires_at') || sessionStorage.getItem('expires_at');
+
+            const now = Date.now();
+            const isExpired = expiresAt ? parseInt(expiresAt) < now : 'Unknown';
+
+            document.getElementById('token-status').innerHTML = `
+                <h3>Token Status:</h3>
+                <p><strong>Access Token:</strong> ${accessToken ? 'Present ✅' : 'Missing ❌'}</p>
+                <p><strong>Refresh Token:</strong> ${refreshToken ? 'Present ✅' : 'Missing ❌'}</p>
+                <p><strong>Expires At:</strong> ${expiresAt ? new Date(parseInt(expiresAt)).toLocaleString() : 'Unknown'}</p>
+                <p><strong>Is Expired:</strong> ${isExpired}</p>
+                <p><strong>Current Time:</strong> ${new Date().toLocaleString()}</p>
+                ${accessToken ? `<p><strong>Token Preview:</strong> ${accessToken.substring(0, 50)}...</p>` : ''}
+            `;
+        }
+
+        async function testSharesAPI() {
+            const accessToken = localStorage.getItem('access_token') || sessionStorage.getItem('access_token');
+
+            if (!accessToken) {
+                document.getElementById('api-test').innerHTML = '<p style="color: red;">❌ No access token found!</p>';
+                return;
+            }
+
+            try {
+                const response = await fetch('http://localhost:8002/api/v1/shares/document/1', {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${accessToken}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                const data = await response.text();
+
+                document.getElementById('api-test').innerHTML = `
+                    <h3>API Test Result:</h3>
+                    <p><strong>Status:</strong> ${response.status} ${response.statusText}</p>
+                    <p><strong>Response:</strong></p>
+                    <pre style="background: #f5f5f5; padding: 10px;">${data}</pre>
+                `;
+
+            } catch (error) {
+                document.getElementById('api-test').innerHTML = `
+                    <h3>API Test Error:</h3>
+                    <p style="color: red;">${error.message}</p>
+                `;
+            }
+        }
+
+        function clearTokens() {
+            localStorage.clear();
+            sessionStorage.clear();
+            document.getElementById('token-status').innerHTML = '<p style="color: green;">✅ All tokens cleared!</p>';
+        }
+
+        // Auto-check on load
+        checkTokens();
+    </script>
+</body>
+</html>

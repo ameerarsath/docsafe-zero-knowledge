@@ -41,7 +41,7 @@ class Settings(BaseSettings):
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
     
     # Database Settings
-    DATABASE_URL: str = "postgresql://securevault_user:securevault_password@db:5432/securevault"
+    DATABASE_URL: str = "postgresql://postgres:password@localhost:5430/securevault"
     DB_ECHO: bool = False
     DB_POOL_SIZE: int = 5
     DB_MAX_OVERFLOW: int = 10
@@ -59,6 +59,9 @@ class Settings(BaseSettings):
     REDIS_HEALTH_CHECK_INTERVAL: int = Field(default=30, description="Redis health check interval in seconds")
     TEST_REDIS_URL: Optional[str] = None
     
+    # Frontend URL for share links
+    FRONTEND_URL: str = "http://localhost:3005"
+
     # CORS Settings
     CORS_ORIGINS: List[str] = Field(default_factory=lambda: ["http://localhost:3000", "http://localhost:3005", "http://localhost:3006", "http://localhost:3008", "http://localhost:3009", "http://localhost:3010", "http://localhost:3013", "http://frontend:3000", "http://127.0.0.1:3005", "http://127.0.0.1:3006", "http://127.0.0.1:3008", "http://127.0.0.1:3009", "http://127.0.0.1:3010", "http://127.0.0.1:3013"])
     CORS_ALLOW_CREDENTIALS: bool = True

@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Image Preview Fix</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f8f9fa;
+        }
+        .test-card {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .status {
+            padding: 8px 16px;
+            border-radius: 4px;
+            font-weight: bold;
+            display: inline-block;
+            margin: 10px 0;
+        }
+        .status.success { background-color: #d4edda; color: #155724; }
+        .status.error { background-color: #f8d7da; color: #721c24; }
+        .status.info { background-color: #d1ecf1; color: #0c5460; }
+        .preview-container {
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 15px 0;
+            text-align: center;
+        }
+        .test-button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        .test-button:hover {
+            background-color: #0056b3;
+        }
+        .test-results {
+            background-color: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 4px;
+            padding: 15px;
+            margin: 10px 0;
+            font-family: monospace;
+            white-space: pre-wrap;
+        }
+    </style>
+</head>
+<body>
+    <h1>🖼️ SecureVault Image Preview Fix Test</h1>
+    <p>This page tests the image preview functionality for shared documents in SecureVault.</p>
+
+    <div class="test-card">
+        <h2>1. Backend Preview Endpoint Test</h2>
+        <p>Testing the new shared document preview endpoint that decrypts images.</p>
+        <button class="test-button" onclick="testBackendPreview()">Test Backend Preview</button>
+        <div id="backend-test-results" class="test-results" style="display: none;"></div>
+        <div id="backend-preview" class="preview-container" style="display: none;"></div>
+    </div>
+
+    <div class="test-card">
+        <h2>2. Frontend Integration Test</h2>
+        <p>Testing the SharedDocumentPreview component integration.</p>
+        <button class="test-button" onclick="testFrontendIntegration()">Test Frontend</button>
+        <div id="frontend-test-results" class="test-results" style="display: none;"></div>
+    </div>
+
+    <div class="test-card">
+        <h2>3. Full Workflow Test</h2>
+        <p>Testing the complete image preview workflow from share URL to rendered image.</p>
+        <div>
+            <strong>Test Share URL:</strong>
+            <a href="http://localhost:3005/share/XzHSfUJt9cOQ6a1VJpLbpWmiu4OncFvzeqKqfeeJZSA" target="_blank">
+                http://localhost:3005/share/XzHSfUJt9cOQ6a1VJpLbpWmiu4OncFvzeqKqfeeJZSA
+            </a>
+        </div>
+        <div class="status info">
+            Expected Result: Image should display in preview instead of "Image format not supported" error.
+        </div>
+        <button class="test-button" onclick="openTestShare()">Open Test Share</button>
+    </div>
+
+    <div class="test-card">
+        <h2>4. MIME Type Validation</h2>
+        <p>Ensuring proper MIME type handling for different image formats.</p>
+        <button class="test-button" onclick="testMimeTypes()">Test MIME Types</button>
+        <div id="mime-test-results" class="test-results" style="display: none;"></div>
+    </div>
+
+    <script>
+        const SHARE_TOKEN = 'XzHSfUJt9cOQ6a1VJpLbpWmiu4OncFvzeqKqfeeJZSA';
+        const API_BASE = 'http://localhost:8002';
+
+        async function testBackendPreview() {
+            const resultsDiv = document.getElementById('backend-test-results');
+            const previewDiv = document.getElementById('backend-preview');
+            resultsDiv.style.display = 'block';
+            previewDiv.style.display = 'none';
+
+            try {
+                resultsDiv.textContent = 'Testing backend preview endpoint...\n';
+
+                // Test the preview endpoint
+                const response = await fetch(`${API_BASE}/api/v1/shares/${SHARE_TOKEN}/preview`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({})
+                });
+
+                resultsDiv.textContent += `Response Status: ${response.status}\n`;
+                resultsDiv.textContent += `Response Headers:\n${JSON.stringify(Object.fromEntries(response.headers.entries()), null, 2)}\n`;
+
+                if (response.ok && response.headers.get('content-type')?.startsWith('image/')) {
+                    resultsDiv.textContent += '✅ SUCCESS: Got image response!\n';
+
+                    // Create image preview
+                    const blob = await response.blob();
+                    const objectUrl = URL.createObjectURL(blob);
+
+                    previewDiv.innerHTML = `
+                        <h3>Preview Result:</h3>
+                        <img src="${objectUrl}" alt="Shared Image" style="max-width: 500px; max-height: 400px; border: 1px solid #ccc;">
+                        <p>Image Size: ${blob.size} bytes</p>
+                        <p>MIME Type: ${blob.type}</p>
+                    `;
+                    previewDiv.style.display = 'block';
+
+                } else {
+                    const errorText = await response.text();
+                    resultsDiv.textContent += `❌ ERROR: ${errorText}\n`;
+                }
+
+            } catch (error) {
+                resultsDiv.textContent += `❌ NETWORK ERROR: ${error.message}\n`;
+            }
+        }
+
+        async function testFrontendIntegration() {
+            const resultsDiv = document.getElementById('frontend-test-results');
+            resultsDiv.style.display = 'block';
+
+            resultsDiv.textContent = 'Testing frontend integration...\n';
+
+            // Check if the frontend is running
+            try {
+                const response = await fetch('http://localhost:3005/', { method: 'HEAD' });
+                if (response.ok) {
+                    resultsDiv.textContent += '✅ Frontend is running on port 3005\n';
+                } else {
+                    resultsDiv.textContent += '❌ Frontend not responding\n';
+                }
+            } catch (error) {
+                resultsDiv.textContent += '❌ Frontend not accessible: ' + error.message + '\n';
+            }
+
+            // Check backend API
+            try {
+                const response = await fetch(`${API_BASE}/api/v1/shares/${SHARE_TOKEN}/access`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({})
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    resultsDiv.textContent += '✅ Backend API is working\n';
+                    resultsDiv.textContent += `Document: ${data.document.name}\n`;
+                    resultsDiv.textContent += `MIME Type: ${data.document.mime_type}\n`;
+                    resultsDiv.textContent += `Permissions: ${data.permissions.join(', ')}\n`;
+                } else {
+                    resultsDiv.textContent += '❌ Backend API error: ' + response.status + '\n';
+                }
+            } catch (error) {
+                resultsDiv.textContent += '❌ Backend API not accessible: ' + error.message + '\n';
+            }
+        }
+
+        function openTestShare() {
+            window.open('http://localhost:3005/share/' + SHARE_TOKEN, '_blank');
+        }
+
+        async function testMimeTypes() {
+            const resultsDiv = document.getElementById('mime-test-results');
+            resultsDiv.style.display = 'block';
+
+            resultsDiv.textContent = 'Testing MIME type detection...\n';
+
+            // Test different image formats
+            const imageFormats = [
+                'image/png',
+                'image/jpeg',
+                'image/gif',
+                'image/webp',
+                'image/svg+xml'
+            ];
+
+            for (const mimeType of imageFormats) {
+                const isSupported = mimeType.startsWith('image/');
+                resultsDiv.textContent += `${mimeType}: ${isSupported ? '✅' : '❌'} Supported\n`;
+            }
+
+            // Test current document MIME type
+            try {
+                const response = await fetch(`${API_BASE}/api/v1/shares/${SHARE_TOKEN}/access`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({})
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    const mimeType = data.document.mime_type;
+                    resultsDiv.textContent += `\nCurrent Document MIME: ${mimeType}\n`;
+                    resultsDiv.textContent += `Should use image preview: ${mimeType.startsWith('image/') ? '✅ YES' : '❌ NO'}\n`;
+                }
+            } catch (error) {
+                resultsDiv.textContent += '\n❌ Could not check current document MIME type\n';
+            }
+        }
+
+        // Auto-run some tests on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('🖼️ Image Preview Fix Test Page Loaded');
+            console.log('📋 Available Tests:');
+            console.log('1. Backend Preview Endpoint');
+            console.log('2. Frontend Integration');
+            console.log('3. Full Workflow');
+            console.log('4. MIME Type Validation');
+        });
+    </script>
+</body>
+</html>

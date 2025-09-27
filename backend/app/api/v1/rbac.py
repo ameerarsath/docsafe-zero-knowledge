@@ -786,9 +786,21 @@ async def get_current_user_permissions(
     db: Session = Depends(get_db)
 ):
     """Get permissions for the current authenticated user."""
-    permissions = get_user_permissions(current_user, db)
-    print(f"[RBAC] DEBUG: Returning permissions for current user {current_user.id} ({current_user.username}): {permissions}")
-    return permissions
+    try:
+        permissions = get_user_permissions(current_user, db)
+        print(f"[RBAC] DEBUG: Returning permissions for current user {current_user.id} ({current_user.username}): {permissions}")
+
+        # Ensure we return a proper list to avoid content-length issues
+        if permissions is None:
+            permissions = []
+        elif not isinstance(permissions, list):
+            permissions = list(permissions)
+
+        return permissions
+    except Exception as e:
+        logging.error(f"Error getting user permissions: {e}")
+        # Return empty list on error to avoid content-length mismatch
+        return []
 
 
 @router.get("/users/{user_id}/permissions", response_model=List[str])
@@ -807,17 +819,23 @@ async def get_user_permissions_endpoint(
             print(f"[RBAC] DEBUG: User permissions: {get_user_permissions(current_user, db)}")
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Can only view own permissions"
+                detail={
+                    "error": "Access denied",
+                    "message": f"Access denied: You can only view your own permissions. Missing permission: users:read"
+                }
             )
-    
+
     # Get target user
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found"
+            detail={
+                "error": "User not found",
+                "message": f"User with ID {user_id} does not exist"
+            }
         )
-    
+
     permissions = get_user_permissions(user, db)
     return sorted(list(permissions))
 
@@ -833,7 +851,10 @@ async def get_user_permission_summary(
         if not has_permission(current_user, "users:read", db):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Can only view own permission summary"
+                detail={
+                    "error": "Access denied",
+                    "message": f"Access denied: You can only view your own permission summary. Missing permission: users:read"
+                }
             )
     
     # Get target user

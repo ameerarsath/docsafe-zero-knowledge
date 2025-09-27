@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Share Validation Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        .test-section { margin-bottom: 30px; padding: 20px; border: 1px solid #ddd; border-radius: 5px; }
+        .result { padding: 10px; margin-top: 10px; border-radius: 3px; }
+        .success { background-color: #d4edda; color: #155724; }
+        .error { background-color: #f8d7da; color: #721c24; }
+        .warning { background-color: #fff3cd; color: #856404; }
+        button { padding: 10px 15px; margin: 5px; background: #007bff; color: white; border: none; cursor: pointer; border-radius: 3px; }
+        button:hover { background: #0056b3; }
+        input[type="password"] { padding: 5px; margin: 5px; width: 200px; }
+    </style>
+</head>
+<body>
+    <h1>Share Validation Test</h1>
+
+    <div class="test-section">
+        <h2>Test Encryption Password Validation</h2>
+        <p><strong>Document ID 48:</strong> Document48.pdf (Owner: user ID 1, Current user: rahumana ID 2)</p>
+        <p><strong>Expected behavior:</strong> Lightweight validation should work, full validation should fail with access error</p>
+
+        <div>
+            <label for="password">Encryption Password:</label>
+            <input type="password" id="password" placeholder="Enter password" value="JHNpAZ39g!&Y">
+            <button onclick="testValidation()">Test Validation</button>
+        </div>
+
+        <div id="validationResult"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>Mock Document Data</h2>
+        <pre id="mockDocument"></pre>
+    </div>
+
+    <script type="module">
+        // Mock document object based on the database data
+        const mockDocument = {
+            id: 48,
+            name: 'Document48.pdf',
+            owner_id: 1,
+            is_encrypted: true,
+            encryption_key_id: 'test-key-id-123',
+            encryption_iv: 'mock_iv_base64_string',
+            encryption_auth_tag: 'mock_auth_tag_base64_string',
+            mime_type: 'application/pdf',
+            storage_path: null // This causes the 404 error
+        };
+
+        document.getElementById('mockDocument').textContent = JSON.stringify(mockDocument, null, 2);
+
+        // Mock encryption utilities
+        window.mockEncryption = {
+            async deriveKey(password, salt) {
+                console.log('🔑 Deriving key from password with salt:', salt);
+                if (!password || password.length < 8) {
+                    throw new Error('Password too short');
+                }
+                // Simulate successful key derivation
+                return { algorithm: 'AES-GCM', extractable: false };
+            }
+        };
+
+        // Mock validation functions
+        window.testValidationFunctions = {
+            async validateEncryptionPassword(document, encryptionPassword) {
+                console.log('🔐 Testing lightweight validation...');
+
+                if (!document.encryption_iv || !document.encryption_auth_tag || !document.encryption_key_id) {
+                    console.log('⚠️ Document is not encrypted or missing encryption metadata');
+                    return;
+                }
+
+                try {
+                    const derivedKey = await window.mockEncryption.deriveKey(encryptionPassword, document.encryption_key_id || 'default-salt');
+                    if (!derivedKey) {
+                        throw new Error('Unable to derive encryption key from password');
+                    }
+                    console.log('✅ Lightweight validation successful');
+                    return true;
+                } catch (keyDerivationError) {
+                    console.error('❌ Key derivation failed:', keyDerivationError);
+                    throw new Error('Invalid encryption password format.');
+                }
+            },
+
+            async validateEncryptionPasswordWithDownload(document, encryptionPassword) {
+                console.log('🔐 Testing full validation with download...');
+
+                // Simulate the download request that fails
+                try {
+                    const response = await fetch(`/api/v1/documents/${document.id}/download`, {
+                        method: 'GET',
+                        headers: {
+                            'Authorization': `Bearer ${localStorage.getItem('access_token') || 'mock_token'}`
+                        }
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`Failed to download document: ${response.status} ${response.statusText}`);
+                    }
+
+                    // This won't be reached in our test case
+                    console.log('✅ Full validation successful');
+                    return true;
+                } catch (error) {
+                    console.error('❌ Full validation failed:', error);
+
+                    const errorMessage = error.message.toLowerCase();
+                    if (errorMessage.includes('404') || errorMessage.includes('not found')) {
+                        throw new Error('Document not accessible. Please ensure you have permission to access this document.');
+                    } else if (errorMessage.includes('403') || errorMessage.includes('forbidden')) {
+                        throw new Error('Access denied. You do not have permission to access this document.');
+                    }
+                    throw error;
+                }
+            }
+        };
+
+        window.testValidation = async function() {
+            const password = document.getElementById('password').value;
+            const resultDiv = document.getElementById('validationResult');
+
+            if (!password) {
+                resultDiv.innerHTML = '<div class="result error">Please enter a password</div>';
+                return;
+            }
+
+            resultDiv.innerHTML = '<div class="result">Testing validation...</div>';
+
+            let validationPassed = false;
+            let validationError = null;
+
+            try {
+                // First try the lightweight validation approach
+                await window.testValidationFunctions.validateEncryptionPassword(mockDocument, password);
+                console.log('✅ Encryption password validated successfully (lightweight)');
+                validationPassed = true;
+                resultDiv.innerHTML += '<div class="result success">✅ Lightweight validation passed</div>';
+            } catch (error) {
+                console.warn('⚠️ Lightweight validation failed, trying full validation...', error);
+                resultDiv.innerHTML += '<div class="result warning">⚠️ Lightweight validation failed: ' + error.message + '</div>';
+
+                // If lightweight validation fails, try full validation as fallback
+                try {
+                    await window.testValidationFunctions.validateEncryptionPasswordWithDownload(mockDocument, password);
+                    console.log('✅ Encryption password validated successfully (full validation)');
+                    validationPassed = true;
+                    resultDiv.innerHTML += '<div class="result success">✅ Full validation passed</div>';
+                } catch (fullValidationError) {
+                    console.error('❌ Full encryption password validation failed:', fullValidationError);
+
+                    // Provide specific error messages based on the error type
+                    if (fullValidationError instanceof Error) {
+                        const errorMsg = fullValidationError.message.toLowerCase();
+                        if (errorMsg.includes('not accessible') || errorMsg.includes('permission')) {
+                            validationError = 'Cannot validate encryption password: Document access denied. You may not have permission to access this document for sharing.';
+                        } else if (errorMsg.includes('moved') || errorMsg.includes('deleted') || errorMsg.includes('missing')) {
+                            validationError = 'Cannot validate encryption password: Document file appears to be missing from storage. Please contact an administrator.';
+                        } else if (errorMsg.includes('403') || errorMsg.includes('forbidden')) {
+                            validationError = 'Access denied: You do not have permission to share this document.';
+                        } else if (errorMsg.includes('404') || errorMsg.includes('not found')) {
+                            validationError = 'Document not found or inaccessible. The document may have been moved or you may lack access permissions.';
+                        } else if (errorMsg.includes('format')) {
+                            validationError = 'Invalid encryption password format. Please check your password and try again.';
+                        } else {
+                            validationError = 'Invalid encryption password. Please verify the password is correct and try again.';
+                        }
+                    } else {
+                        validationError = 'Unable to validate encryption password. Please try again or contact support.';
+                    }
+
+                    resultDiv.innerHTML += '<div class="result error">❌ Full validation failed: ' + fullValidationError.message + '</div>';
+                }
+            }
+
+            if (!validationPassed && validationError) {
+                resultDiv.innerHTML += '<div class="result error">Final Error: ' + validationError + '</div>';
+
+                const proceedWithoutValidation = confirm(
+                    `${validationError}\n\n` +
+                    'Would you like to proceed with share creation anyway? ' +
+                    'Note: If the encryption password is incorrect, recipients may not be able to access the shared document.'
+                );
+
+                if (proceedWithoutValidation) {
+                    resultDiv.innerHTML += '<div class="result warning">⚠️ User chose to proceed without password validation</div>';
+                } else {
+                    resultDiv.innerHTML += '<div class="result error">Share creation cancelled.</div>';
+                }
+            } else if (validationPassed) {
+                resultDiv.innerHTML += '<div class="result success">🎉 Validation successful! Share creation can proceed.</div>';
+            }
+        };
+    </script>
+</body>
+</html>

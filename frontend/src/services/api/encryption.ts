@@ -205,18 +205,88 @@ export const encryptionApi = {
   },
 
   /**
-   * List user's encryption keys
+   * List user's encryption keys with fallback to alternative endpoint
    */
   async listKeys(includeInactive?: boolean): Promise<EncryptionKeyList> {
     const params = includeInactive ? '?include_inactive=true' : '';
-    const response = await apiRequest<any>('GET', `/api/v1/encryption/keys${params}`);
-    if (!response.success || !response.data) {
-      throw new EncryptionApiError('Failed to list encryption keys', 500, response.error);
+    const primaryEndpoint = `/api/v1/encryption/keys${params}`;
+    const fallbackEndpoint = `/api/v1/encryption/keys/all${params}`;
+
+    console.log('Requesting encryption keys from:', primaryEndpoint);
+
+    try {
+      // Try primary endpoint first
+      const response = await apiRequest<any>('GET', primaryEndpoint);
+
+      console.log('Encryption keys response:', {
+        success: response.success,
+        error: response.error,
+        data: response.data
+      });
+
+      if (!response.success) {
+        const errorMessage = response.error?.detail || 'Failed to list encryption keys';
+        const statusCode = response.error?.status_code || 500;
+        console.error('Encryption keys API error:', errorMessage, 'Status:', statusCode);
+
+        // If it's an encoding error, try the fallback endpoint
+        if (errorMessage.includes('charmap') || errorMessage.includes('codec') || errorMessage.includes('encoding')) {
+          console.log('Encoding error detected, trying fallback endpoint:', fallbackEndpoint);
+          return this.listKeysFallback(fallbackEndpoint, includeInactive);
+        }
+
+        throw new EncryptionApiError(errorMessage, statusCode, response.error);
+      }
+
+      if (!response.data) {
+        throw new EncryptionApiError('No data received from encryption keys API', 500, response.error);
+      }
+
+      // Transform the keys in the response
+      const transformedKeys = response.data.keys?.map(transformEncryptionKeyResponse) || [];
+
+      console.log('Transformed encryption keys:', transformedKeys.length, 'keys');
+
+      return {
+        keys: transformedKeys,
+        total: response.data.total || 0,
+        activeCount: response.data.active_count || 0
+      };
+    } catch (error) {
+      // If primary endpoint fails with encoding error, try fallback
+      if (error instanceof EncryptionApiError &&
+          (error.message.includes('charmap') || error.message.includes('codec') || error.message.includes('encoding'))) {
+        console.log('Primary endpoint failed with encoding error, trying fallback');
+        return this.listKeysFallback(fallbackEndpoint, includeInactive);
+      }
+      throw error;
     }
-    
+  },
+
+  /**
+   * Fallback method for listing keys when primary endpoint has encoding issues
+   */
+  async listKeysFallback(endpoint: string, includeInactive?: boolean): Promise<EncryptionKeyList> {
+    console.log('Using fallback endpoint:', endpoint);
+
+    const response = await apiRequest<any>('GET', endpoint);
+
+    if (!response.success) {
+      const errorMessage = response.error?.detail || 'Failed to list encryption keys (fallback)';
+      const statusCode = response.error?.status_code || 500;
+      console.error('Fallback encryption keys API error:', errorMessage, 'Status:', statusCode);
+      throw new EncryptionApiError(errorMessage, statusCode, response.error);
+    }
+
+    if (!response.data) {
+      throw new EncryptionApiError('No data received from fallback encryption keys API', 500, response.error);
+    }
+
     // Transform the keys in the response
     const transformedKeys = response.data.keys?.map(transformEncryptionKeyResponse) || [];
-    
+
+    console.log('Fallback transformed encryption keys:', transformedKeys.length, 'keys');
+
     return {
       keys: transformedKeys,
       total: response.data.total || 0,
@@ -296,6 +366,17 @@ export const encryptionApi = {
     const response = await apiRequest<EncryptionHealthCheck>('GET', '/api/v1/encryption/health');
     if (!response.success || !response.data) {
       throw new EncryptionApiError('Failed to check encryption health', 500, response.error);
+    }
+    return response.data;
+  },
+
+  /**
+   * Test UTF-8 encoding functionality
+   */
+  async testEncoding(): Promise<any> {
+    const response = await apiRequest<any>('GET', '/api/v1/encryption/encoding-test');
+    if (!response.success || !response.data) {
+      throw new EncryptionApiError('Failed to test encoding', 500, response.error);
     }
     return response.data;
   }

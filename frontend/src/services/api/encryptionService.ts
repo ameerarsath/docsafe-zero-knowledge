@@ -267,11 +267,11 @@ export const encryptionApi = {
         });
 
         // Derive CryptoKey for actual encryption
-        const { deriveKey } = await import('../../utils/encryption');
+        const { deriveKey, base64ToArrayBuffer } = await import('../../utils/encryption');
         const cryptoKey = await deriveKey({
           password,
-          salt: new Uint8Array(atob(derivationResult.salt).split('').map(c => c.charCodeAt(0))),
-          iterations: 100000
+          salt: new Uint8Array(base64ToArrayBuffer(derivationResult.salt)),
+          iterations: derivationResult.iterations || 500000 // Use backend iterations or secure default
         });
 
         // Create session key data with derived key
@@ -298,7 +298,7 @@ export const encryptionApi = {
         const cryptoKey = await deriveKey({
           password,
           salt,
-          iterations: 100000
+          iterations: 500000 // Use secure default matching backend
         });
         
         const encoder = new TextEncoder();
@@ -369,11 +369,8 @@ export const encryptionApi = {
       SessionKeyManager.extendSession();
       
       // Convert base64 response back to blob
-      const binaryData = atob(response.data.decrypted_data);
-      const bytes = new Uint8Array(binaryData.length);
-      for (let i = 0; i < binaryData.length; i++) {
-        bytes[i] = binaryData.charCodeAt(i);
-      }
+      const { base64ToArrayBuffer } = await import('../../utils/encryption');
+      const bytes = new Uint8Array(base64ToArrayBuffer(response.data.decrypted_data));
       return new Blob([bytes]);
     }
     throw new Error(response.error?.detail || 'Failed to decrypt document');

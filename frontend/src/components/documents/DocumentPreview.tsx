@@ -10,21 +10,29 @@
  */
 
 import React, { useState, useCallback, useEffect } from 'react';
-import { 
-  X, 
-  Download, 
-  Share2, 
-  ZoomIn, 
-  ZoomOut, 
-  RotateCw, 
+import {
+  X,
+  Download,
+  Share2,
+  ZoomIn,
+  ZoomOut,
+  RotateCw,
   Eye,
   FileText,
   AlertCircle,
-  Loader2
+  Loader2,
+  Maximize2,
+  Minimize2,
+  FileDown
 } from 'lucide-react';
 import { Document } from '../../hooks/useDocuments';
 import { documentsApi } from '../../services/api/documents';
 import { useEncryption } from '../../hooks/useEncryption';
+import { DocumentShareDialog } from './DocumentShareDialog';
+import { getDocumentPreview } from '../../services/documentPreview';
+import '../../styles/document-preview.css';
+import '../../styles/docx-preview.css';
+
 
 interface DocumentPreviewProps {
   document: Document;
@@ -38,17 +46,21 @@ interface DocumentPreviewProps {
 interface PreviewState {
   content: string | null;
   isLoading: boolean;
-  error: string | null;
+  error: string | any | null;
   zoom: number;
   rotation: number;
   needsPassword: boolean;
   isDecrypting: boolean;
   decryptedBlob: Blob | null;
   blobUrl: string | null;
+  isFullscreen: boolean;
+  pluginResult: any | null;
+  isGeneratingPreview: boolean;
+  decryptedDocumentId: number | null; // Track which document is decrypted
 }
 
 export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
-  document,
+  document: currentDocument,
   isOpen,
   onClose,
   onDownload,
@@ -64,14 +76,20 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
     needsPassword: true,
     isDecrypting: false,
     decryptedBlob: null,
-    blobUrl: null
+    blobUrl: null,
+    isFullscreen: false,
+    pluginResult: null,
+    isGeneratingPreview: false,
+    decryptedDocumentId: null
   });
 
   const [password, setPassword] = useState('');
   const [showPasswordDialog, setShowPasswordDialog] = useState(false);
+  const [showShareDialog, setShowShareDialog] = useState(false);
   
   // Use encryption hook for decryption
   const { decryptDownloadedFile, keys } = useEncryption();
+
 
   /**
    * Update state helper
@@ -81,33 +99,131 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
   }, []);
 
   /**
-   * Check if document type is previewable
+   * Check if document type is previewable using plugin system
    */
   const isPreviewable = useCallback((doc: Document): boolean => {
-    if (!doc.mime_type) return false;
-    
+    if (!doc.mime_type && !doc.name) return false;
+
+    // Import the plugin registry dynamically to check support
+    try {
+      import('../../services/documentPreview').then(({ previewPluginRegistry }) => {
+        const plugin = previewPluginRegistry.getPlugin(doc.mime_type || '', doc.name);
+        return !!plugin;
+      });
+    } catch (error) {
+      console.warn('Plugin system not available, using fallback detection');
+    }
+
+    // Fallback to basic mime type checking
     const previewableTypes = [
-      'text/plain',
-      'text/csv',
-      'text/markdown',
-      'application/json',
-      'application/xml',
-      'image/jpeg',
-      'image/png',
-      'image/gif',
-      'image/webp',
-      'image/svg+xml',
-      'application/pdf'
+      'text/plain', 'text/csv', 'text/markdown', 'application/json', 'application/xml',
+      'image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/svg+xml',
+      'application/pdf',
+      'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/vnd.ms-powerpoint', 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
     ];
-    
-    return previewableTypes.includes(doc.mime_type);
+
+    const extension = doc.name.toLowerCase().split('.').pop();
+    const supportedExtensions = ['pdf', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'txt', 'csv', 'md', 'json', 'xml', 'xlsx', 'xls', 'docx', 'doc', 'pptx', 'ppt'];
+
+    return previewableTypes.includes(doc.mime_type || '') ||
+           (extension && supportedExtensions.includes(extension));
   }, []);
 
   /**
-   * Decrypt and load preview content
+   * Generate preview using enhanced client-side plugin system
    */
+  const generateDocumentPreview = useCallback(async (blob: Blob, fileName: string, mimeType: string) => {
+    console.log('🚀 generateDocumentPreview called with client-side priority:', { fileName, mimeType, size: blob.size });
+    updateState({ isGeneratingPreview: true, error: null });
+
+    try {
+      console.log('🎯 Calling enhanced getDocumentPreview with client-side processing...');
+
+      // Force client-side processing for non-PDF documents to bypass server issues
+      const isNonPDF = !mimeType.includes('pdf') && !fileName.toLowerCase().endsWith('.pdf');
+      const options = isNonPDF ? {
+        forceClientSide: true,
+        bypassServer: true,
+        metadata: {
+          modifiedDate: currentDocument.updated_at ? new Date(currentDocument.updated_at).toLocaleDateString() : new Date().toLocaleDateString()
+        }
+      } : {
+        metadata: {
+          modifiedDate: currentDocument.updated_at ? new Date(currentDocument.updated_at).toLocaleDateString() : new Date().toLocaleDateString()
+        }
+      };
+
+      const previewResult = await getDocumentPreview(blob, fileName, mimeType, options);
+
+      console.log('✅ Client-side plugin preview result received:', {
+        type: previewResult.type,
+        format: previewResult.format,
+        pluginName: previewResult.metadata?.pluginName,
+        processingTime: previewResult.metadata?.processingTime,
+        hasContent: !!previewResult.content,
+        extractionMethod: previewResult.metadata?.extractionMethod
+      });
+
+      // Immediately set plugin result and clear all loading states
+      updateState({
+        pluginResult: previewResult,
+        content: previewResult.format === 'html' ? previewResult.content : null,
+        isGeneratingPreview: false,
+        isLoading: false,
+        isDecrypting: false,
+        error: null
+      });
+
+      // Log successful processing
+      if (previewResult.metadata?.extractionMethod) {
+        console.log(`✅ Document processed successfully using method: ${previewResult.metadata.extractionMethod}`);
+      }
+
+    } catch (error) {
+      console.error('❌ Client-side plugin preview generation failed:', error);
+
+      // Provide helpful error message based on error type
+      let errorMessage = 'Document preview failed';
+
+      if (error instanceof Error) {
+        if (error.message.includes('ZIP validation failed')) {
+          errorMessage = 'Document format issue detected, but processing may still be possible';
+        } else if (error.message.includes('Package not found')) {
+          errorMessage = 'Client-side processing bypassed server issues - document content may still be available';
+        } else if (error.message.includes('Office document processing not available')) {
+          errorMessage = 'Using enhanced client-side processing for this document type';
+        } else {
+          errorMessage = `Preview processing error: ${error.message}`;
+        }
+      }
+
+      updateState({
+        pluginResult: {
+          type: 'error',
+          format: 'html',
+          error: errorMessage,
+          content: `<div class="error-content">
+            <h3>⚠️ Preview Processing Notice</h3>
+            <p>${errorMessage}</p>
+            <p>The document is available for download and should open normally in the appropriate application.</p>
+            <ul>
+              <li>Download the file using the download button</li>
+              <li>Open with the appropriate software</li>
+              <li>The file content should be intact despite preview limitations</li>
+            </ul>
+          </div>`
+        },
+        isGeneratingPreview: false,
+        isLoading: false,
+        isDecrypting: false
+      });
+    }
+  }, [updateState, currentDocument]);
+
   const decryptAndPreview = useCallback(async (encryptionPassword: string) => {
-    if (!document || !isPreviewable(document)) {
+    if (!currentDocument || !isPreviewable(currentDocument)) {
       updateState({ content: null, error: 'Preview not available for this file type' });
       return;
     }
@@ -115,11 +231,11 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
     updateState({ isDecrypting: true, error: null });
 
     try {
-      console.log('🔐 Starting document decryption for preview:', document.name);
+      console.log('🔐 Starting document decryption for preview:', currentDocument.name);
 
       // Fetch the encrypted document data
-      const downloadUrl = `${import.meta.env.VITE_API_URL || 'http://localhost:8002'}/api/v1/documents/${document.id}/download`;
-      console.log('🔗 DOWNLOAD DIAGNOSTIC - Fetching from URL:', downloadUrl);
+      const downloadUrl = `${import.meta.env.VITE_API_URL || 'http://localhost:8002'}/api/v1/documents/${currentDocument.id}/download`;
+      console.log('🔗 DOWNLOAD - Fetching from URL:', downloadUrl);
 
       const response = await fetch(downloadUrl, {
         method: 'GET',
@@ -128,125 +244,482 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
         },
       });
 
-      console.log('🔗 DOWNLOAD DIAGNOSTIC - Response status:', response.status);
-      console.log('🔗 DOWNLOAD DIAGNOSTIC - Content-Length header:', response.headers.get('Content-Length'));
+      console.log('🔗 DOWNLOAD - Response:', {
+        status: response.status,
+        contentLength: response.headers.get('Content-Length'),
+        contentType: response.headers.get('Content-Type')
+      });
 
       if (!response.ok) {
-        // Handle specific HTTP error responses from backend
+        // Enhanced error handling for different HTTP status codes
         let errorMessage = 'Failed to fetch document';
-        
+        let errorType = 'GENERIC_ERROR';
+        let suggestedActions: string[] = [];
+
         try {
           const errorResponse = await response.json();
           if (errorResponse.detail) {
             errorMessage = errorResponse.detail;
           }
+          if (errorResponse.error_type) {
+            errorType = errorResponse.error_type;
+          }
         } catch {
           // If response is not JSON, use default error message based on status
-          if (response.status === 404) {
-            errorMessage = 'Document file not found. The file may have been moved or deleted from storage.';
-          } else if (response.status === 403) {
-            errorMessage = 'Access denied. You do not have permission to view this document.';
-          } else if (response.status === 500) {
-            errorMessage = 'Server error occurred while accessing the document file.';
-          } else {
-            errorMessage = `Failed to fetch document (Status: ${response.status})`;
+          switch (response.status) {
+            case 404:
+              errorMessage = 'Document file not found. The file may have been moved, deleted, or renamed.';
+              errorType = 'FILE_NOT_FOUND';
+              suggestedActions = [
+                'Check if the file still exists in the system',
+                'Verify the document hasn\'t been moved to a different location',
+                'Contact your administrator if this is unexpected',
+                'Try refreshing the page and attempting again'
+              ];
+              break;
+            case 403:
+              errorMessage = 'Access denied. You do not have permission to view this document.';
+              errorType = 'ACCESS_DENIED';
+              suggestedActions = [
+                'Contact the document owner to request access',
+                'Check if your account permissions have changed',
+                'Verify you are logged in with the correct account',
+                'Contact your administrator for permission review'
+              ];
+              break;
+            case 410:
+              errorMessage = 'Document has been permanently deleted and is no longer available.';
+              errorType = 'FILE_DELETED';
+              suggestedActions = [
+                'Check if the document is available in trash/recycle bin',
+                'Contact your administrator about document recovery',
+                'Look for backup copies of the document'
+              ];
+              break;
+            case 422:
+              errorMessage = 'Document format is corrupted or unsupported for preview.';
+              errorType = 'CORRUPTED_FILE';
+              suggestedActions = [
+                'Try downloading the file directly',
+                'Check if the original file was uploaded correctly',
+                'Verify the file format is supported',
+                'Contact support if the issue persists'
+              ];
+              break;
+            case 429:
+              errorMessage = 'Too many requests. Please wait a moment before trying again.';
+              errorType = 'RATE_LIMITED';
+              suggestedActions = [
+                'Wait a few moments and try again',
+                'Avoid rapid successive preview attempts'
+              ];
+              break;
+            case 500:
+              errorMessage = 'Server error occurred while accessing the document file.';
+              errorType = 'SERVER_ERROR';
+              suggestedActions = [
+                'Try refreshing the page',
+                'Wait a few minutes and try again',
+                'Contact technical support if the problem persists'
+              ];
+              break;
+            case 502:
+            case 503:
+            case 504:
+              errorMessage = 'Service temporarily unavailable. Please try again later.';
+              errorType = 'SERVICE_UNAVAILABLE';
+              suggestedActions = [
+                'Wait a few minutes and try again',
+                'Check if there are any system maintenance announcements',
+                'Contact support if the issue continues'
+              ];
+              break;
+            default:
+              errorMessage = `Failed to fetch document (Status: ${response.status})`;
+              errorType = 'HTTP_ERROR';
+              suggestedActions = [
+                'Try refreshing the page',
+                'Check your internet connection',
+                'Contact support with the error code'
+              ];
           }
         }
-        
-        throw new Error(errorMessage);
+
+        const error = new Error(errorMessage);
+        (error as any).type = errorType;
+        (error as any).suggestedActions = suggestedActions;
+        (error as any).statusCode = response.status;
+        throw error;
       }
 
       const encryptedBlob = await response.blob();
-      console.log('📦 Downloaded encrypted blob:', { size: encryptedBlob.size, type: encryptedBlob.type });
-      console.log('📦 DOWNLOAD DIAGNOSTIC - Blob size vs Content-Length:', {
-        blobSize: encryptedBlob.size,
-        contentLength: response.headers.get('Content-Length'),
-        mismatch: encryptedBlob.size !== parseInt(response.headers.get('Content-Length') || '0')
+      console.log('📦 Downloaded blob:', {
+        size: encryptedBlob.size,
+        type: encryptedBlob.type,
+        expectedSize: response.headers.get('Content-Length')
       });
 
-      // Check if document has encryption metadata
-      if (document.encryption_key_id && document.encryption_iv && document.encryption_auth_tag) {
-        console.log('🔑 Decrypting document with metadata:', {
-          keyId: document.encryption_key_id,
-          hasIv: !!document.encryption_iv,
-          hasAuthTag: !!document.encryption_auth_tag
-        });
+      // Check encryption status more robustly
+      const hasLegacyEncryption = !!(currentDocument.encryption_key_id && currentDocument.encryption_iv && currentDocument.encryption_auth_tag);
+      const hasZeroKnowledgeEncryption = !!currentDocument.encrypted_dek;
+      const hasEncryption = hasLegacyEncryption || hasZeroKnowledgeEncryption;
 
-        // Convert blob to ArrayBuffer for decryption
-        const encryptedData = await encryptedBlob.arrayBuffer();
-        
-        // Prepare decryption metadata
-        const decryptionMetadata = {
-          keyId: document.encryption_key_id,
-          iv: document.encryption_iv,
-          authTag: document.encryption_auth_tag,
-          originalName: document.name,
-          mimeType: document.mime_type
+      // For PDFs, always prefer client-side plugin system
+      const isPDF = currentDocument.mime_type === 'application/pdf' || currentDocument.name.toLowerCase().endsWith('.pdf');
+
+      if (isPDF) {
+        console.log('📄 PDF detected - using client-side plugin system');
+
+        if (hasEncryption) {
+          console.log('🔑 PDF appears encrypted, attempting decryption...');
+
+          try {
+            // Check if we have encryption keys available
+            if (!keys || keys.length === 0) {
+              console.warn('⚠️ No encryption keys available, treating PDF as non-encrypted');
+
+              // Clear all loading states immediately when keys are missing
+              updateState({
+                isDecrypting: false,
+                isGeneratingPreview: false,
+                isLoading: false,
+                error: 'No encryption keys available. This document may be unencrypted or you may need to set up encryption keys first.'
+              });
+
+              throw new Error('No encryption keys available');
+            }
+
+            if (hasLegacyEncryption) {
+              console.log('🔄 Decrypting PDF with legacy encryption...');
+
+              const encryptedData = await encryptedBlob.arrayBuffer();
+              const decryptionMetadata = {
+                keyId: currentDocument.encryption_key_id,
+                iv: currentDocument.encryption_iv,
+                authTag: currentDocument.encryption_auth_tag,
+                originalName: currentDocument.name,
+                mimeType: currentDocument.mime_type
+              };
+
+              const decryptedFile = await decryptDownloadedFile(encryptedData, decryptionMetadata, encryptionPassword);
+              console.log('✅ PDF decrypted successfully with legacy encryption');
+
+              const pluginOptions = {
+                metadata: {
+                  modifiedDate: currentDocument.updated_at ? new Date(currentDocument.updated_at).toLocaleDateString() : new Date().toLocaleDateString()
+                }
+              };
+              const previewResult = await getDocumentPreview(decryptedFile, currentDocument.name, currentDocument.mime_type || 'application/pdf', pluginOptions);
+              updateState({
+                pluginResult: previewResult,
+                content: previewResult.format === 'html' ? previewResult.content : null
+              });
+
+              updateState({
+                isDecrypting: false,
+                needsPassword: false,
+                decryptedBlob: decryptedFile,
+                decryptedDocumentId: currentDocument.id
+              });
+
+              setShowPasswordDialog(false);
+              return;
+            } else if (hasZeroKnowledgeEncryption) {
+              console.log('🔄 Zero-knowledge encrypted PDF - fallback to non-encrypted preview');
+              throw new Error('Zero-knowledge encryption not supported for PDF preview yet');
+            }
+
+          } catch (decryptionError) {
+            console.warn('⚠️ PDF decryption failed, treating as non-encrypted:', decryptionError);
+
+            // Clear all loading states when decryption fails
+            updateState({
+              isDecrypting: false,
+              isGeneratingPreview: false,
+              isLoading: false
+            });
+
+            // If this is a critical error (like missing keys), show error instead of continuing
+            if (decryptionError.message?.includes('No encryption keys available')) {
+              return; // Error state already set above
+            }
+
+            // Continue to non-encrypted handling below for other errors
+          }
+        }
+
+        // PDF is not encrypted OR decryption failed - use directly with plugin system
+        console.log('📄 Processing PDF as non-encrypted document');
+        const pluginOptions = {
+          metadata: {
+            modifiedDate: currentDocument.updated_at ? new Date(currentDocument.updated_at).toLocaleDateString() : new Date().toLocaleDateString()
+          }
         };
-
-        // Decrypt the document
-        const decryptedFile = await decryptDownloadedFile(encryptedData, decryptionMetadata, encryptionPassword);
-        console.log('✅ Document decrypted successfully:', decryptedFile.name);
-
-        // Create blob URL for preview
-        const blobUrl = URL.createObjectURL(decryptedFile);
-        
+        const previewResult = await getDocumentPreview(encryptedBlob, currentDocument.name, currentDocument.mime_type || 'application/pdf', pluginOptions);
         updateState({
-          content: document.mime_type === 'application/pdf' ? 'pdf-viewer' : 'decrypted-content',
-          isDecrypting: false,
-          needsPassword: false,
-          decryptedBlob: decryptedFile,
-          blobUrl: blobUrl
+          pluginResult: previewResult,
+          content: previewResult.format === 'html' ? previewResult.content : null
         });
-        
-      } else {
-        console.log('📄 Document not encrypted, using directly');
-        // Document is not encrypted, use directly
-        const blobUrl = URL.createObjectURL(encryptedBlob);
-        
+
         updateState({
-          content: document.mime_type === 'application/pdf' ? 'pdf-viewer' : 'decrypted-content',
           isDecrypting: false,
           needsPassword: false,
           decryptedBlob: encryptedBlob,
-          blobUrl: blobUrl
+          decryptedDocumentId: currentDocument.id
         });
+
+        setShowPasswordDialog(false);
+        return;
+      }
+
+      // For non-PDF files, prioritize client-side processing to bypass server issues
+      if (hasEncryption) {
+        console.log('🔑 Processing encrypted non-PDF document with client-side priority:', {
+          documentId: currentDocument.id,
+          hasLegacyEncryption,
+          hasZeroKnowledgeEncryption,
+          mimeType: currentDocument.mime_type
+        });
+
+        // Try client-side decryption first to bypass server temp file issues
+        if (hasLegacyEncryption) {
+          try {
+            console.log('🔄 Attempting client-side decryption for non-PDF...');
+
+            const encryptedData = await encryptedBlob.arrayBuffer();
+            const decryptionMetadata = {
+              keyId: currentDocument.encryption_key_id,
+              iv: currentDocument.encryption_iv,
+              authTag: currentDocument.encryption_auth_tag,
+              originalName: currentDocument.name,
+              mimeType: currentDocument.mime_type
+            };
+
+            const decryptedFile = await decryptDownloadedFile(encryptedData, decryptionMetadata, encryptionPassword);
+            console.log('✅ Client-side decryption successful for non-PDF');
+
+            // Use client-side plugin processing with document metadata
+            const pluginOptions = {
+              metadata: {
+                modifiedDate: currentDocument.updated_at ? new Date(currentDocument.updated_at).toLocaleDateString() : new Date().toLocaleDateString()
+              }
+            };
+            const previewResult = await getDocumentPreview(decryptedFile, currentDocument.name, currentDocument.mime_type || 'application/octet-stream', pluginOptions);
+
+            // Process plugin result similar to generatePluginPreview
+            updateState({
+              pluginResult: previewResult,
+              content: previewResult.format === 'html' ? previewResult.content : null,
+              isGeneratingPreview: false,
+              isLoading: false,
+              isDecrypting: false,
+              needsPassword: false,
+              decryptedBlob: decryptedFile,
+              decryptedDocumentId: currentDocument.id,
+              error: null
+            });
+
+            setShowPasswordDialog(false);
+            return;
+
+          } catch (clientDecryptError) {
+            console.warn('⚠️ Client-side decryption failed, attempting server fallback:', clientDecryptError);
+
+            // Check if this is a password error that should stop the flow
+            const errorMessage = clientDecryptError.message?.toLowerCase() || '';
+            if (errorMessage.includes('wrong password') ||
+                errorMessage.includes('authentication failed') ||
+                errorMessage.includes('invalid password')) {
+              // Don't attempt fallback for password errors - show immediately
+              updateState({
+                isDecrypting: false,
+                error: '🔑 Incorrect password. Please check your password and try again.'
+              });
+              return;
+            }
+          }
+        }
+
+        // Fallback to server-side preview only if client-side fails
+        try {
+          console.log('🔄 Attempting server-side preview as fallback...');
+          const { documentPreviewService } = await import('../../services/api/documentPreview');
+
+          const previewData = await documentPreviewService.getEncryptedPreview(
+            currentDocument.id,
+            encryptionPassword,
+            { previewType: 'auto' }
+          );
+
+          console.log('✅ Server-side preview generated as fallback:', previewData);
+
+          // Generate plugin preview from the server response
+          if (previewData.type === 'decrypted' && previewData.preview) {
+            const previewBlob = new Blob([previewData.preview], { type: 'text/plain' });
+            const pluginOptions = {
+              metadata: {
+                modifiedDate: currentDocument.updated_at ? new Date(currentDocument.updated_at).toLocaleDateString() : new Date().toLocaleDateString()
+              }
+            };
+            const previewResult = await getDocumentPreview(previewBlob, currentDocument.name, 'text/plain', pluginOptions);
+            updateState({
+              pluginResult: previewResult,
+              content: previewResult.format === 'html' ? previewResult.content : null
+            });
+          } else if (previewData.type === 'thumbnail' && previewData.data_url) {
+            updateState({
+              pluginResult: {
+                type: 'success',
+                format: 'image',
+                dataUrl: previewData.data_url,
+                content: previewData.data || '',
+                metadata: { pluginName: 'ServerPreview', processingTime: '0ms' }
+              }
+            });
+          } else {
+            updateState({
+              pluginResult: {
+                type: 'success',
+                format: 'text',
+                content: previewData.message || previewData.preview || 'Preview generated successfully',
+                metadata: { pluginName: 'ServerPreview', processingTime: '0ms' }
+              }
+            });
+          }
+
+          updateState({
+            isDecrypting: false,
+            needsPassword: false,
+            isGeneratingPreview: false,
+            isLoading: false,
+            error: null
+          });
+
+          setShowPasswordDialog(false);
+          return;
+
+        } catch (previewError) {
+          console.error('❌ Both client-side and server-side processing failed:', previewError);
+          // Continue to general client-side processing below
+        }
       }
       
+      // Client-side decryption fallback (for compatibility)
+      if (currentDocument.encryption_key_id && currentDocument.encryption_iv && currentDocument.encryption_auth_tag) {
+        console.log('🔄 Falling back to client-side decryption');
+
+        try {
+          // Convert blob to ArrayBuffer for decryption
+          const encryptedData = await encryptedBlob.arrayBuffer();
+
+          // Prepare decryption metadata
+          const decryptionMetadata = {
+            keyId: currentDocument.encryption_key_id,
+            iv: currentDocument.encryption_iv,
+            authTag: currentDocument.encryption_auth_tag,
+            originalName: currentDocument.name,
+            mimeType: currentDocument.mime_type
+          };
+
+          // Decrypt the document
+          const decryptedFile = await decryptDownloadedFile(encryptedData, decryptionMetadata, encryptionPassword);
+          console.log('✅ Document decrypted successfully:', decryptedFile.name);
+
+          // Generate plugin preview from decrypted file with document metadata
+          const pluginOptions = {
+            metadata: {
+              modifiedDate: currentDocument.updated_at ? new Date(currentDocument.updated_at).toLocaleDateString() : new Date().toLocaleDateString()
+            }
+          };
+          const previewResult = await getDocumentPreview(decryptedFile, currentDocument.name, currentDocument.mime_type || 'application/octet-stream', pluginOptions);
+
+          // Process plugin result
+          updateState({
+            pluginResult: previewResult,
+            content: previewResult.format === 'html' ? previewResult.content : null,
+            isGeneratingPreview: false,
+            isLoading: false,
+            isDecrypting: false,
+            needsPassword: false,
+            decryptedBlob: decryptedFile,
+            decryptedDocumentId: currentDocument.id,
+            error: null
+          });
+
+          setShowPasswordDialog(false);
+
+        } catch (decryptionError) {
+          console.error('❌ Client-side decryption failed:', decryptionError);
+
+          // Check if this is a password-related error
+          const errorMessage = decryptionError.message?.toLowerCase() || '';
+          if (errorMessage.includes('wrong password') ||
+              errorMessage.includes('authentication failed') ||
+              errorMessage.includes('invalid password') ||
+              errorMessage.includes('decryption failed')) {
+            throw new Error('🔑 Incorrect password. Please check your password and try again.');
+          }
+
+          throw new Error(`Decryption failed: ${decryptionError.message}`);
+        }
+
+      } else {
+        console.log('📄 Document not encrypted, using directly');
+        // Document is not encrypted, use directly for plugin preview
+        const pluginOptions = {
+          metadata: {
+            modifiedDate: currentDocument.updated_at ? new Date(currentDocument.updated_at).toLocaleDateString() : new Date().toLocaleDateString()
+          }
+        };
+        const previewResult = await getDocumentPreview(encryptedBlob, currentDocument.name, currentDocument.mime_type || 'application/octet-stream', pluginOptions);
+        updateState({
+          pluginResult: previewResult,
+          content: previewResult.format === 'html' ? previewResult.content : null,
+          isDecrypting: false,
+          needsPassword: false,
+          decryptedBlob: encryptedBlob,
+          decryptedDocumentId: currentDocument.id
+        });
+      }
+
       setShowPasswordDialog(false);
 
     } catch (error) {
       console.error('❌ Document preview failed:', error);
-      
+
       // Provide user-friendly error messages
       let errorMessage = 'Failed to load document preview';
-      
+
       if (error instanceof Error) {
         const message = error.message.toLowerCase();
-        
+
         // Check for specific error types and provide appropriate messages
         if (message.includes('missing from disk') || message.includes('not found on storage') || message.includes('file not found')) {
-          errorMessage = `📁 Document Missing: The file "${document.name}" is no longer available on the server. It may have been moved, deleted, or the storage location is inaccessible.`;
+          errorMessage = `📁 Document Missing: The file "${currentDocument.name}" is no longer available on the server. It may have been moved, deleted, or the storage location is inaccessible.`;
         } else if (message.includes('access denied') || message.includes('permission')) {
-          errorMessage = `🔒 Access Denied: You don't have permission to access "${document.name}" or the file permissions have changed.`;
+          errorMessage = `🔒 Access Denied: You don't have permission to access "${currentDocument.name}" or the file permissions have changed.`;
         } else if (message.includes('corrupted') || message.includes('invalid')) {
-          errorMessage = `⚠️ File Error: The document "${document.name}" appears to be corrupted or invalid.`;
+          errorMessage = `⚠️ File Error: The document "${currentDocument.name}" appears to be corrupted or invalid.`;
         } else if (message.includes('wrong password') || message.includes('decryption failed')) {
-          errorMessage = `🔑 Decryption Failed: Unable to decrypt "${document.name}". Please check your password.`;
+          errorMessage = `🔑 Decryption Failed: Unable to decrypt "${currentDocument.name}". Please check your password.`;
         } else if (message.includes('moved during download') || message.includes('disappeared')) {
-          errorMessage = `📋 File Changed: The document "${document.name}" was modified during preview. Please refresh and try again.`;
+          errorMessage = `📋 File Changed: The document "${currentDocument.name}" was modified during preview. Please refresh and try again.`;
         } else {
           // Use the original error message if it's already user-friendly
           errorMessage = error.message;
         }
       }
-      
+
       updateState({
         error: errorMessage,
-        isDecrypting: false
+        isDecrypting: false,
+        isGeneratingPreview: false,
+        isLoading: false,
+        pluginResult: null // Clear any partial plugin results
       });
     }
-  }, [document, isPreviewable, updateState, decryptDownloadedFile]);
+  }, [currentDocument, isPreviewable, updateState, decryptDownloadedFile, keys, getDocumentPreview]);
+
 
   /**
    * Handle password submission
@@ -259,18 +732,35 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
   }, [password, decryptAndPreview]);
 
   /**
-   * Start preview process (show password dialog)
+   * Start preview process (show password dialog or use cached decryption)
    */
   const startPreview = useCallback(() => {
-    if (!document) return;
-    
-    if (state.needsPassword) {
+    if (!currentDocument) return;
+
+    // Check if this document is already decrypted (cached state)
+    const isDocumentAlreadyDecrypted = state.decryptedDocumentId === currentDocument.id;
+
+    if (isDocumentAlreadyDecrypted && !state.needsPassword) {
+      console.log('📋 Using cached decrypted state for document:', currentDocument.name);
+      updateState({ isLoading: false });
+      return;
+    }
+
+    // Check if document is encrypted and needs password
+    const hasLegacyEncryption = !!(currentDocument.encryption_key_id && currentDocument.encryption_iv && currentDocument.encryption_auth_tag);
+    const hasZeroKnowledgeEncryption = !!currentDocument.encrypted_dek;
+    const hasEncryption = hasLegacyEncryption || hasZeroKnowledgeEncryption;
+
+    if (hasEncryption && state.needsPassword) {
       setShowPasswordDialog(true);
     } else {
-      // Already decrypted, just show content
-      updateState({ isLoading: false });
+      // Document is not encrypted or already decrypted, proceed directly
+      updateState({
+        isLoading: false,
+        needsPassword: false
+      });
     }
-  }, [document, state.needsPassword, updateState]);
+  }, [currentDocument, state.needsPassword, state.decryptedDocumentId, updateState]);
 
   /**
    * Handle zoom controls
@@ -289,6 +779,31 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
   const handleRotate = useCallback(() => {
     updateState({ rotation: (state.rotation + 90) % 360 });
   }, [state.rotation, updateState]);
+
+  /**
+   * Toggle fullscreen mode
+   */
+  const toggleFullscreen = useCallback(() => {
+    updateState({ isFullscreen: !state.isFullscreen });
+  }, [state.isFullscreen, updateState]);
+
+  /**
+   * Handle document export/print
+   */
+  const handleExport = useCallback(() => {
+    if (state.blobUrl) {
+      // Create a new window for printing
+      const printWindow = window.open(state.blobUrl, '_blank');
+      if (printWindow) {
+        printWindow.onload = () => {
+          printWindow.print();
+        };
+      }
+    } else {
+      // Fallback to download
+      onDownload?.(currentDocument.id);
+    }
+  }, [state.blobUrl, currentDocument.name, currentDocument.id, onDownload]);
 
   /**
    * Format file size
@@ -317,16 +832,133 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
   }, []);
 
   /**
-   * Render preview content based on file type
+   * Render preview content based on file type and plugin results
    */
   const renderPreviewContent = useCallback(() => {
-    if (state.isDecrypting) {
+    // CRITICAL: If we have plugin result, render it IMMEDIATELY and skip ALL other checks
+    if (state.pluginResult) {
+      console.log('🎯 Plugin result exists, rendering plugin content IMMEDIATELY');
+      console.log('Loading states at render time:', {
+        isLoading: state.isLoading,
+        isGeneratingPreview: state.isGeneratingPreview,
+        isDecrypting: state.isDecrypting,
+        pluginResultType: state.pluginResult.type,
+        pluginResultFormat: state.pluginResult.format
+      });
+
+      // RENDER PLUGIN CONTENT IMMEDIATELY - NO OTHER CHECKS
+      if (state.pluginResult.type === 'success') {
+        switch (state.pluginResult.format) {
+          case 'html':
+            console.log('🔍 DocumentPreview rendering HTML:', {
+              contentPreview: state.pluginResult.content.substring(0, 200),
+              pluginName: state.pluginResult.metadata?.pluginName,
+              isHTML: state.pluginResult.content.includes('<'),
+              contentLength: state.pluginResult.content.length
+            });
+            return (
+              <div className="flex-1 overflow-auto">
+                <div
+                  dangerouslySetInnerHTML={{ __html: state.pluginResult.content }}
+                  className="w-full h-full"
+                />
+                {state.pluginResult.metadata?.processingTime && (
+                  <div className="text-xs text-gray-400 p-2 border-t">
+                    Plugin: {state.pluginResult.metadata.pluginName} •
+                    Processed in {state.pluginResult.metadata.processingTime}
+                  </div>
+                )}
+              </div>
+            );
+          case 'image':
+            return (
+              <div className="flex items-center justify-center min-h-64 p-4">
+                <div
+                  style={{
+                    transform: `scale(${state.zoom / 100}) rotate(${state.rotation}deg)`,
+                    transition: 'transform 0.2s ease'
+                  }}
+                >
+                  <img
+                    src={state.pluginResult.dataUrl || `data:image/png;base64,${state.pluginResult.content}`}
+                    alt={currentDocument.name}
+                    className="max-w-full max-h-96 object-contain border border-gray-200 rounded-lg shadow-sm"
+                    onError={() => {
+                      updateState({ error: 'Failed to display plugin-generated image' });
+                    }}
+                  />
+                </div>
+              </div>
+            );
+          case 'iframe':
+            return (
+              <div className="flex-1 overflow-hidden">
+                <iframe
+                  src={state.pluginResult.content}
+                  className="w-full h-full border-none"
+                  title={`Preview: ${currentDocument.name}`}
+                  sandbox="allow-scripts allow-same-origin"
+                />
+              </div>
+            );
+          case 'text':
+            return (
+              <div className="p-6">
+                <div className="bg-gray-50 rounded-lg p-4 font-mono text-sm max-h-96 overflow-y-auto">
+                  <pre className="whitespace-pre-wrap">{state.pluginResult.content}</pre>
+                </div>
+              </div>
+            );
+        }
+      } else if (state.pluginResult.type === 'error') {
+        return (
+          <div className="flex items-center justify-center min-h-64 p-6">
+            <div className="text-center max-w-2xl">
+              <div className="text-6xl mb-4">⚠️</div>
+              <h3 className="text-xl font-semibold mb-3 text-orange-600">
+                Plugin Preview Failed
+              </h3>
+              <div className="bg-orange-50 border border-orange-200 rounded-lg p-6 text-left">
+                <p className="text-orange-800 font-medium mb-4">
+                  {state.pluginResult.error || 'Failed to generate preview'}
+                </p>
+                {state.pluginResult.content && (
+                  <div dangerouslySetInnerHTML={{ __html: state.pluginResult.content }} />
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      }
+    }
+
+    if ((state.isDecrypting || state.isGeneratingPreview) && !state.pluginResult) {
+      const isLargeFile = currentDocument?.file_size && currentDocument.file_size > 50 * 1024 * 1024;
+      const fileSizeDisplay = currentDocument?.file_size ? `${Math.round(currentDocument.file_size / 1024 / 1024)}MB` : '';
+
       return (
         <div className="flex items-center justify-center h-64">
-          <div className="text-center">
+          <div className="text-center max-w-md">
             <Loader2 className="w-8 h-8 text-blue-600 mx-auto mb-4 animate-spin" />
-            <p className="text-gray-600">Decrypting document...</p>
-            <p className="text-gray-500 text-sm mt-2">Please wait while we decrypt your document</p>
+            <p className="text-gray-600 mb-2">
+              {state.isDecrypting ? 'Decrypting document...' : 'Generating preview...'}
+            </p>
+            <p className="text-gray-500 text-sm">
+              {state.isDecrypting
+                ? isLargeFile
+                  ? `Decrypting large file (${fileSizeDisplay}). This may take several minutes.`
+                  : 'Please wait while we decrypt your document'
+                : 'Processing document with our preview system'
+              }
+            </p>
+            {isLargeFile && state.isDecrypting && (
+              <div className="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                <p className="text-amber-800 text-xs">
+                  <strong>Large File Notice:</strong> Files over 50MB may take 2-5 minutes to decrypt.
+                  Browser performance may be affected during this process.
+                </p>
+              </div>
+            )}
           </div>
         </div>
       );
@@ -353,7 +985,7 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
       );
     }
 
-    if (state.isLoading) {
+    if (state.isLoading && !state.pluginResult) {
       return (
         <div className="flex items-center justify-center h-64">
           <div className="text-center">
@@ -365,45 +997,186 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
     }
 
     if (state.error) {
+      // Parse error information if available
+      const errorObj = typeof state.error === 'object' ? state.error as any : { message: state.error };
+      const errorType = errorObj?.type || 'GENERIC_ERROR';
+      const suggestedActions = errorObj?.suggestedActions || [];
+      const statusCode = errorObj?.statusCode;
+
+      // Choose appropriate icon and colors based on error type
+      const getErrorDisplay = (type: string) => {
+        switch (type) {
+          case 'FILE_NOT_FOUND':
+            return { icon: '🔍', color: 'amber', title: 'File Not Found' };
+          case 'ACCESS_DENIED':
+            return { icon: '🔒', color: 'red', title: 'Access Denied' };
+          case 'FILE_DELETED':
+            return { icon: '🗑️', color: 'gray', title: 'File Deleted' };
+          case 'CORRUPTED_FILE':
+            return { icon: '⚠️', color: 'orange', title: 'File Corrupted' };
+          case 'RATE_LIMITED':
+            return { icon: '⏱️', color: 'yellow', title: 'Rate Limited' };
+          case 'SERVER_ERROR':
+            return { icon: '🔧', color: 'red', title: 'Server Error' };
+          case 'SERVICE_UNAVAILABLE':
+            return { icon: '🚫', color: 'gray', title: 'Service Unavailable' };
+          default:
+            return { icon: '❌', color: 'red', title: 'Preview Error' };
+        }
+      };
+
+      const { icon, color, title } = getErrorDisplay(errorType);
+
       return (
-        <div className="flex items-center justify-center h-64 p-6">
-          <div className="text-center max-w-md">
-            <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
-            <h3 className="text-lg font-semibold text-red-600 mb-3">Preview Unavailable</h3>
-            <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-              <p className="text-red-700 text-sm whitespace-pre-wrap">{state.error}</p>
-            </div>
-            <div className="mt-4 flex flex-col sm:flex-row gap-2 justify-center">
-              <button
-                onClick={() => window.location.reload()}
-                className="px-4 py-2 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
-              >
-                Refresh Page
-              </button>
-              <button
-                onClick={onClose}
-                className="px-4 py-2 text-sm bg-gray-600 text-white rounded-md hover:bg-gray-700 transition-colors"
-              >
-                Close Preview
-              </button>
+        <div className="flex items-center justify-center min-h-64 p-6">
+          <div className="text-center max-w-2xl">
+            <div className="text-6xl mb-4">{icon}</div>
+            <h3 className={`text-xl font-semibold mb-3 ${color === 'red' ? 'text-red-600' : color === 'amber' ? 'text-amber-600' : color === 'gray' ? 'text-gray-600' : color === 'orange' ? 'text-orange-600' : color === 'yellow' ? 'text-yellow-600' : 'text-red-600'}`}>
+              {title}
+            </h3>
+
+            <div className={`${color === 'red' ? 'bg-red-50 border-red-200' : color === 'amber' ? 'bg-amber-50 border-amber-200' : color === 'gray' ? 'bg-gray-50 border-gray-200' : color === 'orange' ? 'bg-orange-50 border-orange-200' : color === 'yellow' ? 'bg-yellow-50 border-yellow-200' : 'bg-red-50 border-red-200'} border rounded-lg p-6 text-left`}>
+              <p className={`${color === 'red' ? 'text-red-800' : color === 'amber' ? 'text-amber-800' : color === 'gray' ? 'text-gray-800' : color === 'orange' ? 'text-orange-800' : color === 'yellow' ? 'text-yellow-800' : 'text-red-800'} font-medium mb-4`}>
+                {errorObj.message || state.error}
+              </p>
+
+              {statusCode && (
+                <p className={`${color === 'red' ? 'text-red-600' : color === 'amber' ? 'text-amber-600' : color === 'gray' ? 'text-gray-600' : color === 'orange' ? 'text-orange-600' : color === 'yellow' ? 'text-yellow-600' : 'text-red-600'} text-sm mb-4`}>
+                  Error Code: {statusCode}
+                </p>
+              )}
+
+              {suggestedActions.length > 0 && (
+                <div className="mt-4">
+                  <h4 className={`font-semibold ${color === 'red' ? 'text-red-800' : color === 'amber' ? 'text-amber-800' : color === 'gray' ? 'text-gray-800' : color === 'orange' ? 'text-orange-800' : color === 'yellow' ? 'text-yellow-800' : 'text-red-800'} mb-2`}>
+                    What you can try:
+                  </h4>
+                  <ul className={`${color === 'red' ? 'text-red-700' : color === 'amber' ? 'text-amber-700' : color === 'gray' ? 'text-gray-700' : color === 'orange' ? 'text-orange-700' : color === 'yellow' ? 'text-yellow-700' : 'text-red-700'} text-sm space-y-1`}>
+                    {suggestedActions.map((action: string, index: number) => (
+                      <li key={index} className="flex items-start">
+                        <span className="text-blue-500 mr-2">•</span>
+                        <span>{action}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              <div className="mt-6 flex flex-wrap gap-3 justify-center">
+                {errorType === 'FILE_NOT_FOUND' && (
+                  <button
+                    onClick={() => window.location.reload()}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm"
+                  >
+                    Refresh Page
+                  </button>
+                )}
+                {onDownload && ['CORRUPTED_FILE', 'FILE_NOT_FOUND'].includes(errorType) && (
+                  <button
+                    onClick={() => onDownload(currentDocument.id)}
+                    className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm"
+                  >
+                    Try Download
+                  </button>
+                )}
+                {['RATE_LIMITED', 'SERVER_ERROR', 'SERVICE_UNAVAILABLE'].includes(errorType) && (
+                  <button
+                    onClick={() => {
+                      updateState({ error: null, isLoading: true });
+                      setTimeout(() => {
+                        startPreview();
+                      }, 2000);
+                    }}
+                    className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors text-sm"
+                  >
+                    Retry in 2s
+                  </button>
+                )}
+                <button
+                  onClick={onClose}
+                  className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors text-sm"
+                >
+                  Close
+                </button>
+              </div>
             </div>
           </div>
         </div>
       );
     }
 
-    if (!isPreviewable(document)) {
+
+    if (!isPreviewable(currentDocument)) {
+      // Provide specific messages based on file type
+      const fileExtension = currentDocument.name.toLowerCase().split('.').pop() || '';
+      const mimeType = currentDocument.mime_type || '';
+
+      let message = 'This file type is not supported for preview.';
+      let suggestions: string[] = [];
+
+      // Specific guidance based on file type
+      if (['pdf'].includes(fileExtension) || mimeType.includes('pdf')) {
+        message = 'PDF preview is temporarily unavailable.';
+        suggestions = ['Try refreshing the page', 'Download to view with a PDF reader'];
+      } else if (['doc', 'docx'].includes(fileExtension) || mimeType.includes('word') || mimeType.includes('document')) {
+        message = 'Word document preview is temporarily unavailable.';
+        suggestions = ['Download to view in Microsoft Word', 'Convert to PDF for preview support'];
+      } else if (['xls', 'xlsx'].includes(fileExtension) || mimeType.includes('excel') || mimeType.includes('sheet')) {
+        message = 'Excel file preview is temporarily unavailable.';
+        suggestions = ['Download to view in Microsoft Excel', 'Convert to CSV for preview support'];
+      } else if (['ppt', 'pptx'].includes(fileExtension) || mimeType.includes('powerpoint') || mimeType.includes('presentation')) {
+        message = 'PowerPoint presentations are not supported for preview.';
+        suggestions = ['Download to view in Microsoft PowerPoint', 'Convert to PDF for preview support'];
+      } else if (['zip', 'rar', '7z', 'tar', 'gz'].includes(fileExtension) || mimeType.includes('zip') || mimeType.includes('archive')) {
+        message = 'Archive files cannot be previewed.';
+        suggestions = ['Download to extract and view contents', 'Extract files individually for preview'];
+      } else if (['exe', 'msi', 'dmg', 'pkg', 'deb', 'rpm'].includes(fileExtension)) {
+        message = 'Executable files cannot be previewed for security reasons.';
+        suggestions = ['Download with caution', 'Scan for viruses before running'];
+      } else if (['mp4', 'avi', 'mov', 'wmv', 'flv'].includes(fileExtension) || mimeType.includes('video')) {
+        message = 'Video files are not supported for preview.';
+        suggestions = ['Download to view in a video player', 'Convert to a supported format'];
+      } else if (['mp3', 'wav', 'flac', 'aac', 'ogg'].includes(fileExtension) || mimeType.includes('audio')) {
+        message = 'Audio files are not supported for preview.';
+        suggestions = ['Download to play in an audio player', 'Convert to a supported format'];
+      } else if (fileExtension && !['txt', 'html', 'pdf', 'doc', 'docx', 'xls', 'xlsx', 'png', 'jpg', 'jpeg', 'gif', 'svg'].includes(fileExtension)) {
+        message = `Files with .${fileExtension} extension are not supported for preview.`;
+        suggestions = ['Download to view with appropriate software', 'Check file format compatibility'];
+      }
+
       return (
         <div className="flex items-center justify-center h-64">
-          <div className="text-center">
-            <div className="text-4xl mb-4">{getFileIcon(document.mime_type)}</div>
-            <p className="text-gray-600 mb-2">Preview not available</p>
-            <p className="text-gray-500 text-sm">
-              {document.mime_type || 'Unknown file type'}
-            </p>
+          <div className="text-center max-w-md">
+            <div className="text-4xl mb-4">{getFileIcon(currentDocument.mime_type)}</div>
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">Preview Not Available</h3>
+            <p className="text-gray-600 mb-4">{message}</p>
+
+            <div className="bg-gray-50 rounded-lg p-4 mb-4 text-left">
+              <h4 className="font-medium text-gray-700 mb-2">File Information:</h4>
+              <div className="text-sm text-gray-600 space-y-1">
+                <p><span className="font-medium">Name:</span> {currentDocument.name}</p>
+                <p><span className="font-medium">Type:</span> {mimeType || 'Unknown'}</p>
+                <p><span className="font-medium">Size:</span> {formatFileSize(currentDocument.file_size)}</p>
+              </div>
+            </div>
+
+            {suggestions.length > 0 && (
+              <div className="bg-blue-50 rounded-lg p-4 mb-4 text-left">
+                <h4 className="font-medium text-blue-700 mb-2">What you can try:</h4>
+                <ul className="text-sm text-blue-600 space-y-1">
+                  {suggestions.map((suggestion, index) => (
+                    <li key={index} className="flex items-start">
+                      <span className="text-blue-500 mr-2">•</span>
+                      <span>{suggestion}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
             <button
-              onClick={() => onDownload?.(document.id)}
-              className="mt-4 inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              onClick={() => onDownload?.(currentDocument.id)}
+              className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
             >
               <Download className="w-4 h-4 mr-2" />
               Download to View
@@ -413,116 +1186,100 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
       );
     }
 
-    // PDF preview
-    if (document.mime_type === 'application/pdf' && state.content === 'pdf-viewer' && state.blobUrl) {
-      return (
-        <div className="flex-1 overflow-hidden">
-          <iframe
-            src={state.blobUrl}
-            title={`PDF Preview: ${document.name}`}
-            className="w-full h-full min-h-96 border-0"
-            style={{ height: 'calc(90vh - 200px)' }}
-          >
-            <div className="flex items-center justify-center h-64">
-              <div className="text-center">
-                <div className="text-6xl mb-4">📄</div>
-                <p className="text-gray-600 mb-2">PDF cannot be displayed in this browser</p>
-                <button
-                  onClick={() => onDownload?.(document.id)}
-                  className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                >
-                  <Download className="w-4 h-4 mr-2" />
-                  Download PDF
-                </button>
-              </div>
-            </div>
-          </iframe>
-        </div>
-      );
-    }
+    // PDF preview - handled by plugin system above, this section removed
 
-    // Image preview
-    if (document.mime_type?.startsWith('image/')) {
-      if (state.blobUrl) {
-        return (
-          <div className="flex items-center justify-center min-h-64 p-4">
-            <div
-              style={{
-                transform: `scale(${state.zoom / 100}) rotate(${state.rotation}deg)`,
-                transition: 'transform 0.2s ease'
-              }}
-            >
-              <img
-                src={state.blobUrl}
-                alt={document.name}
-                className="max-w-full max-h-96 object-contain border border-gray-200 rounded-lg shadow-sm"
-                onError={() => {
-                  updateState({ error: 'Failed to display image' });
-                }}
-              />
-            </div>
-          </div>
-        );
-      } else {
-        return (
-          <div className="flex items-center justify-center min-h-64 p-4">
-            <div
-              style={{
-                transform: `scale(${state.zoom / 100}) rotate(${state.rotation}deg)`,
-                transition: 'transform 0.2s ease'
-              }}
-            >
-              <div className="bg-gray-100 border-2 border-dashed border-gray-300 rounded-lg p-8">
-                <div className="text-center">
-                  <div className="text-4xl mb-4">🖼️</div>
-                  <p className="text-gray-600">Image Preview</p>
-                  <p className="text-gray-500 text-sm mt-1">
-                    Encrypted image preview placeholder
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
-        );
-      }
-    }
+    // Image preview - handled by plugin system above, this section removed
 
-    // Text preview
-    if (document.mime_type?.startsWith('text/') || 
-        document.mime_type === 'application/json' ||
-        document.mime_type === 'application/xml') {
-      
-      let textContent = state.content;
-      
-      // If we have a decrypted blob, read its content for text files
-      if (state.decryptedBlob && !textContent) {
-        const reader = new FileReader();
-        reader.onload = (e) => {
-          const text = e.target?.result as string;
-          updateState({ content: text });
-        };
-        reader.readAsText(state.decryptedBlob);
-        textContent = 'Loading decrypted content...';
-      }
-      
-      return (
-        <div className="p-6">
-          <div className="bg-gray-50 rounded-lg p-4 font-mono text-sm max-h-96 overflow-y-auto">
-            <pre className="whitespace-pre-wrap">{textContent || 'No content available'}</pre>
-          </div>
-        </div>
-      );
-    }
+    // Text preview - handled by plugin system above, this section removed
 
+    // If no plugin handled the preview, return null to show fallback
     return null;
-  }, [state, document, isPreviewable, getFileIcon, onDownload]);
+  }, [state, currentDocument, isPreviewable, getFileIcon, onDownload]);
+
 
   // Start preview when document changes
   useEffect(() => {
-    if (isOpen && document) {
+    if (isOpen && currentDocument) {
       startPreview();
     }
-  }, [isOpen, document, startPreview]);
+  }, [isOpen, currentDocument, startPreview]);
+
+  // Listen for PDF render success and error events
+  useEffect(() => {
+    const handlePdfRenderSuccess = (event: CustomEvent) => {
+      console.log('🎯 PDF render success - hiding spinner immediately');
+      console.log('Event detail:', event.detail);
+
+      // Immediately clear all loading states
+      updateState({
+        isGeneratingPreview: false,
+        isLoading: false,
+        isDecrypting: false,
+        error: null
+      });
+    };
+
+    const handlePdfRenderError = (event: CustomEvent) => {
+      console.log('🎯 PDF render error received in DocumentPreview:', event.detail);
+      // Clear loading states and set error
+      updateState({
+        isGeneratingPreview: false,
+        isLoading: false,
+        isDecrypting: false,
+        error: `PDF preview failed: ${event.detail?.error || 'Unknown error'}`
+      });
+    };
+
+    // Use global document object explicitly to avoid shadowing
+    globalThis.document.addEventListener('pdfRenderSuccess', handlePdfRenderSuccess as EventListener);
+    globalThis.document.addEventListener('pdfRenderError', handlePdfRenderError as EventListener);
+
+    return () => {
+      globalThis.document.removeEventListener('pdfRenderSuccess', handlePdfRenderSuccess as EventListener);
+      globalThis.document.removeEventListener('pdfRenderError', handlePdfRenderError as EventListener);
+    };
+  }, [updateState]);
+
+  // Clear loading states when plugin result is available
+  useEffect(() => {
+    if (state.pluginResult) {
+      console.log('🎯 Plugin result available, clearing ALL loading states immediately');
+      console.log('Plugin result type:', state.pluginResult.type);
+      console.log('Plugin result format:', state.pluginResult.format);
+
+      updateState({
+        isGeneratingPreview: false,
+        isLoading: false,
+        isDecrypting: false
+      });
+    }
+  }, [state.pluginResult, updateState]);
+
+  // Timeout fallback to prevent infinite loading
+  useEffect(() => {
+    if ((state.isLoading || state.isGeneratingPreview || state.isDecrypting) && !state.pluginResult) {
+      const timeout = setTimeout(() => {
+        console.log('⏰ Loading timeout - clearing spinner and showing error');
+
+        // Check if PDF and provide specific error message
+        const isPDF = currentDocument?.mime_type === 'application/pdf' ||
+                      currentDocument?.name.toLowerCase().endsWith('.pdf');
+
+        updateState({
+          isLoading: false,
+          isGeneratingPreview: false,
+          isDecrypting: false,
+          error: isPDF ?
+            'PDF preview timed out. The document may be large or complex. Try downloading it instead.' :
+            'Preview timed out. Try refreshing or downloading the document.'
+        });
+      }, 15000); // Extended timeout for PDFs
+
+      return () => clearTimeout(timeout);
+    }
+  }, [state.isLoading, state.isGeneratingPreview, state.isDecrypting, state.pluginResult, currentDocument, updateState]);
+
+
 
   // Reset state when modal closes
   useEffect(() => {
@@ -540,17 +1297,22 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
         needsPassword: true,
         isDecrypting: false,
         decryptedBlob: null,
-        blobUrl: null
+        blobUrl: null,
+        isFullscreen: false,
+        pluginResult: null,
+        isGeneratingPreview: false,
+        decryptedDocumentId: null
       });
       setPassword('');
       setShowPasswordDialog(false);
+      setShowShareDialog(false);
     }
   }, [isOpen, updateState, state.blobUrl]);
 
   if (!isOpen) return null;
   
   // Return early if no document is provided
-  if (!document) {
+  if (!currentDocument) {
     return (
       <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
         <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
@@ -571,28 +1333,55 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
-      <div className={`bg-white rounded-lg shadow-xl max-w-6xl max-h-[90vh] w-full flex flex-col ${className}`}>
-        {/* Header */}
+      <div
+        className={`bg-white rounded-lg shadow-xl w-full flex flex-col transition-all duration-300 ${
+          state.isFullscreen
+            ? 'max-w-full max-h-full h-full m-0 rounded-none'
+            : 'max-w-6xl max-h-[90vh]'
+        } ${className}`}
+        style={state.isFullscreen ? { width: '100vw', height: '100vh' } : {}}
+      >
+        {/* Header - Hide file info when plugin provides its own header */}
         <div className="flex items-center justify-between p-6 border-b border-gray-200">
           <div className="flex items-center space-x-3 flex-1 min-w-0">
             <div className="p-2 bg-blue-100 rounded-lg">
               <Eye className="w-5 h-5 text-blue-600" />
             </div>
-            <div className="flex-1 min-w-0">
-              <h3 className="text-lg font-semibold text-gray-900 truncate">
-                {document.name}
-              </h3>
-              <div className="flex items-center space-x-4 text-sm text-gray-500">
-                <span>{document.mime_type || 'Unknown type'}</span>
-                <span>{formatFileSize(document.file_size)}</span>
-                <span>Modified {new Date(document.updated_at).toLocaleDateString()}</span>
+            {!state.pluginResult && (
+              <div className="flex-1 min-w-0">
+                <h3 className="text-lg font-semibold text-gray-900 truncate">
+                  {currentDocument.name}
+                </h3>
+                <div className="flex items-center space-x-6 text-sm text-gray-500 mt-1">
+                  <span>{currentDocument.mime_type || 'Unknown type'}</span>
+                  <span>{formatFileSize(currentDocument.file_size)}</span>
+                  <span>Modified {new Date(currentDocument.updated_at).toLocaleDateString()}</span>
+                </div>
               </div>
-            </div>
+            )}
+            {state.pluginResult && (
+              <div className="flex-1 min-w-0">
+                <h3 className="text-lg font-semibold text-gray-900 truncate">
+                  {currentDocument.name}
+                </h3>
+                <div className="flex items-center space-x-6 text-sm text-gray-500 mt-1">
+                  <span>{currentDocument.mime_type || 'Unknown type'}</span>
+                  <span>{formatFileSize(currentDocument.file_size)}</span>
+                  {state.pluginResult?.metadata?.wordCount && (
+                    <span>{state.pluginResult.metadata.wordCount} words</span>
+                  )}
+                  {state.pluginResult?.metadata?.pageCount && (
+                    <span>{state.pluginResult.metadata.pageCount} pages</span>
+                  )}
+                  <span>Modified {new Date(currentDocument.updated_at).toLocaleDateString()}</span>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Controls */}
           <div className="flex items-center space-x-2 ml-4">
-            {isPreviewable(document) && document.mime_type?.startsWith('image/') && (
+            {isPreviewable(currentDocument) && currentDocument.mime_type?.startsWith('image/') && (
               <>
                 <button
                   onClick={() => handleZoom('out')}
@@ -626,22 +1415,38 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
             <div className="w-px h-6 bg-gray-300 mx-2" />
 
             <button
-              onClick={() => onDownload?.(document.id)}
+              onClick={handleExport}
+              className="p-2 text-gray-600 hover:text-gray-800"
+              title="Export/Print"
+            >
+              <FileDown className="w-4 h-4" />
+            </button>
+
+            <button
+              onClick={() => onDownload?.(currentDocument.id)}
               className="p-2 text-gray-600 hover:text-gray-800"
               title="Download"
             >
               <Download className="w-4 h-4" />
             </button>
 
-            {onShare && (
-              <button
-                onClick={() => onShare(document)}
-                className="p-2 text-gray-600 hover:text-gray-800"
-                title="Share"
-              >
-                <Share2 className="w-4 h-4" />
-              </button>
-            )}
+            <button
+              onClick={() => setShowShareDialog(true)}
+              className="p-2 text-gray-600 hover:text-gray-800"
+              title="Share Document"
+            >
+              <Share2 className="w-4 h-4" />
+            </button>
+
+            <div className="w-px h-6 bg-gray-300 mx-2" />
+
+            <button
+              onClick={toggleFullscreen}
+              className="p-2 text-gray-600 hover:text-gray-800"
+              title={state.isFullscreen ? "Exit Fullscreen" : "Fullscreen"}
+            >
+              {state.isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+            </button>
 
             <button
               onClick={onClose}
@@ -659,10 +1464,10 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
         </div>
 
         {/* Footer */}
-        {document.description && (
+        {currentDocument.description && (
           <div className="border-t border-gray-200 p-4">
             <p className="text-sm text-gray-600">
-              <span className="font-medium">Description:</span> {document.description}
+              <span className="font-medium">Description:</span> {currentDocument.description}
             </p>
           </div>
         )}
@@ -701,8 +1506,8 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
                 </div>
 
                 <div className="text-xs text-gray-500">
-                  <p>📄 Document: <span className="font-medium">{document.name}</span></p>
-                  <p>📊 Size: <span className="font-medium">{formatFileSize(document.file_size)}</span></p>
+                  <p>📄 Document: <span className="font-medium">{currentDocument.name}</span></p>
+                  <p>📊 Size: <span className="font-medium">{formatFileSize(currentDocument.file_size)}</span></p>
                 </div>
 
                 <div className="flex space-x-3">
@@ -729,6 +1534,13 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
           </div>
         </div>
       )}
+
+      {/* Document Share Dialog */}
+      <DocumentShareDialog
+        document={currentDocument}
+        isOpen={showShareDialog}
+        onClose={() => setShowShareDialog(false)}
+      />
     </div>
   );
 };

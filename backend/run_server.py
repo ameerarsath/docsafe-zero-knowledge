@@ -22,7 +22,7 @@ try:
     from app.core.database import engine, create_tables
     from app.core.redis import redis_manager
 except ImportError as e:
-    print(f"❌ Import Error: {e}")
+    print(f"ERROR: Import Error: {e}")
     print("Make sure you're running this from the backend directory")
     sys.exit(1)
 

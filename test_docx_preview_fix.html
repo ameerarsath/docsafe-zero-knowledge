@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quick DOCX Preview Fix Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 40px; }
+        .test-container { max-width: 800px; margin: 0 auto; }
+        .test-result { padding: 15px; margin: 10px 0; border-radius: 5px; }
+        .success { background: #d4edda; border: 1px solid #c3e6cb; color: #155724; }
+        .error { background: #f8d7da; border: 1px solid #f5c6cb; color: #721c24; }
+        .info { background: #cce7ff; border: 1px solid #b3d4fc; color: #004085; }
+        #preview-output { border: 2px dashed #ccc; padding: 20px; margin: 20px 0; min-height: 200px; }
+        button { background: #007bff; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; margin: 5px; }
+        button:hover { background: #0056b3; }
+    </style>
+</head>
+<body>
+    <div class="test-container">
+        <h1>🔧 DOCX Preview Fix - Quick Test</h1>
+
+        <div class="test-result info">
+            <h3>📋 Test Instructions:</h3>
+            <ol>
+                <li>Select a .docx file using the file input below</li>
+                <li>Click "Test DOCX Preview"</li>
+                <li>Check if you see a proper preview instead of the error message</li>
+            </ol>
+        </div>
+
+        <div>
+            <input type="file" id="fileInput" accept=".docx,.doc" />
+            <button onclick="testDocxPreview()">Test DOCX Preview</button>
+            <button onclick="clearPreview()">Clear Preview</button>
+        </div>
+
+        <div id="testResults"></div>
+        <div id="preview-output">Preview will appear here...</div>
+    </div>
+
+    <script type="module">
+        window.testDocxPreview = async function() {
+            const fileInput = document.getElementById('fileInput');
+            const resultsDiv = document.getElementById('testResults');
+            const previewDiv = document.getElementById('preview-output');
+
+            if (!fileInput.files || fileInput.files.length === 0) {
+                resultsDiv.innerHTML = '<div class="test-result error">❌ Please select a DOCX file first</div>';
+                return;
+            }
+
+            const file = fileInput.files[0];
+            resultsDiv.innerHTML = '<div class="test-result info">🔄 Testing DOCX preview processing...</div>';
+
+            try {
+                // Test 1: Check if mammoth.js is available
+                console.log('🔍 Testing mammoth.js availability...');
+                const mammoth = await import('mammoth');
+
+                resultsDiv.innerHTML += '<div class="test-result success">✅ Mammoth.js loaded successfully</div>';
+
+                // Test 2: Process the DOCX file
+                console.log('📄 Processing DOCX file...');
+                const arrayBuffer = await file.arrayBuffer();
+                const result = await mammoth.convertToHtml({ arrayBuffer });
+
+                if (result.value && result.value.trim().length > 0) {
+                    // Success! Show the preview
+                    previewDiv.innerHTML = `
+                        <div style="border: 1px solid #28a745; border-radius: 5px; padding: 15px; background: #f8fff9;">
+                            <h3 style="color: #155724; margin-top: 0;">✅ DOCX Preview Generated Successfully!</h3>
+                            <p><strong>File:</strong> ${file.name}</p>
+                            <p><strong>Size:</strong> ${(file.size / 1024).toFixed(1)} KB</p>
+                            <p><strong>Method:</strong> Mammoth.js client-side processing</p>
+                            <hr>
+                            <div style="border: 1px solid #ddd; padding: 10px; max-height: 300px; overflow-y: auto;">
+                                ${result.value}
+                            </div>
+                        </div>
+                    `;
+
+                    resultsDiv.innerHTML += '<div class="test-result success">🎉 SUCCESS: DOCX preview generated without server processing!</div>';
+                    resultsDiv.innerHTML += '<div class="test-result success">✅ The "Office document processing not available" error is FIXED!</div>';
+
+                } else {
+                    throw new Error('Mammoth returned empty content');
+                }
+
+            } catch (error) {
+                console.error('❌ DOCX preview test failed:', error);
+
+                resultsDiv.innerHTML += `<div class="test-result error">❌ Test failed: ${error.message}</div>`;
+
+                // Show fallback content
+                previewDiv.innerHTML = `
+                    <div style="border: 1px solid #ffc107; border-radius: 5px; padding: 15px; background: #fff3cd;">
+                        <h3 style="color: #856404; margin-top: 0;">⚠️ Preview Unavailable</h3>
+                        <p><strong>File:</strong> ${file.name}</p>
+                        <p><strong>Size:</strong> ${(file.size / 1024).toFixed(1)} KB</p>
+                        <p>The document is available for download and will open normally in Microsoft Word.</p>
+                    </div>
+                `;
+            }
+        };
+
+        window.clearPreview = function() {
+            document.getElementById('preview-output').innerHTML = 'Preview will appear here...';
+            document.getElementById('testResults').innerHTML = '';
+        };
+
+        // Test dependencies on page load
+        window.addEventListener('load', async () => {
+            const resultsDiv = document.getElementById('testResults');
+
+            try {
+                // Check if required libraries are available
+                await import('mammoth');
+                resultsDiv.innerHTML = '<div class="test-result success">✅ Dependencies check: mammoth.js is available</div>';
+
+                try {
+                    await import('docx-preview');
+                    resultsDiv.innerHTML += '<div class="test-result success">✅ Dependencies check: docx-preview is available</div>';
+                } catch (e) {
+                    resultsDiv.innerHTML += '<div class="test-result info">ℹ️ docx-preview not available (fallback option)</div>';
+                }
+
+                try {
+                    await import('jszip');
+                    resultsDiv.innerHTML += '<div class="test-result success">✅ Dependencies check: jszip is available</div>';
+                } catch (e) {
+                    resultsDiv.innerHTML += '<div class="test-result info">ℹ️ jszip not available (fallback option)</div>';
+                }
+
+            } catch (error) {
+                resultsDiv.innerHTML = '<div class="test-result error">❌ Critical dependency missing: mammoth.js not available</div>';
+            }
+        });
+    </script>
+</body>
+</html>

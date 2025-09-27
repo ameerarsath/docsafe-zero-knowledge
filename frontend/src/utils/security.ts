@@ -33,24 +33,25 @@ export function isSecureContext(): boolean {
  */
 export async function checkSecurityHeaders(): Promise<SecurityHeadersStatus> {
   try {
-    const response = await fetch(window.location.href, {
-      method: 'HEAD',
-      cache: 'no-cache'
-    });
-
-    const headers = {
-      hsts: response.headers.get('strict-transport-security'),
-      csp: response.headers.get('content-security-policy'),
-      frameOptions: response.headers.get('x-frame-options'),
-      contentTypeOptions: response.headers.get('x-content-type-options'),
-      xssProtection: response.headers.get('x-xss-protection'),
-      referrerPolicy: response.headers.get('referrer-policy')
-    };
+    // Import the API service dynamically to avoid circular dependency
+    const { securityHeadersApi } = await import('../services/api/securityHeaders');
+    const result = await securityHeadersApi.testCurrentPageHeaders();
 
     return {
       secure: isSecureContext(),
-      headers: headers,
-      hasRequiredHeaders: !!(headers.csp && headers.frameOptions && headers.contentTypeOptions),
+      headers: {
+        hsts: null, // Headers will be checked by backend
+        csp: null,
+        frameOptions: null,
+        contentTypeOptions: null,
+        xssProtection: null,
+        referrerPolicy: null
+      },
+      hasRequiredHeaders: result.secure && result.score >= 80,
+      score: result.score,
+      missingHeaders: result.missing_headers,
+      weakHeaders: result.weak_headers,
+      recommendations: result.recommendations,
       timestamp: new Date().toISOString()
     };
   } catch (error) {
@@ -104,23 +105,24 @@ export function containsXSS(input: string): boolean {
  */
 export function reportCSPViolation(violation: CSPViolationReport): void {
   try {
-    // Send violation report to server
-    fetch(SECURITY_CONFIG.CSP_REPORT_ENDPOINT, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
+    // Import the API service dynamically to avoid circular dependency
+    import('../services/api/securityHeaders').then(({ securityHeadersApi }) => {
+      const violationRequest = {
         violation,
         timestamp: new Date().toISOString(),
-        userAgent: navigator.userAgent,
-        url: window.location.href
-      })
+        user_agent: navigator.userAgent,
+        url: window.location.href,
+        session_id: sessionStorage.getItem('session_id') || undefined
+      };
+
+      securityHeadersApi.reportCSPViolation(violationRequest).catch(error => {
+        console.warn('Failed to report CSP violation:', error);
+      });
     }).catch(error => {
-      // Failed to report CSP violation
+      console.warn('Failed to load security headers API:', error);
     });
   } catch (error) {
-    // Error reporting CSP violation
+    console.warn('Error reporting CSP violation:', error);
   }
 }
 
@@ -336,6 +338,10 @@ export interface SecurityHeadersStatus {
   hasRequiredHeaders: boolean;
   error?: string;
   timestamp: string;
+  score?: number;
+  missingHeaders?: string[];
+  weakHeaders?: string[];
+  recommendations?: string[];
 }
 
 export interface CSPViolationReport {

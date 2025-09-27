@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Shares API Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        button { padding: 10px 20px; margin: 5px; cursor: pointer; }
+        .result { margin: 10px 0; padding: 10px; background: #f5f5f5; border-radius: 4px; }
+        .error { background: #ffebee; color: #c62828; }
+        .success { background: #e8f5e8; color: #2e7d32; }
+        .info { background: #e3f2fd; color: #1565c0; }
+    </style>
+</head>
+<body>
+    <h1>Shares API Test</h1>
+    <p>This tests the improved shares API error handling and timeout fixes.</p>
+
+    <button onclick="testDocumentShares()">Test Document Shares API</button>
+    <button onclick="testMultipleDocuments()">Test Multiple Documents</button>
+    <button onclick="clearResults()">Clear Results</button>
+
+    <div id="results"></div>
+
+    <script>
+        const API_BASE = 'http://localhost:8002';
+
+        function addResult(message, type = 'info') {
+            const results = document.getElementById('results');
+            const div = document.createElement('div');
+            div.className = `result ${type}`;
+            div.innerHTML = `<strong>${new Date().toLocaleTimeString()}</strong> - ${message}`;
+            results.appendChild(div);
+            results.scrollTop = results.scrollHeight;
+        }
+
+        async function testDocumentShares() {
+            addResult('Testing shares API for document 12...', 'info');
+
+            try {
+                const startTime = performance.now();
+                const response = await fetch(`${API_BASE}/api/v1/shares/document/12`, {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': 'Bearer test-token',
+                        'Content-Type': 'application/json'
+                    },
+                    signal: AbortSignal.timeout(15000) // 15 second timeout
+                });
+
+                const endTime = performance.now();
+                const responseTime = (endTime - startTime).toFixed(2);
+
+                addResult(`Response received in ${responseTime}ms`, 'info');
+                addResult(`Status: ${response.status}`, response.ok ? 'success' : 'error');
+
+                if (response.status === 401) {
+                    addResult('Authentication required (expected with test token)', 'info');
+                } else if (response.ok) {
+                    const data = await response.json();
+                    addResult(`Found ${data.total || 0} shares`, 'success');
+                } else {
+                    const errorText = await response.text();
+                    addResult(`Error: ${errorText}`, 'error');
+                }
+
+            } catch (error) {
+                if (error.name === 'AbortError' || error.message.includes('timeout')) {
+                    addResult('Request timed out after 15 seconds', 'error');
+                } else if (error.message.includes('Failed to fetch')) {
+                    addResult('Network error - server may not be running', 'error');
+                } else {
+                    addResult(`Error: ${error.message}`, 'error');
+                }
+            }
+        }
+
+        async function testMultipleDocuments() {
+            const documentIds = [1, 2, 3, 4, 5, 12, 999];
+            addResult(`Testing ${documentIds.length} documents...`, 'info');
+
+            const promises = documentIds.map(async (docId) => {
+                try {
+                    const startTime = performance.now();
+                    const response = await fetch(`${API_BASE}/api/v1/shares/document/${docId}`, {
+                        method: 'GET',
+                        headers: {
+                            'Authorization': 'Bearer test-token',
+                            'Content-Type': 'application/json'
+                        },
+                        signal: AbortSignal.timeout(10000)
+                    });
+                    const endTime = performance.now();
+                    const responseTime = (endTime - startTime).toFixed(2);
+
+                    return { docId, status: response.status, time: responseTime, success: true };
+                } catch (error) {
+                    return { docId, error: error.message, success: false };
+                }
+            });
+
+            const results = await Promise.allSettled(promises);
+            results.forEach((result) => {
+                if (result.status === 'fulfilled') {
+                    const { docId, status, time, error, success } = result.value;
+                    if (success) {
+                        addResult(`Doc ${docId}: ${status} (${time}ms)`, status === 401 ? 'info' : 'success');
+                    } else {
+                        addResult(`Doc ${docId}: ${error}`, 'error');
+                    }
+                } else {
+                    addResult(`Promise rejected: ${result.reason}`, 'error');
+                }
+            });
+
+            addResult('Multiple document test completed', 'success');
+        }
+
+        function clearResults() {
+            document.getElementById('results').innerHTML = '';
+        }
+
+        // Add initial message
+        addResult('Shares API test page loaded. Click buttons to test API endpoints.', 'success');
+    </script>
+</body>
+</html>

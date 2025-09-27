@@ -47,15 +47,15 @@ async def test_complete_api_workflow():
                 if login_response.status_code == 200:
                     token_data = login_response.json()
                     access_token = token_data["access_token"]
-                    print(f"✅ Login successful!")
+                    print(f"SUCCESS: Login successful!")
                     print(f"Token type: {token_data.get('token_type', 'bearer')}")
                 else:
-                    print(f"❌ Login failed: {login_response.status_code}")
+                    print(f"ERROR: Login failed: {login_response.status_code}")
                     print(f"Response: {login_response.text}")
                     return
                     
             except Exception as e:
-                print(f"❌ Login error: {e}")
+                print(f"ERROR: Login error: {e}")
                 return
             
             # Headers with authentication
@@ -76,7 +76,7 @@ async def test_complete_api_workflow():
                 
                 if preview_response.status_code == 200:
                     preview_data = preview_response.json()
-                    print(f"✅ Initial preview successful!")
+                    print(f"SUCCESS: Initial preview successful!")
                     print(f"Preview type: {preview_data.get('type')}")
                     print(f"Requires password: {preview_data.get('requires_password')}")
                     print(f"Encryption type: {preview_data.get('encryption_type')}")
@@ -84,18 +84,18 @@ async def test_complete_api_workflow():
                     
                     # Verify it detected encryption
                     if preview_data.get('type') == 'encrypted' and preview_data.get('requires_password'):
-                        print("✅ Encryption detection working correctly!")
+                        print("SUCCESS: Encryption detection working correctly!")
                     else:
-                        print("❌ Encryption detection failed!")
+                        print("ERROR: Encryption detection failed!")
                         return
                         
                 else:
-                    print(f"❌ Initial preview failed: {preview_response.status_code}")
+                    print(f"ERROR: Initial preview failed: {preview_response.status_code}")
                     print(f"Response: {preview_response.text}")
                     return
                     
             except Exception as e:
-                print(f"❌ Initial preview error: {e}")
+                print(f"ERROR: Initial preview error: {e}")
                 return
             
             print()
@@ -115,7 +115,7 @@ async def test_complete_api_workflow():
                 
                 if encrypted_response.status_code == 200:
                     encrypted_data = encrypted_response.json()
-                    print(f"✅ Encrypted preview successful!")
+                    print(f"SUCCESS: Encrypted preview successful!")
                     print(f"Preview type: {encrypted_data.get('type')}")
                     print(f"Document name: {encrypted_data.get('document_name')}")
                     print(f"Preview content length: {len(str(encrypted_data.get('preview', '')))}")
@@ -129,17 +129,17 @@ async def test_complete_api_workflow():
                         
                     # Verify it's decrypted type
                     if encrypted_data.get('type') == 'decrypted':
-                        print("✅ Decryption and preview generation working correctly!")
+                        print("SUCCESS: Decryption and preview generation working correctly!")
                     else:
-                        print("❌ Decryption failed or wrong response type!")
+                        print("ERROR: Decryption failed or wrong response type!")
                         
                 else:
-                    print(f"❌ Encrypted preview failed: {encrypted_response.status_code}")
+                    print(f"ERROR: Encrypted preview failed: {encrypted_response.status_code}")
                     print(f"Response: {encrypted_response.text}")
                     return
                     
             except Exception as e:
-                print(f"❌ Encrypted preview error: {e}")
+                print(f"ERROR: Encrypted preview error: {e}")
                 return
             
             print()
@@ -158,14 +158,14 @@ async def test_complete_api_workflow():
                 )
                 
                 if wrong_response.status_code == 401:
-                    print("✅ Wrong password correctly rejected!")
+                    print("SUCCESS: Wrong password correctly rejected!")
                     print(f"Error message: {wrong_response.json().get('detail', 'No detail')}")
                 else:
-                    print(f"❌ Wrong password handling failed: {wrong_response.status_code}")
+                    print(f"ERROR: Wrong password handling failed: {wrong_response.status_code}")
                     print(f"Response: {wrong_response.text}")
                     
             except Exception as e:
-                print(f"❌ Wrong password test error: {e}")
+                print(f"ERROR: Wrong password test error: {e}")
             
             print()
             
@@ -179,17 +179,17 @@ async def test_complete_api_workflow():
                 
                 if formats_response.status_code == 200:
                     formats_data = formats_response.json()
-                    print("✅ Preview formats retrieval successful!")
+                    print("SUCCESS: Preview formats retrieval successful!")
                     print(f"Supported previews: {formats_data.get('supported_previews', [])}")
                     print(f"Recommended preview: {formats_data.get('recommended_preview')}")
                 else:
-                    print(f"❌ Preview formats failed: {formats_response.status_code}")
+                    print(f"ERROR: Preview formats failed: {formats_response.status_code}")
                     
             except Exception as e:
-                print(f"❌ Preview formats error: {e}")
+                print(f"ERROR: Preview formats error: {e}")
                 
         except Exception as e:
-            print(f"❌ General test error: {e}")
+            print(f"ERROR: General test error: {e}")
             
     print()
     print("=== API WORKFLOW TEST COMPLETED ===")

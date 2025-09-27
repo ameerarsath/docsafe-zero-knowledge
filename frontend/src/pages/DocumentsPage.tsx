@@ -14,7 +14,8 @@
 
 import React, { useState, useCallback } from 'react';
 import { useDocuments, Document } from '../hooks/useDocuments';
-import { 
+import { useDocumentShares } from '../hooks/useDocumentShares';
+import {
   DocumentUpload,
   DocumentPreview,
   DocumentMoveDialog,
@@ -22,6 +23,7 @@ import {
   DocumentVersionHistory,
   FolderManagementDialog
 } from '../components/documents';
+import { ShareIndicator } from '../components/documents/ShareIndicator';
 import { RequireAuth } from '../components/auth/ProtectedRoute';
 import AppLayout from '../components/layout/AppLayout';
 import {
@@ -129,6 +131,18 @@ function DocumentsContent() {
     setViewMode,
     clearError
   } = documentsHookResult;
+
+  // Get document IDs for documents (not folders)
+  const documentIds = documents
+    .filter(doc => doc.document_type === 'document')
+    .map(doc => doc.id);
+
+  // Load share information for documents
+  const {
+    getDocumentShares,
+    hasActiveShares,
+    getActiveShareCount
+  } = useDocumentShares(documentIds);
 
   // Local state
   const [showUpload, setShowUpload] = useState(false);
@@ -518,7 +532,19 @@ function DocumentsContent() {
                 onContextMenu={(e) => handleContextMenu(e, doc)}
               >
                 <div className="flex flex-col items-center space-y-2">
-                  {getFileIcon(doc)}
+                  <div className="relative">
+                    {getFileIcon(doc)}
+                    {/* Share indicator */}
+                    {doc.document_type === 'document' && hasActiveShares(doc.id) && (
+                      <div className="absolute -top-1 -right-1">
+                        <ShareIndicator
+                          shares={getDocumentShares(doc.id)}
+                          size="sm"
+                          showCount={getActiveShareCount(doc.id) > 1}
+                        />
+                      </div>
+                    )}
+                  </div>
                   <div className="text-sm font-medium text-gray-900 text-center truncate w-full">
                     {doc.name}
                   </div>
@@ -602,19 +628,42 @@ function DocumentsContent() {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="flex items-center space-x-3">
-                        {getFileIcon(doc)}
-                        <button
-                          onClick={() => {
-                            if (doc.document_type === 'folder') {
-                              navigateToFolder(doc.id);
-                            } else {
-                              handlePreview(doc);
-                            }
-                          }}
-                          className="text-sm font-medium text-gray-900 hover:text-blue-600 text-left"
-                        >
-                          {doc.name}
-                        </button>
+                        <div className="relative">
+                          {getFileIcon(doc)}
+                          {/* Share indicator for list view */}
+                          {doc.document_type === 'document' && hasActiveShares(doc.id) && (
+                            <div className="absolute -top-1 -right-1">
+                              <ShareIndicator
+                                shares={getDocumentShares(doc.id)}
+                                size="sm"
+                                showCount={false}
+                              />
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <button
+                            onClick={() => {
+                              if (doc.document_type === 'folder') {
+                                navigateToFolder(doc.id);
+                              } else {
+                                handlePreview(doc);
+                              }
+                            }}
+                            className="text-sm font-medium text-gray-900 hover:text-blue-600 text-left"
+                          >
+                            {doc.name}
+                          </button>
+                          {/* Share indicator in name column for better visibility */}
+                          {doc.document_type === 'document' && hasActiveShares(doc.id) && (
+                            <ShareIndicator
+                              shares={getDocumentShares(doc.id)}
+                              size="sm"
+                              showCount={getActiveShareCount(doc.id) > 1}
+                              className="ml-2"
+                            />
+                          )}
+                        </div>
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">

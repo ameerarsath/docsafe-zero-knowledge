@@ -76,10 +76,23 @@ def _create_default_permissions(db: Session):
         ("folders:admin", "Administer folders", "folders", "admin", False),
         
         # System permissions
+        ("system:read", "Read system information", "system", "read", True),
         ("system:admin", "System administration", "system", "admin", True),
         ("system:audit", "System audit access", "system", "audit", True),
         ("system:backup", "System backup access", "system", "backup", True),
         ("system:config", "System configuration", "system", "config", True),
+
+        # Audit permissions
+        ("audit:read", "Read audit logs", "audit", "read", True),
+        ("audit:create", "Create audit entries", "audit", "create", True),
+        ("audit:admin", "Administer audit system", "audit", "admin", True),
+
+        # Security permissions
+        ("security:read", "Read security information", "security", "read", True),
+        ("security:create", "Create security events", "security", "create", True),
+        ("security:update", "Update security information", "security", "update", True),
+        ("security:delete", "Delete security information", "security", "delete", True),
+        ("security:admin", "Administer security system", "security", "admin", True),
     ]
     
     for perm_name, display_name, resource_type, action, is_system in default_permissions:
@@ -179,8 +192,13 @@ def _assign_default_role_permissions(db: Session):
             "users:update",
             "users:admin",
             "roles:read",
+            "system:read",
             "system:audit",
             "system:backup",
+            "audit:read",
+            "security:read",
+            "security:create",
+            "security:update",
         ],
         "super_admin": [
             "documents:read",
@@ -203,10 +221,19 @@ def _assign_default_role_permissions(db: Session):
             "roles:update",
             "roles:delete",
             "roles:admin",
+            "system:read",
             "system:admin",
             "system:audit",
             "system:backup",
             "system:config",
+            "audit:read",
+            "audit:create",
+            "audit:admin",
+            "security:read",
+            "security:create",
+            "security:update",
+            "security:delete",
+            "security:admin",
         ],
     }
     

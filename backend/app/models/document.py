@@ -134,8 +134,9 @@ class Document(Base):
     encryption_algorithm = Column(String(50), default=EncryptionAlgorithm.AES_256_GCM)
     encryption_key_id = Column(String(100))  # Reference to key management system
     encrypted_dek = Column(Text, nullable=True)  # Document Encryption Key encrypted with user's master key
-    encryption_iv = Column(LargeBinary(16))  # Initialization vector for encryption
-    encryption_auth_tag = Column(LargeBinary(16))  # Authentication tag for GCM mode
+    encryption_iv = Column(String(255))  # Initialization vector for encryption (base64 encoded)
+    encryption_auth_tag = Column(String(255))  # Authentication tag for GCM mode (base64 encoded)
+    ciphertext = Column(Text, nullable=True)  # Encrypted document content (base64 encoded)
     is_encrypted = Column(Boolean, default=True, nullable=False)
     
     # Hierarchy and relationships
@@ -285,6 +286,21 @@ class Document(Base):
             self.path = ""
             self.depth_level = 0
 
+    def _parse_json_field(self, field_value, default_value):
+        """Parse JSON field that might be stored as string or already parsed."""
+        import json
+
+        if field_value is None:
+            return default_value
+
+        if isinstance(field_value, str):
+            try:
+                return json.loads(field_value)
+            except (json.JSONDecodeError, ValueError):
+                return default_value
+
+        return field_value if field_value is not None else default_value
+
     def can_user_access(self, user, permission_type: str = "read") -> bool:
         """Check if user can access this document with given permission."""
         try:
@@ -376,15 +392,16 @@ class Document(Base):
             "is_latest_version": self.is_latest_version,
             "child_count": self.child_count,
             "total_size": self.total_size,
-            "doc_metadata": self.doc_metadata,
-            "tags": self.tags,
+            "doc_metadata": self._parse_json_field(self.doc_metadata, {}),
+            "tags": self._parse_json_field(self.tags, []),
             "is_sensitive": self.is_sensitive,
             # Encryption fields
             "encryption_algorithm": self.encryption_algorithm,
             "encryption_key_id": self.encryption_key_id,
             "encrypted_dek": self.encrypted_dek,
-            "encryption_iv": base64.b64encode(self.encryption_iv).decode('utf-8') if self.encryption_iv else None,
-            "encryption_auth_tag": base64.b64encode(self.encryption_auth_tag).decode('utf-8') if self.encryption_auth_tag else None,
+            "encryption_iv": self.encryption_iv,
+            "encryption_auth_tag": self.encryption_auth_tag,
+            "ciphertext": self.ciphertext,
         }
         
         if include_children and self.is_folder():

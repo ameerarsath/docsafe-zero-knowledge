@@ -35,7 +35,7 @@ module.exports = defineConfig({
   // Global test setup
   use: {
     // Base URL for tests
-    baseURL: 'http://localhost:3005',
+    baseURL: 'http://localhost:3007',
     
     // Collect trace when retrying the failed test
     trace: 'on-first-retry',
@@ -77,20 +77,20 @@ module.exports = defineConfig({
   ],
   
   // Run your local dev server before starting the tests
-  webServer: [
-    {
-      command: 'cd frontend && npm run dev',
-      port: 3005,
-      timeout: 120000,
-      reuseExistingServer: !process.env.CI,
-    },
-    {
-      command: 'cd backend && python -m uvicorn app.main:app --host 0.0.0.0 --port 8002',
-      port: 8002,
-      timeout: 120000,
-      reuseExistingServer: !process.env.CI,
-    }
-  ],
+  // webServer: [
+  //   {
+  //     command: 'cd frontend && npm run dev',
+  //     port: 3005,
+  //     timeout: 120000,
+  //     reuseExistingServer: !process.env.CI,
+  //   },
+  //   {
+  //     command: 'cd backend && python -m uvicorn app.main:app --host 0.0.0.0 --port 8002',
+  //     port: 8002,
+  //     timeout: 120000,
+  //     reuseExistingServer: !process.env.CI,
+  //   }
+  // ],
   
   // Global setup and teardown
   globalSetup: require.resolve('./test-setup.js'),

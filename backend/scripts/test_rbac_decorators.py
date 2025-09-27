@@ -98,10 +98,10 @@ def test_rbac_decorators():
         print(f"Admin has admin role: {admin_has_role}")
         print(f"User has admin role: {user_has_role}")
         
-        print("✅ Decorator logic test completed!")
+        print("SUCCESS: Decorator logic test completed!")
         
     except Exception as e:
-        print(f"❌ Decorator test failed: {e}")
+        print(f"ERROR: Decorator test failed: {e}")
     
     # Test actual FastAPI integration
     print("\nTesting FastAPI integration...")
@@ -119,7 +119,7 @@ def test_rbac_decorators():
     print(f"FastAPI routes created: {routes}")
     
     db.close()
-    print("✅ RBAC decorator testing completed!")
+    print("SUCCESS: RBAC decorator testing completed!")
 
 
 if __name__ == "__main__":

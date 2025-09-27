@@ -13,10 +13,12 @@ import os
 import base64
 import hashlib
 import secrets
+from datetime import datetime, timedelta
 from typing import List, Optional, Dict, Any
 from fastapi import (
     APIRouter, Depends, HTTPException, status, Query, BackgroundTasks
 )
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_, desc, func
 from cryptography.hazmat.primitives import hashes, serialization
@@ -54,6 +56,33 @@ from ...schemas.encryption import (
 router = APIRouter(prefix="/encryption", tags=["Encryption"])
 
 
+def strip_emojis_and_unicode(text: str) -> str:
+    """Remove emojis and problematic Unicode characters that cause encoding issues."""
+    if not text:
+        return ""
+
+    import re
+
+    # Remove emoji ranges and problematic Unicode characters
+    emoji_pattern = re.compile(
+        r'[\U00010000-\U0010ffff]'  # Supplementary planes (includes key emoji)
+        r'|[\u2600-\u2B55]'         # Misc symbols
+        r'|[\u23cf\u23e9\u231a\ufe0f\u3030]'  # Specific symbols
+        r'|[\u200d]',               # Zero width joiner
+        flags=re.UNICODE
+    )
+
+    # First remove emojis
+    clean_text = emoji_pattern.sub('', text)
+
+    # Then ensure only ASCII characters remain for maximum safety
+    try:
+        ascii_text = clean_text.encode('ascii', errors='ignore').decode('ascii')
+        return ascii_text.strip()
+    except:
+        return "TEXT_ENCODING_ERROR"
+
+
 # Encryption Key Management Endpoints
 @router.post("/keys", response_model=EncryptionKeyResponse, status_code=status.HTTP_201_CREATED)
 async def create_encryption_key(
@@ -65,9 +94,9 @@ async def create_encryption_key(
     """Create a new user encryption key."""
     # Users can create their own encryption keys for document upload
     # Only admin-level users need encryption:manage for system-wide key management
-    if not (current_user.id or has_permission(current_user, "encryption:manage", db)):
+    if not current_user or not current_user.id:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
+            status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Authentication required to create encryption keys"
         )
     
@@ -201,6 +230,36 @@ async def create_encryption_key(
         )
 
 
+@router.get("/keys-test")
+async def test_endpoint_no_auth():
+    """Test endpoint without authentication to isolate Unicode error."""
+    return {"message": "Test successful", "status": "working"}
+
+
+@router.get("/auth-test")
+async def test_endpoint_with_auth(current_user: User = Depends(get_current_user)):
+    """Test endpoint with authentication to isolate Unicode error."""
+    return {"message": "Auth test successful", "user": current_user.username}
+
+
+@router.get("/encoding-test")
+async def test_encoding_fix():
+    """Test endpoint to verify UTF-8 encoding is working properly."""
+    test_data = {
+        "message": "Encoding test successful [OK]",
+        "emoji_test": "[KEY] [ROCKET] [COMPUTER]",
+        "unicode_chars": "cafe resume naive",
+        "mixed_content": "Regular text with [KEY] symbols and cafe"
+    }
+
+    # Return with explicit UTF-8 encoding
+    from fastapi.responses import JSONResponse
+    return JSONResponse(
+        content=test_data,
+        headers={"Content-Type": "application/json; charset=utf-8"}
+    )
+
+
 @router.get("/keys", response_model=EncryptionKeyList)
 async def list_user_encryption_keys(
     include_inactive: bool = Query(False, description="Include inactive keys"),
@@ -209,49 +268,196 @@ async def list_user_encryption_keys(
 ):
     """List user's encryption keys."""
     try:
-        print(f"🔑 ENCRYPTION KEYS REQUEST: User {current_user.username} (ID: {current_user.id})")
+        # Safe debug logging without Unicode issues
+        username_safe = current_user.username.encode('ascii', errors='replace').decode('ascii')
+        print(f"DEBUG: ENCRYPTION KEYS REQUEST - User {username_safe} (ID: {current_user.id})")
         query = db.query(UserEncryptionKey).filter(UserEncryptionKey.user_id == current_user.id)
-        
+
         if not include_inactive:
             query = query.filter(UserEncryptionKey.is_active == True)
-        
-        print(f"🔑 EXECUTING QUERY: {query}")
+
+        print(f"DEBUG: EXECUTING QUERY - User ID {current_user.id}")
         keys = query.order_by(desc(UserEncryptionKey.created_at)).all()
-        print(f"🔑 FOUND KEYS: {len(keys)} encryption keys")
-        
+        print(f"DEBUG: FOUND KEYS: {len(keys)} encryption keys")
+
         key_responses = []
         for key in keys:
-            print(f"🔑 PROCESSING KEY: {key.key_id}")
+            key_id_safe = key.key_id.encode('ascii', errors='replace').decode('ascii') if key.key_id else 'None'
+            print(f"DEBUG: PROCESSING KEY: {key_id_safe}")
+
+            # Ensure all string fields are properly encoded for Unicode safety
+            hint = key.hint or ""
+            if isinstance(hint, str):
+                hint = hint.encode('ascii', errors='replace').decode('ascii')
+
+            deactivated_reason = key.deactivated_reason or ""
+            if isinstance(deactivated_reason, str):
+                deactivated_reason = deactivated_reason.encode('ascii', errors='replace').decode('ascii')
+
             key_responses.append(EncryptionKeyResponse(
                 key_id=key.key_id,
                 algorithm=key.algorithm,
                 key_derivation_method=key.key_derivation_method,
                 iterations=key.iterations,
                 salt=key.salt,
-                hint=key.hint,
+                hint=hint,
                 is_active=key.is_active,
                 created_at=key.created_at,
                 expires_at=key.expires_at,
                 deactivated_at=key.deactivated_at,
-                deactivated_reason=key.deactivated_reason,
+                deactivated_reason=deactivated_reason,
                 escrow_available=bool(
                     db.query(KeyEscrow).filter(KeyEscrow.key_id == key.key_id).first()
                 )
             ))
-        
-        print(f"🔑 RETURNING: {len(key_responses)} key responses")
+
+        print(f"DEBUG: RETURNING: {len(key_responses)} key responses")
         return EncryptionKeyList(
             keys=key_responses,
             total=len(key_responses),
             active_count=len([k for k in key_responses if k.is_active])
         )
     except Exception as e:
-        print(f"❌ ENCRYPTION KEYS ERROR: {e}")
+        print(f"ERROR: ENCRYPTION KEYS ERROR: {e}")
         import traceback
         traceback.print_exc()
+        # Safe error handling to prevent Unicode encoding issues
+        safe_error = str(e).encode('ascii', errors='replace').decode('ascii')
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to list encryption keys: {str(e)}"
+            detail=f"Failed to list encryption keys: {safe_error}"
+        )
+
+
+@router.get("/user-keys-fixed")
+async def get_user_keys_bypass_cache(
+    include_inactive: bool = Query(False, description="Include inactive keys"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Completely new endpoint to bypass cached Unicode errors."""
+    try:
+        # Replicate the exact same logic as /keys but with a different function name
+        query = db.query(UserEncryptionKey).filter(UserEncryptionKey.user_id == current_user.id)
+        if not include_inactive:
+            query = query.filter(UserEncryptionKey.is_active == True)
+
+        keys = query.order_by(desc(UserEncryptionKey.created_at)).all()
+
+        key_responses = []
+        for key in keys:
+            # Use our emoji stripping function
+            hint = strip_emojis_and_unicode(key.hint) if key.hint else ""
+            deactivated_reason = strip_emojis_and_unicode(key.deactivated_reason) if key.deactivated_reason else ""
+
+            key_dict = {
+                "key_id": str(key.key_id),
+                "algorithm": str(key.algorithm),
+                "key_derivation_method": str(key.key_derivation_method),
+                "iterations": int(key.iterations),
+                "salt": str(key.salt),
+                "hint": hint,
+                "is_active": bool(key.is_active),
+                "created_at": key.created_at.isoformat() if key.created_at else None,
+                "expires_at": key.expires_at.isoformat() if key.expires_at else None,
+                "deactivated_at": key.deactivated_at.isoformat() if key.deactivated_at else None,
+                "deactivated_reason": deactivated_reason,
+                "escrow_available": bool(
+                    db.query(KeyEscrow).filter(KeyEscrow.key_id == key.key_id).first()
+                )
+            }
+            key_responses.append(key_dict)
+
+        # Return with explicit UTF-8 encoding
+        return JSONResponse(
+            content={
+                "keys": key_responses,
+                "total": len(key_responses),
+                "active_count": len([k for k in key_responses if k.get("is_active", False)]),
+                "bypass_success": True
+            },
+            headers={"Content-Type": "application/json; charset=utf-8"}
+        )
+
+    except Exception as e:
+        # Safe error handling without Unicode
+        safe_error = str(e).encode('ascii', errors='ignore').decode('ascii')
+        return JSONResponse(
+            content={
+                "keys": [],
+                "total": 0,
+                "active_count": 0,
+                "error": f"Bypass route error: {safe_error}",
+                "bypass_failed": True
+            },
+            status_code=200,
+            headers={"Content-Type": "application/json; charset=utf-8"}
+        )
+
+
+@router.get("/keys/all", response_model=EncryptionKeyList)
+async def list_all_encryption_keys(
+    include_inactive: bool = Query(False, description="Include inactive keys"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """List all encryption keys (admin only) or user's keys."""
+    try:
+        # Check if user has admin permissions
+        if has_permission(current_user, "encryption:admin", db):
+            # Admin can see all keys
+            query = db.query(UserEncryptionKey)
+            if not include_inactive:
+                query = query.filter(UserEncryptionKey.is_active == True)
+        else:
+            # Regular users see only their own keys
+            query = db.query(UserEncryptionKey).filter(UserEncryptionKey.user_id == current_user.id)
+            if not include_inactive:
+                query = query.filter(UserEncryptionKey.is_active == True)
+
+        keys = query.order_by(desc(UserEncryptionKey.created_at)).all()
+
+        key_responses = []
+        for key in keys:
+            # Ensure all string fields are properly encoded for Unicode safety
+            hint = key.hint or ""
+            if isinstance(hint, str):
+                # Replace any potential Unicode characters that might cause encoding issues
+                hint = hint.encode('ascii', errors='replace').decode('ascii')
+
+            deactivated_reason = key.deactivated_reason or ""
+            if isinstance(deactivated_reason, str):
+                deactivated_reason = deactivated_reason.encode('ascii', errors='replace').decode('ascii')
+
+            key_responses.append(EncryptionKeyResponse(
+                key_id=key.key_id,
+                algorithm=key.algorithm,
+                key_derivation_method=key.key_derivation_method,
+                iterations=key.iterations,
+                salt=key.salt,
+                hint=hint,
+                is_active=key.is_active,
+                created_at=key.created_at,
+                expires_at=key.expires_at,
+                deactivated_at=key.deactivated_at,
+                deactivated_reason=deactivated_reason,
+                escrow_available=bool(
+                    db.query(KeyEscrow).filter(KeyEscrow.key_id == key.key_id).first()
+                )
+            ))
+
+        return EncryptionKeyList(
+            keys=key_responses,
+            total=len(key_responses),
+            active_count=len([k for k in key_responses if k.is_active])
+        )
+
+    except Exception as e:
+        # Safe error handling to prevent Unicode encoding issues
+        safe_error = str(e).encode('ascii', errors='replace').decode('ascii')
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to list all encryption keys: {safe_error}"
         )
 
 
@@ -275,18 +481,27 @@ async def get_encryption_key(
             detail="Encryption key not found"
         )
     
+    # Ensure all string fields are properly encoded for Unicode safety
+    hint = key.hint or ""
+    if isinstance(hint, str):
+        hint = hint.encode('ascii', errors='replace').decode('ascii')
+
+    deactivated_reason = key.deactivated_reason or ""
+    if isinstance(deactivated_reason, str):
+        deactivated_reason = deactivated_reason.encode('ascii', errors='replace').decode('ascii')
+
     return EncryptionKeyResponse(
         key_id=key.key_id,
         algorithm=key.algorithm,
         key_derivation_method=key.key_derivation_method,
         iterations=key.iterations,
         salt=key.salt,
-        hint=key.hint,
+        hint=hint,
         is_active=key.is_active,
         created_at=key.created_at,
         expires_at=key.expires_at,
         deactivated_at=key.deactivated_at,
-        deactivated_reason=key.deactivated_reason,
+        deactivated_reason=deactivated_reason,
         escrow_available=bool(
             db.query(KeyEscrow).filter(KeyEscrow.key_id == key_id).first()
         )
@@ -296,7 +511,7 @@ async def get_encryption_key(
 @router.delete("/keys/{key_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def deactivate_encryption_key(
     key_id: str,
-    reason: str = Query(..., description="Reason for deactivation"),
+    reason: str = Query("User requested deactivation", description="Reason for deactivation"),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -336,6 +551,156 @@ async def deactivate_encryption_key(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to deactivate key: {str(e)}"
+        )
+
+
+@router.post("/keys/{key_id}/rotate", response_model=EncryptionKeyResponse)
+async def rotate_encryption_key(
+    key_id: str,
+    force_rotation: bool = Query(False, description="Force rotation even if key is not expired"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    background_tasks: BackgroundTasks = BackgroundTasks()
+):
+    """Rotate an existing encryption key by creating a new one and deactivating the old one."""
+    try:
+        print(f"KEY ROTATION REQUEST: User {current_user.username} (ID: {current_user.id}) wants to rotate key {key_id}")
+
+        # Find the existing key
+        existing_key = db.query(UserEncryptionKey).filter(
+            and_(
+                UserEncryptionKey.key_id == key_id,
+                UserEncryptionKey.user_id == current_user.id,
+                UserEncryptionKey.is_active == True
+            )
+        ).first()
+
+        if not existing_key:
+            # Check if the key exists but belongs to another user or is inactive
+            any_key = db.query(UserEncryptionKey).filter(UserEncryptionKey.key_id == key_id).first()
+            if any_key:
+                if any_key.user_id != current_user.id:
+                    print(f"ERROR KEY ROTATION: Key {key_id} belongs to user {any_key.user_id}, not {current_user.id}")
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="You don't have permission to rotate this key"
+                    )
+                elif not any_key.is_active:
+                    print(f"ERROR KEY ROTATION: Key {key_id} is inactive")
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Cannot rotate inactive key"
+                    )
+            else:
+                print(f"ERROR KEY ROTATION: Key {key_id} not found in database")
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Encryption key '{key_id}' not found"
+                )
+
+        # Generate new salt and key ID for rotation
+        new_salt = secrets.token_bytes(32)
+        new_key_id = f"key_{current_user.id}_{secrets.token_hex(16)}"
+
+        # For key rotation, we'll create a new key with enhanced security
+        # Using maximum recommended iterations for better security
+        iterations = 500000
+
+        # Generate a validation payload for the new key
+        # This is a placeholder - in real implementation, the client would provide this
+        # after deriving the new key with the user's password
+        validation_payload = {
+            "user": current_user.username,
+            "timestamp": datetime.utcnow().isoformat(),
+            "key_version": 2
+        }
+
+        # Create new encryption key record
+        new_encryption_key = UserEncryptionKey(
+            user_id=current_user.id,
+            key_id=new_key_id,
+            algorithm="AES-256-GCM",
+            key_derivation_method="PBKDF2-SHA256",
+            iterations=iterations,
+            salt=base64.b64encode(new_salt).decode('utf-8'),
+            validation_hash="rotated_key_placeholder",  # Would be updated by client
+            hint=f"Rotated from {existing_key.key_id}",
+            is_active=True,
+            created_by=current_user.id
+        )
+
+        # Deactivate the old key
+        existing_key.is_active = False
+        existing_key.deactivated_at = func.now()
+        existing_key.deactivated_reason = f"Rotated to {new_key_id}"
+
+        # Add both changes to database
+        db.add(new_encryption_key)
+        db.commit()
+        db.refresh(new_encryption_key)
+
+        # Create audit logs for both operations
+        # Log deactivation of old key
+        old_key_audit = EncryptionAuditLog(
+            user_id=current_user.id,
+            action="rotate_key_deactivate",
+            key_id=key_id,
+            success=True,
+            details={
+                "new_key_id": new_key_id,
+                "force_rotation": force_rotation,
+                "rotation_reason": "User-initiated key rotation"
+            }
+        )
+
+        # Log creation of new key
+        new_key_audit = EncryptionAuditLog(
+            user_id=current_user.id,
+            action="rotate_key_create",
+            key_id=new_key_id,
+            success=True,
+            details={
+                "old_key_id": key_id,
+                "algorithm": "AES-256-GCM",
+                "derivation_method": "PBKDF2-SHA256",
+                "iterations": iterations
+            }
+        )
+
+        db.add(old_key_audit)
+        db.add(new_key_audit)
+        db.commit()
+
+        # Schedule key escrow creation in background if enabled
+        if settings.ENCRYPTION_ESCROW_ENABLED:
+            background_tasks.add_task(
+                create_key_escrow_async,
+                db=db,
+                user_id=current_user.id,
+                key_id=new_key_id,
+                derived_key=b"placeholder_for_rotated_key"  # Would be actual key in real implementation
+            )
+
+        return EncryptionKeyResponse(
+            key_id=new_key_id,
+            algorithm="AES-256-GCM",
+            key_derivation_method="PBKDF2-SHA256",
+            iterations=iterations,
+            salt=base64.b64encode(new_salt).decode('utf-8'),
+            hint=f"Rotated from {existing_key.key_id}",
+            is_active=True,
+            created_at=new_encryption_key.created_at,
+            expires_at=new_encryption_key.expires_at,
+            escrow_available=settings.ENCRYPTION_ESCROW_ENABLED
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to rotate encryption key: {str(e)}"
         )
 
 

@@ -95,6 +95,7 @@ export default function KeyManagementPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState<string>('all');
   const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [showingMockData, setShowingMockData] = useState(false);
 
   // Mock data for demonstration
   const mockKeys: EncryptionKey[] = [
@@ -164,17 +165,20 @@ export default function KeyManagementPage() {
       // Try to load real keys from API
       const apiKeys = await encryptionApi.getAllKeys();
       const convertedKeys = apiKeys.map(key => convertApiKeyToLocal(key));
-      
+
       // If no real keys exist, fall back to mock data for demo
       if (convertedKeys.length === 0) {
         setKeys(mockKeys);
+        setShowingMockData(true);
       } else {
         setKeys(convertedKeys);
+        setShowingMockData(false);
       }
     } catch (err) {
       // Failed to load real keys, using mock data
       // Fall back to mock data if API fails
       setKeys(mockKeys);
+      setShowingMockData(true);
     } finally {
       setLoading(false);
     }
@@ -205,49 +209,81 @@ export default function KeyManagementPage() {
   const handleRotateKey = async (keyId: string) => {
     try {
       setError(null);
-      
+
       // Find the key to get the actual key_id
       const key = keys.find(k => k.id === keyId);
       if (!key) {
         throw new Error('Key not found');
       }
-      
+
+      // Check if this is a mock key (these are demo keys that don't exist in the database)
+      const isMockKey = ['admin_escrow_001', 'system_key_001', 'user_key_001', 'user_key_002'].includes(key.key_id);
+
+      if (isMockKey) {
+        // For mock keys, simulate rotation
+        alert(`Mock key rotation simulated for ${key.key_id}. This is demo data - please create real keys to test rotation functionality.`);
+        return;
+      }
+
       // Call real API to rotate key
       const rotatedKey = await encryptionApi.rotateKey(key.key_id);
       const updatedKey = convertApiKeyToLocal(rotatedKey);
-      
+
       setKeys(keys.map(k => k.id === keyId ? updatedKey : k));
-      
+
       // Reload keys to get updated list
       await loadKeys();
     } catch (err) {
-      setError(`Failed to rotate key: ${err.message}`);
+      if (err.message && err.message.includes('not found')) {
+        setError(`Cannot rotate key: This appears to be demo data. Please create real encryption keys to test rotation functionality.`);
+      } else {
+        setError(`Failed to rotate key: ${err.message}`);
+      }
     }
   };
 
   const handleRevokeKey = async (keyId: string) => {
     try {
       setError(null);
-      
+
       // Find the key to get the actual key_id
       const key = keys.find(k => k.id === keyId);
       if (!key) {
         throw new Error('Key not found');
       }
-      
+
+      // Check if this is a mock key (these are demo keys that don't exist in the database)
+      const isMockKey = ['admin_escrow_001', 'system_key_001', 'user_key_001', 'user_key_002'].includes(key.key_id);
+
+      if (isMockKey) {
+        // For mock keys, simulate revocation
+        alert(`Mock key revocation simulated for ${key.key_id}. This is demo data - please create real keys to test revocation functionality.`);
+        // Update the local state to show it as revoked
+        setKeys(keys.map(k =>
+          k.id === keyId
+            ? { ...k, is_active: false, status: 'revoked' }
+            : k
+        ));
+        return;
+      }
+
       // Call real API to deactivate key
       await encryptionApi.deactivateKey(key.key_id);
-      
-      setKeys(keys.map(k => 
-        k.id === keyId 
+
+      setKeys(keys.map(k =>
+        k.id === keyId
           ? { ...k, is_active: false, status: 'revoked' }
           : k
       ));
-      
+
       // Reload keys to get updated list
       await loadKeys();
     } catch (err) {
-      setError(`Failed to revoke key: ${err.message}`);
+      if (err.message && err.message.includes('not found')) {
+        setError(`Cannot revoke key: This appears to be demo data. Please create real encryption keys to test revocation functionality.`);
+      } else {
+        setError(`Failed to revoke key: ${err.message}`);
+      }
     }
   };
 

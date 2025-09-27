@@ -472,9 +472,9 @@ const UserRoleAssignmentInterface: React.FC<UserRoleAssignmentProps> = ({
   };
 
   // Handle role revocation with confirmation
-  const handleRevokeRole = (userId: number, roleId: number) => {
-    const user = state.users.find(u => u.id === userId);
-    const userRole = user?.roles.find(r => r.role_id === roleId);
+  const handleRevokeRole = (userId: string, roleId: string) => {
+    const user = state.users.find(u => u.id === parseInt(userId));
+    const userRole = user?.roles.find(r => r.role_id === parseInt(roleId));
     const roleName = userRole?.role.display_name || 'role';
     const isLastRole = user?.roles.length === 1;
     
@@ -565,8 +565,8 @@ const UserRoleAssignmentInterface: React.FC<UserRoleAssignmentProps> = ({
   };
 
   // Handle edit role assignment
-  const handleEditAssignment = (userId: number, userRole: any) => {
-    const user = state.users.find(u => u.id === userId);
+  const handleEditAssignment = (userId: string, userRole: any) => {
+    const user = state.users.find(u => u.id === parseInt(userId));
     if (!user) return;
     
     setEditingAssignment({
@@ -695,6 +695,7 @@ const UserRoleAssignmentInterface: React.FC<UserRoleAssignmentProps> = ({
               ? {
                   ...u,
                   roles: [{
+                    user_id: u.id,
                     role_id: selectedRole.id,
                     role: selectedRole,
                     is_active: true,

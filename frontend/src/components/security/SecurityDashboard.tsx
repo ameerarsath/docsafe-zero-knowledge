@@ -34,6 +34,8 @@ import {
 } from 'lucide-react';
 import { LoadingSpinner, MetricCard } from '../ui';
 import SecurityHeadersStatus from './SecurityHeadersStatus';
+import { useAuth } from '../../contexts/AuthContext';
+import { securityApi } from '../../services/api/security';
 
 interface Props {
   refreshInterval?: number;
@@ -46,11 +48,15 @@ export default function SecurityDashboard({
 }: Props) {
   // State management
   const [isLoading, setIsLoading] = useState(false);
+  const [accessDenied, setAccessDenied] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastRefresh, setLastRefresh] = useState<Date | null>(new Date());
   const [selectedTimeRange, setSelectedTimeRange] = useState<number>(24); // hours
   const [dashboardData, setDashboardData] = useState<any>(null);
   const [metricsData, setMetricsData] = useState<any>(null);
+
+  // Auth context for role checking
+  const { user, isAuthenticated, isLoading: authLoading, hasRole } = useAuth();
 
   /**
    * Load dashboard data from API
@@ -58,33 +64,66 @@ export default function SecurityDashboard({
   const loadDashboardData = useCallback(async () => {
     try {
       setError(null);
-      
-      // Try to load real data from API
-      const [dashboardResponse, metricsResponse] = await Promise.all([
-        fetch('/api/v1/security/dashboard?hours=' + selectedTimeRange, {
-          headers: {
-            'Authorization': `Bearer ${localStorage.getItem('token')}`,
-            'Content-Type': 'application/json'
-          }
-        }),
-        fetch('/api/v1/security/metrics?days=7', {
-          headers: {
-            'Authorization': `Bearer ${localStorage.getItem('token')}`,
-            'Content-Type': 'application/json'
-          }
-        })
+      setAccessDenied(false);
+
+      console.log('🔐 Loading security dashboard data...');
+
+      // Don't proceed if auth is still loading
+      if (authLoading) {
+        console.log('🔄 Auth still loading, waiting...');
+        return;
+      }
+
+      // If not authenticated and not loading, redirect to login
+      if (!isAuthenticated && !authLoading) {
+        console.log('🔄 User not authenticated - redirecting to login');
+        window.location.href = '/login';
+        return;
+      }
+
+      // Check role-based access (admin or security role required)
+      const hasSecurityAccess = user?.role === 'admin' || user?.role === 'super_admin' || user?.role === 'security';
+      console.log('🔐 User role:', user?.role, 'Has security access:', hasSecurityAccess);
+
+      if (user && !hasSecurityAccess) {
+        console.warn('🚫 User lacks security permissions - showing access denied');
+        setAccessDenied(true);
+        return;
+      }
+
+      // Try to load real data from API using the security service
+      const [dashboardData, metricsData] = await Promise.all([
+        securityApi.getSecurityDashboard(selectedTimeRange),
+        securityApi.getSecurityMetrics(7)
       ]);
 
-      if (dashboardResponse.ok && metricsResponse.ok) {
-        const dashboardData = await dashboardResponse.json();
-        const metricsData = await metricsResponse.json();
-        
-        setDashboardData(dashboardData);
-        setMetricsData(metricsData);
-      } else {
-        throw new Error('Failed to load security data from API');
-      }
+      console.log('✅ Security data loaded successfully');
+      setDashboardData(dashboardData);
+      setMetricsData(metricsData);
     } catch (apiError) {
+      console.error('🚨 Security API error:', apiError);
+
+      // Check error type for proper handling
+      const statusCode = (apiError as any)?.statusCode;
+
+      if (statusCode === 403) {
+        console.warn('🚫 403 Forbidden - role-based access denied');
+        setAccessDenied(true);
+        return;
+      } else if (statusCode === 401) {
+        console.log('🔄 401 Unauthorized - token invalid/expired');
+        // Only redirect if we're sure user is not authenticated
+        // Don't redirect if this is just a loading state issue
+        if (user === null && !isAuthenticated) {
+          console.log('🔄 Redirecting to login due to authentication failure');
+          window.location.href = '/login';
+        } else {
+          console.warn('🔄 Authentication error but user exists - may be token issue');
+          setError('Authentication error. Please try refreshing the page.');
+        }
+        return;
+      }
+      
       console.warn('API not available, using mock data:', apiError);
       
       // Fallback to mock data
@@ -142,7 +181,7 @@ export default function SecurityDashboard({
       setDashboardData(mockDashboardData);
       setMetricsData(mockMetricsData);
     }
-  }, [selectedTimeRange]);
+  }, [selectedTimeRange, authLoading, isAuthenticated, user]);
 
   /**
    * Manual refresh handler
@@ -207,8 +246,8 @@ export default function SecurityDashboard({
     return new Date(dateStr).toLocaleString();
   };
 
-  // Show loading state if data not loaded
-  if (!dashboardData || !metricsData) {
+  // Show loading state if auth is loading or data not loaded
+  if (authLoading || isLoading || (!dashboardData || !metricsData)) {
     return (
       <div className="flex items-center justify-center h-64">
         <LoadingSpinner size="lg" />
@@ -218,10 +257,22 @@ export default function SecurityDashboard({
 
   const totalEvents = Object.values(dashboardData.event_counts).reduce((sum, count) => sum + count, 0);
 
-  if (isLoading) {
+  // Show access denied for users without security permissions
+  if (accessDenied) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <LoadingSpinner size="lg" />
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="text-center max-w-md mx-auto">
+          <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <Shield className="w-8 h-8 text-red-600" />
+          </div>
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">Access Denied</h2>
+          <p className="text-gray-600 mb-4">
+            You don't have permission to view the security dashboard. This feature requires administrator or security role access.
+          </p>
+          <p className="text-sm text-gray-500">
+            Current role: <span className="font-medium">{user?.role || 'Unknown'}</span>
+          </p>
+        </div>
       </div>
     );
   }
@@ -231,7 +282,7 @@ export default function SecurityDashboard({
       <div className="bg-red-50 border border-red-200 rounded-lg p-6">
         <div className="flex items-center space-x-2 text-red-800">
           <AlertTriangle className="w-5 h-5" />
-          <h3 className="font-medium">Failed to load security dashboard</h3>
+          <h3 className="font-medium">Security Dashboard Error</h3>
         </div>
         <p className="text-red-700 mt-2">{error}</p>
         <button

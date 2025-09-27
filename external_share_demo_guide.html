@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>External Share Creation Demo Guide</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f8f9fa;
+            line-height: 1.6;
+        }
+        .header {
+            background: linear-gradient(135deg, #007bff, #0056b3);
+            color: white;
+            padding: 30px;
+            border-radius: 8px;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .demo-card {
+            background: white;
+            border-radius: 8px;
+            padding: 25px;
+            margin: 20px 0;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            border-left: 5px solid #007bff;
+        }
+        .step {
+            background: white;
+            border: 1px solid #e9ecef;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 15px 0;
+            position: relative;
+        }
+        .step-number {
+            background: #007bff;
+            color: white;
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            margin-right: 15px;
+            position: absolute;
+            top: 20px;
+            left: -15px;
+        }
+        .step-content {
+            margin-left: 30px;
+        }
+        .url-box {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            padding: 15px;
+            margin: 10px 0;
+            font-family: monospace;
+            word-break: break-all;
+        }
+        .button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 4px;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-block;
+            margin: 5px;
+            font-size: 14px;
+        }
+        .button:hover {
+            background: #0056b3;
+        }
+        .button.success {
+            background: #28a745;
+        }
+        .button.secondary {
+            background: #6c757d;
+        }
+        .status {
+            padding: 10px 15px;
+            border-radius: 4px;
+            margin: 10px 0;
+            display: inline-block;
+        }
+        .status.info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+        .status.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .status.warning {
+            background: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeaa7;
+        }
+        .requirements {
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+            border-radius: 4px;
+            padding: 15px;
+            margin: 15px 0;
+        }
+        .screenshot-placeholder {
+            background: #f8f9fa;
+            border: 2px dashed #dee2e6;
+            border-radius: 8px;
+            padding: 40px;
+            text-align: center;
+            margin: 15px 0;
+            color: #6c757d;
+        }
+        .code-block {
+            background: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 4px;
+            padding: 15px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            overflow-x: auto;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>SecureVault External Share Creation Demo</h1>
+        <p>Step-by-step guide to create external document shares via UI</p>
+    </div>
+
+    <div class="demo-card">
+        <h2>Demo Overview</h2>
+        <p>This guide demonstrates how to create an external share for a Word document using SecureVault's web interface. External shares allow documents to be accessed by users without SecureVault accounts.</p>
+
+        <div class="requirements">
+            <h3>Prerequisites</h3>
+            <ul>
+                <li><strong>Backend:</strong> Running on <code>http://localhost:8002</code></li>
+                <li><strong>Frontend:</strong> Running on <code>http://localhost:3008</code></li>
+                <li><strong>Test User:</strong> Access to a SecureVault account</li>
+                <li><strong>Test Document:</strong> Word document or text file to share</li>
+            </ul>
+        </div>
+
+        <div class="status info">
+            <strong>Current Status:</strong> Both services are running and ready for demo
+        </div>
+    </div>
+
+    <div class="demo-card">
+        <h2>Quick Access Links</h2>
+        <a href="http://localhost:3008" target="_blank" class="button">Open SecureVault Frontend</a>
+        <a href="http://localhost:8002/docs" target="_blank" class="button secondary">View API Documentation</a>
+        <a href="file:///D:/main/project/docsafe/test_documents/sample_document.txt" class="button secondary">Test Document</a>
+    </div>
+
+    <div class="demo-card">
+        <h2>Step-by-Step Demo Process</h2>
+
+        <div class="step">
+            <div class="step-number">1</div>
+            <div class="step-content">
+                <h3>Access SecureVault</h3>
+                <p>Navigate to the SecureVault frontend application:</p>
+                <div class="url-box">http://localhost:3008</div>
+                <p>You should see the SecureVault login page. If you encounter authentication issues with the API, you may need to check the backend logs or create a new user account.</p>
+                <div class="screenshot-placeholder">
+                    [Screenshot: SecureVault Login Page]
+                </div>
+            </div>
+        </div>
+
+        <div class="step">
+            <div class="step-number">2</div>
+            <div class="step-content">
+                <h3>Login or Register</h3>
+                <p>Login with existing credentials or create a new account:</p>
+                <div class="code-block">
+Username: testuser (or create new account)
+Password: password123
+Email: testuser@example.com (for new accounts)</div>
+                <p><strong>Note:</strong> Due to zero-knowledge encryption, registration requires additional fields like encryption_salt and key_verification_payload.</p>
+                <div class="screenshot-placeholder">
+                    [Screenshot: User logged into Documents dashboard]
+                </div>
+            </div>
+        </div>
+
+        <div class="step">
+            <div class="step-number">3</div>
+            <div class="step-content">
+                <h3>Upload Test Document</h3>
+                <p>Upload a Word document or use the provided test document:</p>
+                <ul>
+                    <li>Click the "Upload" button or drag-and-drop area</li>
+                    <li>Select your test document (Word, PDF, or text file)</li>
+                    <li>Wait for zero-knowledge encryption and upload to complete</li>
+                    <li>Verify the document appears in your documents list</li>
+                </ul>
+                <div class="screenshot-placeholder">
+                    [Screenshot: Document uploaded successfully]
+                </div>
+            </div>
+        </div>
+
+        <div class="step">
+            <div class="step-number">4</div>
+            <div class="step-content">
+                <h3>Create External Share</h3>
+                <p>Create an external share for the uploaded document:</p>
+                <ol>
+                    <li>Find your uploaded document in the documents list</li>
+                    <li>Click the "Share" button or right-click for context menu</li>
+                    <li>In the share dialog, configure the following:</li>
+                </ol>
+                <div class="code-block">
+Share Name: "External Word Document Share"
+Share Type: "External" (no authentication required)
+Permissions:
+  ✓ Allow Preview
+  ✓ Allow Download
+  ✗ Allow Comments (optional)
+Access Control:
+  ✗ Require Password (for this demo)
+  ✗ Set Expiration Date (optional)
+  ✗ Limit Access Count (optional)</div>
+                <p>Click "Create Share" to generate the external share link.</p>
+                <div class="screenshot-placeholder">
+                    [Screenshot: Share dialog with external share settings]
+                </div>
+            </div>
+        </div>
+
+        <div class="step">
+            <div class="step-number">5</div>
+            <div class="step-content">
+                <h3>Test External Share</h3>
+                <p>Verify the external share works correctly:</p>
+                <ol>
+                    <li>Copy the generated share URL from the success dialog</li>
+                    <li>Open a new browser window/tab (or incognito mode)</li>
+                    <li>Navigate to the share URL</li>
+                    <li>Verify you can access the document without logging in</li>
+                    <li>Test preview functionality (if supported)</li>
+                    <li>Test download functionality</li>
+                </ol>
+                <div class="url-box">Expected URL format: http://localhost:3008/share/[share-token]</div>
+                <div class="screenshot-placeholder">
+                    [Screenshot: External share accessed without authentication]
+                </div>
+            </div>
+        </div>
+
+        <div class="step">
+            <div class="step-number">6</div>
+            <div class="step-content">
+                <h3>Verify Share Features</h3>
+                <p>Confirm all external sharing features work:</p>
+                <div class="status success">
+                    <strong>Success Criteria:</strong>
+                    <ul>
+                        <li>✓ Share URL accessible without login</li>
+                        <li>✓ Document information displayed correctly</li>
+                        <li>✓ Preview button available and functional</li>
+                        <li>✓ Download button available and working</li>
+                        <li>✓ No authentication prompts for external users</li>
+                    </ul>
+                </div>
+                <div class="screenshot-placeholder">
+                    [Screenshot: All share features working correctly]
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="demo-card">
+        <h2>Expected Results</h2>
+
+        <div class="status success">
+            <h3>✅ Successful Demo Completion</h3>
+            <ul>
+                <li><strong>Document Upload:</strong> Word document successfully uploaded with zero-knowledge encryption</li>
+                <li><strong>Share Creation:</strong> External share created via UI with proper permissions</li>
+                <li><strong>External Access:</strong> Share URL accessible without authentication</li>
+                <li><strong>Preview Functionality:</strong> Document preview works for supported formats</li>
+                <li><strong>Download Feature:</strong> External users can download the shared document</li>
+            </ul>
+        </div>
+
+        <div class="status warning">
+            <h3>⚠️ Common Issues</h3>
+            <ul>
+                <li><strong>Authentication Errors:</strong> Backend may have authentication/registration issues</li>
+                <li><strong>Preview Problems:</strong> Some file formats may not preview correctly</li>
+                <li><strong>Encryption Issues:</strong> Zero-knowledge encryption setup may need proper key management</li>
+                <li><strong>CORS Issues:</strong> Frontend-backend communication may be blocked by CORS policies</li>
+            </ul>
+        </div>
+    </div>
+
+    <div class="demo-card">
+        <h2>Technical Implementation Highlights</h2>
+
+        <h3>Zero-Knowledge Architecture</h3>
+        <p>SecureVault implements client-side encryption ensuring that:</p>
+        <ul>
+            <li>Documents are encrypted before upload to the server</li>
+            <li>Server never has access to unencrypted content</li>
+            <li>Share links include necessary decryption information</li>
+            <li>External users can decrypt and view shared content</li>
+        </ul>
+
+        <h3>Share Security Features</h3>
+        <ul>
+            <li><strong>Token-based Access:</strong> Unique, cryptographically secure share tokens</li>
+            <li><strong>Permission Control:</strong> Granular permissions (read, download, comment)</li>
+            <li><strong>Access Logging:</strong> Audit trails for share access and actions</li>
+            <li><strong>Optional Security:</strong> Password protection and expiration dates</li>
+        </ul>
+
+        <h3>Preview System</h3>
+        <p>Enhanced preview system with:</p>
+        <ul>
+            <li>Support for multiple file formats (PDF, DOCX, images, text)</li>
+            <li>Specialized image preview with proper MIME type handling</li>
+            <li>Secure decryption and streaming of binary content</li>
+            <li>Plugin-based architecture for extensible format support</li>
+        </ul>
+    </div>
+
+    <div class="demo-card">
+        <h2>Demo Resources</h2>
+        <p>Additional files and resources created for this demo:</p>
+        <ul>
+            <li><code>create_external_share_demo.py</code> - API-based demo script</li>
+            <li><code>tests/e2e/create-external-share.spec.js</code> - Playwright E2E test</li>
+            <li><code>test_documents/sample_document.txt</code> - Test document for sharing</li>
+            <li><code>test_image_preview_fix.html</code> - Image preview testing page</li>
+        </ul>
+
+        <a href="#" onclick="window.print(); return false;" class="button">Print this Guide</a>
+        <a href="file:///D:/main/project/docsafe/" class="button secondary">Open Project Folder</a>
+    </div>
+
+    <script>
+        // Auto-refresh status every 30 seconds
+        setInterval(async function() {
+            try {
+                const frontendResponse = await fetch('http://localhost:3008/', { method: 'HEAD' });
+                const backendResponse = await fetch('http://localhost:8002/health', { method: 'GET' });
+
+                console.log('Frontend status:', frontendResponse.ok ? 'Running' : 'Not accessible');
+                console.log('Backend status:', backendResponse.ok ? 'Running' : 'Not accessible');
+            } catch (error) {
+                console.log('Service check failed:', error.message);
+            }
+        }, 30000);
+
+        // Log page load
+        console.log('External Share Demo Guide loaded');
+        console.log('Frontend URL: http://localhost:3008');
+        console.log('Backend URL: http://localhost:8002');
+
+        // Provide helpful keyboard shortcuts
+        document.addEventListener('keydown', function(e) {
+            if (e.ctrlKey && e.key === 'f') {
+                console.log('Use Ctrl+F to search this guide');
+            }
+        });
+    </script>
+</body>
+</html>

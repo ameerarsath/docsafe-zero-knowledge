@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>DOCX Preview Debug</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        .test-section { margin: 20px 0; padding: 15px; border: 1px solid #ccc; }
+        .raw-html { background: #f0f0f0; padding: 10px; font-family: monospace; }
+    </style>
+</head>
+<body>
+    <h1>DOCX Preview Debug Test</h1>
+
+    <div class="test-section">
+        <h3>1. Test HTML Content (Should Render as Formatted Text)</h3>
+        <div id="test-html"></div>
+    </div>
+
+    <div class="test-section">
+        <h3>2. Raw HTML String (What Plugin Returns)</h3>
+        <div class="raw-html" id="raw-content"></div>
+    </div>
+
+    <div class="test-section">
+        <h3>3. dangerouslySetInnerHTML Simulation</h3>
+        <div id="dangerous-html"></div>
+    </div>
+
+    <script>
+        // Simulate what CleanDocxPreviewPlugin returns
+        const mockPluginResponse = `
+            <div class="clean-docx-preview">
+                <div class="document-container">
+                    <div class="document-header">
+                        <h1 class="document-title">Resume.docx</h1>
+                    </div>
+                    <div class="document-content">
+                        <div class="docx-preview formatted-content">
+                            <div class="document-body">
+                                <p class="doc-paragraph"><strong>MOHAMED AMEER ARSATH</strong></p>
+                                <p class="doc-paragraph"><strong>Full-Stack Developer | Java Spring Boot | React.js | AI/ML Enthusiast</strong></p>
+                                <h2 class="doc-heading-2">PROFESSIONAL SUMMARY</h2>
+                                <p class="doc-paragraph">Dedicated BTech IT student and Full-Stack Developer with comprehensive expertise in Java Spring Boot backend development and React.js frontend technologies.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        console.log('Mock plugin response:', mockPluginResponse);
+
+        // Test 1: Set innerHTML directly
+        document.getElementById('test-html').innerHTML = mockPluginResponse;
+
+        // Test 2: Show raw HTML
+        document.getElementById('raw-content').textContent = mockPluginResponse;
+
+        // Test 3: dangerouslySetInnerHTML simulation
+        const dangerousDiv = document.getElementById('dangerous-html');
+        dangerousDiv.innerHTML = mockPluginResponse;
+
+        console.log('Debug tests completed. Check if HTML renders properly.');
+    </script>
+</body>
+</html>

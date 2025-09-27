@@ -120,8 +120,8 @@ export const DocumentVersionHistory: React.FC<DocumentVersionHistoryProps> = ({
           encryption_auth_tag: document.encryption_auth_tag,
           metadata: {
             upload_source: 'Web Upload',
-            mime_type: document.mime_type,
-            last_modified: document.updated_at
+            client_info: 'DocumentVersionHistory Component',
+            checksum: ''
           }
         }
       ];

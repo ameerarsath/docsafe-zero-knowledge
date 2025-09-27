@@ -22,10 +22,10 @@ def run_command(cmd, description):
     result = subprocess.run(cmd, capture_output=False, text=True)
     
     if result.returncode != 0:
-        print(f"\n❌ {description} failed with exit code {result.returncode}")
+        print(f"\nERROR: {description} failed with exit code {result.returncode}")
         return False
     else:
-        print(f"\n✅ {description} completed successfully")
+        print(f"\nSUCCESS: {description} completed successfully")
         return True
 
 
@@ -194,7 +194,7 @@ def main():
         print("='*60")
         sys.exit(0)
     else:
-        print("❌ Some checks failed!")
+        print("ERROR: Some checks failed!")
         print("='*60")
         sys.exit(1)
 

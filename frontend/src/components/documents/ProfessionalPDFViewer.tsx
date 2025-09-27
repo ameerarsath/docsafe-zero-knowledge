@@ -23,6 +23,7 @@ import {
   Printer,
   RotateCw,
   Search,
+  Settings,
   ZoomIn,
   ZoomOut
 } from 'lucide-react';

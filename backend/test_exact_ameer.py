@@ -46,10 +46,10 @@ if __name__ == "__main__":
     
     if result:
         print('\nCONCLUSION:')
-        print('✅ Backend accepts password "Ameer" for document 8')
-        print('✅ Decryption and mock content generation works')
-        print('✅ The 401 error is from frontend authentication, not password')
+        print('SUCCESS: Backend accepts password "Ameer" for document 8')
+        print('SUCCESS: Decryption and mock content generation works')
+        print('SUCCESS: The 401 error is from frontend authentication, not password')
         print('\nSOLUTION: Refresh your login session in the frontend')
     else:
         print('\nCONCLUSION:')
-        print('❌ Backend issue with password "Ameer"')
+        print('ERROR: Backend issue with password "Ameer"')

@@ -27,6 +27,7 @@ export interface SecurityState {
   violations: CSPViolationReport[];
   suspiciousActivities: SuspiciousActivity[];
   isMonitoring: boolean;
+  isLoading: boolean;
   lastCheck: string | null;
   error: string | null;
   isEmittingEvent?: boolean; // Flag to prevent infinite recursion
@@ -36,6 +37,7 @@ export interface SecurityActions {
   startMonitoring: () => void;
   stopMonitoring: () => void;
   checkHeaders: () => Promise<void>;
+  testEncryption: () => Promise<void>;
   reportViolation: (violation: CSPViolationReport) => void;
   reportSuspiciousActivity: (activity: SuspiciousActivity) => void;
   clearViolations: () => void;
@@ -77,6 +79,7 @@ export function useSecurity(options: UseSecurityOptions = {}): UseSecurityReturn
     violations: [],
     suspiciousActivities: [],
     isMonitoring: false,
+    isLoading: false,
     lastCheck: null,
     error: null,
     isEmittingEvent: false
@@ -212,28 +215,81 @@ export function useSecurity(options: UseSecurityOptions = {}): UseSecurityReturn
    */
   const checkHeaders = useCallback(async () => {
     try {
-      updateState({ error: null });
+      updateState({ error: null, isLoading: true });
       const status = await checkSecurityHeaders();
-      
+
       updateState({
         headersStatus: status,
         lastCheck: new Date().toISOString(),
-        error: status.error || null
+        error: status.error || null,
+        isLoading: false
       });
 
       emitSecurityEvent('headers_check', status);
-      
+
       return status;
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       console.error('Security headers check failed:', errorMessage);
-      updateState({ error: errorMessage });
-      
+      updateState({ error: errorMessage, isLoading: false });
+
       emitSecurityEvent('security_warning', {
         message: 'Failed to check security headers',
         error: errorMessage
       });
-      
+
+      throw error;
+    }
+  }, [updateState, emitSecurityEvent]);
+
+  /**
+   * Test encryption functionality
+   */
+  const testEncryption = useCallback(async () => {
+    try {
+      updateState({ error: null, isLoading: true });
+
+      // Import encryption utilities dynamically
+      const { encryptText, decryptText, deriveKey, generateSalt } = await import('../utils/encryption');
+
+      // Generate a test key for encryption
+      const salt = generateSalt();
+      const testKey = await deriveKey({
+        password: 'test_encryption_password',
+        salt: salt,
+        iterations: 100000
+      });
+
+      // Test encryption/decryption
+      const testData = 'test_encryption_functionality';
+      const encrypted = await encryptText(testData, testKey);
+      const decrypted = await decryptText({
+        ciphertext: encrypted.ciphertext,
+        iv: encrypted.iv,
+        authTag: encrypted.authTag,
+        key: testKey
+      });
+
+      if (decrypted !== testData) {
+        throw new Error('Encryption test failed: decrypted data does not match original');
+      }
+
+      updateState({ isLoading: false });
+
+      emitSecurityEvent('security_warning', {
+        message: 'Encryption test completed successfully'
+      });
+
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      console.error('Encryption test failed:', errorMessage);
+      updateState({ error: errorMessage, isLoading: false });
+
+      emitSecurityEvent('security_warning', {
+        message: 'Failed to test encryption',
+        error: errorMessage
+      });
+
       throw error;
     }
   }, [updateState, emitSecurityEvent]);
@@ -307,6 +363,7 @@ export function useSecurity(options: UseSecurityOptions = {}): UseSecurityReturn
       violations: [],
       suspiciousActivities: [],
       isMonitoring: false,
+      isLoading: false,
       lastCheck: null,
       error: null,
       isEmittingEvent: false
@@ -346,6 +403,7 @@ export function useSecurity(options: UseSecurityOptions = {}): UseSecurityReturn
     startMonitoring,
     stopMonitoring,
     checkHeaders,
+    testEncryption,
     reportViolation,
     reportSuspiciousActivity,
     clearViolations,
@@ -410,34 +468,91 @@ export function useSecurityStatus() {
  * Hook for CSP violation reporting
  */
 export function useCSPViolations() {
-  const security = useSecurity();
+  const [cspViolations, setCspViolations] = useState<any[]>([]);
+  const [violationStats, setViolationStats] = useState<any>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchViolations = useCallback(async (hours: number = 24) => {
+    setIsLoading(true);
+    try {
+      const { securityHeadersApi } = await import('../services/api/securityHeaders');
+      const response = await securityHeadersApi.getCSPViolations(hours);
+      setCspViolations(response.violations || []);
+      setError(null);
+    } catch (err) {
+      console.warn('CSP violations endpoint not available:', err);
+      // Set empty violations instead of throwing error
+      setCspViolations([]);
+      setError(null);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  const fetchViolationStats = useCallback(async (days: number = 7) => {
+    try {
+      const { securityHeadersApi } = await import('../services/api/securityHeaders');
+      const stats = await securityHeadersApi.getCSPViolationStats(days);
+      setViolationStats(stats);
+    } catch (err) {
+      console.warn('CSP violation stats endpoint not available:', err);
+      // Set empty stats instead of throwing error
+      setViolationStats({
+        total_violations: 0,
+        time_range_days: days,
+        top_violated_directives: [],
+        top_source_ips: [],
+        violations_by_day: {}
+      });
+    }
+  }, []);
 
   const getViolationsByDirective = useCallback(() => {
-    const grouped = security.violations.reduce((acc, violation) => {
-      const directive = violation.violatedDirective;
-      if (!acc[directive]) {
-        acc[directive] = [];
-      }
-      acc[directive].push(violation);
+    if (!violationStats) return {};
+    return violationStats.top_violated_directives.reduce((acc: any, item: any) => {
+      acc[item.directive] = Array(item.count).fill({ violatedDirective: item.directive });
       return acc;
-    }, {} as Record<string, CSPViolationReport[]>);
+    }, {});
+  }, [violationStats]);
 
-    return grouped;
-  }, [security.violations]);
+  const clearViolations = useCallback(() => {
+    setCspViolations([]);
+    setViolationStats(null);
+  }, []);
 
-  const getRecentViolations = useCallback((hours: number = 24) => {
-    // Note: CSP violations don't have timestamps in the current implementation
-    // This function returns all violations for now, but could be enhanced
-    // to include timestamps when CSP violation reporting is improved
-    return security.violations;
-  }, [security.violations]);
+  // Fetch data on mount
+  useEffect(() => {
+    fetchViolations();
+    fetchViolationStats();
+  }, [fetchViolations, fetchViolationStats]);
 
   return {
-    violations: security.violations,
+    violations: cspViolations,
     violationsByDirective: getViolationsByDirective(),
-    recentViolations: getRecentViolations(),
-    totalCount: security.violations.length,
-    clearViolations: security.clearViolations,
-    reportViolation: security.reportViolation
+    recentViolations: cspViolations,
+    totalCount: cspViolations.length,
+    stats: violationStats,
+    isLoading,
+    error,
+    clearViolations,
+    fetchViolations,
+    fetchViolationStats,
+    reportViolation: async (violation: CSPViolationReport) => {
+      try {
+        const { securityHeadersApi } = await import('../services/api/securityHeaders');
+        await securityHeadersApi.reportCSPViolation({
+          violation,
+          timestamp: new Date().toISOString(),
+          user_agent: navigator.userAgent,
+          url: window.location.href
+        });
+        // Refresh violations after reporting
+        await fetchViolations();
+      } catch (err) {
+        console.warn('Failed to report CSP violation:', err);
+        // Don't throw error, just log it
+      }
+    }
   };
 }

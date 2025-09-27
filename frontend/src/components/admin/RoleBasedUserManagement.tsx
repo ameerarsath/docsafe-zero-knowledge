@@ -10,7 +10,7 @@
 
 import React, { useState } from 'react';
 import { Shield, Users, Lock, AlertTriangle, Eye, Settings } from 'lucide-react';
-import { UserManagementInterface } from './UserManagementInterface';
+import UserManagementInterface from './UserManagementInterface';
 import {
   RoleBasedComponent,
   usePermissions,
@@ -259,7 +259,9 @@ export const RoleBasedUserManagement: React.FC<RoleBasedUserManagementProps> = (
               // Add role-based restrictions to the interface
               onUserSelect={(user) => {
                 // Super admins can select any user, admins cannot select other super admins
-                if (hierarchyLevel >= 5 || (user.hierarchyLevel || 0) < 5) {
+                const userRole = (user as any).role || 'user';
+                const userHierarchyLevel = userRole === 'super_admin' ? 5 : userRole === 'admin' ? 4 : 3;
+                if (hierarchyLevel >= 5 || userHierarchyLevel < 5) {
                   props.onUserSelect?.(user);
                 } else {
                   alert('You cannot manage Super Administrator accounts.');

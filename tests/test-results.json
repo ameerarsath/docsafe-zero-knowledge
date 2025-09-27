@@ -1,0 +1,1044 @@
+{
+  "config": {
+    "configFile": "D:\\main\\project\\docsafe\\tests\\playwright.config.js",
+    "rootDir": "D:/main/project/docsafe/tests",
+    "forbidOnly": false,
+    "fullyParallel": false,
+    "globalSetup": "D:\\main\\project\\docsafe\\tests\\test-setup.js",
+    "globalTeardown": "D:\\main\\project\\docsafe\\tests\\test-teardown.js",
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "actualWorkers": 1
+    },
+    "preserveOutput": "always",
+    "reporter": [
+      [
+        "html",
+        {
+          "outputFolder": "playwright-report"
+        }
+      ],
+      [
+        "json",
+        {
+          "outputFile": "test-results.json"
+        }
+      ],
+      [
+        "line",
+        null
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "quiet": false,
+    "projects": [
+      {
+        "outputDir": "D:/main/project/docsafe/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "chromium",
+        "name": "chromium",
+        "testDir": "D:/main/project/docsafe/tests",
+        "testIgnore": [],
+        "testMatch": [
+          "**/*.spec.js"
+        ],
+        "timeout": 60000
+      },
+      {
+        "outputDir": "D:/main/project/docsafe/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "firefox",
+        "name": "firefox",
+        "testDir": "D:/main/project/docsafe/tests",
+        "testIgnore": [],
+        "testMatch": [
+          "**/*.spec.js"
+        ],
+        "timeout": 60000
+      },
+      {
+        "outputDir": "D:/main/project/docsafe/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "webkit",
+        "name": "webkit",
+        "testDir": "D:/main/project/docsafe/tests",
+        "testIgnore": [],
+        "testMatch": [
+          "**/*.spec.js"
+        ],
+        "timeout": 60000
+      }
+    ],
+    "shard": null,
+    "updateSnapshots": "missing",
+    "updateSourceMethod": "patch",
+    "version": "1.55.0",
+    "workers": 6,
+    "webServer": null
+  },
+  "suites": [
+    {
+      "title": "e2e\\create-external-share.spec.js",
+      "file": "e2e/create-external-share.spec.js",
+      "column": 0,
+      "line": 0,
+      "specs": [],
+      "suites": [
+        {
+          "title": "External Share Creation via UI",
+          "file": "e2e/create-external-share.spec.js",
+          "line": 24,
+          "column": 6,
+          "specs": [
+            {
+              "title": "should login to SecureVault",
+              "ok": false,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "failed",
+                      "duration": 16146,
+                      "error": {
+                        "message": "TimeoutError: page.waitForSelector: Timeout 15000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('h1:has-text(\"Documents\"), h2:has-text(\"Dashboard\"), [data-testid=\"documents-page\"]') to be visible\u001b[22m\n",
+                        "stack": "TimeoutError: page.waitForSelector: Timeout 15000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('h1:has-text(\"Documents\"), h2:has-text(\"Dashboard\"), [data-testid=\"documents-page\"]') to be visible\u001b[22m\n\n    at D:\\main\\project\\docsafe\\tests\\e2e\\create-external-share.spec.js:73:16",
+                        "location": {
+                          "file": "D:\\main\\project\\docsafe\\tests\\e2e\\create-external-share.spec.js",
+                          "column": 16,
+                          "line": 73
+                        },
+                        "snippet": "\u001b[0m \u001b[90m 71 |\u001b[39m\n \u001b[90m 72 |\u001b[39m     \u001b[90m// Wait for successful login (dashboard or documents page)\u001b[39m\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 73 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mwaitForSelector(\u001b[32m'h1:has-text(\"Documents\"), h2:has-text(\"Dashboard\"), [data-testid=\"documents-page\"]'\u001b[39m\u001b[33m,\u001b[39m {\n \u001b[90m    |\u001b[39m                \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 74 |\u001b[39m       timeout\u001b[33m:\u001b[39m \u001b[35m15000\u001b[39m\n \u001b[90m 75 |\u001b[39m     })\u001b[33m;\u001b[39m\n \u001b[90m 76 |\u001b[39m\u001b[0m"
+                      },
+                      "errors": [
+                        {
+                          "location": {
+                            "file": "D:\\main\\project\\docsafe\\tests\\e2e\\create-external-share.spec.js",
+                            "column": 16,
+                            "line": 73
+                          },
+                          "message": "TimeoutError: page.waitForSelector: Timeout 15000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('h1:has-text(\"Documents\"), h2:has-text(\"Dashboard\"), [data-testid=\"documents-page\"]') to be visible\u001b[22m\n\n\n  71 |\n  72 |     // Wait for successful login (dashboard or documents page)\n> 73 |     await page.waitForSelector('h1:has-text(\"Documents\"), h2:has-text(\"Dashboard\"), [data-testid=\"documents-page\"]', {\n     |                ^\n  74 |       timeout: 15000\n  75 |     });\n  76 |\n    at D:\\main\\project\\docsafe\\tests\\e2e\\create-external-share.spec.js:73:16"
+                        }
+                      ],
+                      "stdout": [
+                        {
+                          "text": "🚀 Starting External Share Creation Test...\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'UniversalFormattedPreviewPlugin' registered successfully with priority 600\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'CleanDocxPreviewPlugin' registered successfully with priority 500\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'ClientSideDocumentProcessor' registered successfully with priority 350\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'UniversalDocumentProcessor' registered successfully with priority 300\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'RobustOffice' registered successfully with priority 150\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'DefaultPDFPlugin' registered successfully with priority 100\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'AdvancedPDFJSPlugin' registered successfully with priority 99\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'SimplePDFPlugin' registered successfully with priority 98\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'EnhancedOfficeDocument' registered successfully with priority 97\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'ProfessionalDocumentPreview' registered successfully with priority 95\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'ProductionExcelPreview' registered successfully with priority 93\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'AdvancedPowerPointPreview' registered successfully with priority 95\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'PowerPointPreview' registered successfully with priority 80\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'ProductionWordPreview' registered successfully with priority 50\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'PDFPreview' registered successfully with priority 85\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'EnhancedImagePreview' registered successfully with priority 81\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'ImagePreview' registered successfully with priority 80\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'EnhancedTextFile' registered successfully with priority 79\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'TextFilePreview' registered successfully with priority 78\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'CSVPreview' registered successfully with priority 90\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'UniversalFallback' registered successfully with priority 1\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Successfully registered 21/21 preview plugins\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Preview plugin system is healthy\n"
+                        },
+                        {
+                          "text": "🔴 BROWSER ERROR: Failed to load resource: the server responded with a status of 404 (Not Found)\n"
+                        },
+                        {
+                          "text": "🔴 BROWSER ERROR: Failed to load resource: the server responded with a status of 404 (Not Found)\n"
+                        },
+                        {
+                          "text": "👤 Step 1: Logging into SecureVault...\n"
+                        },
+                        {
+                          "text": "🔴 BROWSER ERROR: Failed to load resource: the server responded with a status of 500 (Internal Server Error)\n"
+                        },
+                        {
+                          "text": "🔴 BROWSER ERROR: 🚨 API ERROR: 500 /api/auth/login\n"
+                        },
+                        {
+                          "text": "🔴 BROWSER ERROR: API Error Details: {message: Request failed with status code 500, response: Object, status: 500, url: /api/auth/login, method: post}\n"
+                        }
+                      ],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2025-09-26T06:02:14.209Z",
+                      "annotations": [],
+                      "attachments": [
+                        {
+                          "name": "screenshot",
+                          "contentType": "image/png",
+                          "path": "D:\\main\\project\\docsafe\\test-results\\e2e-create-external-share--9d417-should-login-to-SecureVault-chromium\\test-failed-1.png"
+                        },
+                        {
+                          "name": "error-context",
+                          "contentType": "text/markdown",
+                          "path": "D:\\main\\project\\docsafe\\test-results\\e2e-create-external-share--9d417-should-login-to-SecureVault-chromium\\error-context.md"
+                        }
+                      ],
+                      "errorLocation": {
+                        "file": "D:\\main\\project\\docsafe\\tests\\e2e\\create-external-share.spec.js",
+                        "column": 16,
+                        "line": 73
+                      }
+                    }
+                  ],
+                  "status": "unexpected"
+                }
+              ],
+              "id": "beccf946f73a43afcb5a-d768e331cfdd7224a308",
+              "file": "e2e/create-external-share.spec.js",
+              "line": 59,
+              "column": 3
+            },
+            {
+              "title": "should upload a test document",
+              "ok": false,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 0,
+                      "status": "failed",
+                      "duration": 20573,
+                      "error": {
+                        "message": "TimeoutError: page.waitForSelector: Timeout 10000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('button:has-text(\"Upload\"), input[type=\"file\"], [data-testid=\"upload-button\"]') to be visible\u001b[22m\n",
+                        "stack": "TimeoutError: page.waitForSelector: Timeout 10000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('button:has-text(\"Upload\"), input[type=\"file\"], [data-testid=\"upload-button\"]') to be visible\u001b[22m\n\n    at D:\\main\\project\\docsafe\\tests\\e2e\\create-external-share.spec.js:91:16",
+                        "location": {
+                          "file": "D:\\main\\project\\docsafe\\tests\\e2e\\create-external-share.spec.js",
+                          "column": 16,
+                          "line": 91
+                        },
+                        "snippet": "\u001b[0m \u001b[90m 89 |\u001b[39m\n \u001b[90m 90 |\u001b[39m     \u001b[90m// Wait for upload button/area\u001b[39m\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 91 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mwaitForSelector(\n \u001b[90m    |\u001b[39m                \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 92 |\u001b[39m       \u001b[32m'button:has-text(\"Upload\"), input[type=\"file\"], [data-testid=\"upload-button\"]'\u001b[39m\u001b[33m,\u001b[39m\n \u001b[90m 93 |\u001b[39m       { timeout\u001b[33m:\u001b[39m \u001b[35m10000\u001b[39m }\n \u001b[90m 94 |\u001b[39m     )\u001b[33m;\u001b[39m\u001b[0m"
+                      },
+                      "errors": [
+                        {
+                          "location": {
+                            "file": "D:\\main\\project\\docsafe\\tests\\e2e\\create-external-share.spec.js",
+                            "column": 16,
+                            "line": 91
+                          },
+                          "message": "TimeoutError: page.waitForSelector: Timeout 10000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('button:has-text(\"Upload\"), input[type=\"file\"], [data-testid=\"upload-button\"]') to be visible\u001b[22m\n\n\n  89 |\n  90 |     // Wait for upload button/area\n> 91 |     await page.waitForSelector(\n     |                ^\n  92 |       'button:has-text(\"Upload\"), input[type=\"file\"], [data-testid=\"upload-button\"]',\n  93 |       { timeout: 10000 }\n  94 |     );\n    at D:\\main\\project\\docsafe\\tests\\e2e\\create-external-share.spec.js:91:16"
+                        }
+                      ],
+                      "stdout": [
+                        {
+                          "text": "🚀 Starting External Share Creation Test...\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'UniversalFormattedPreviewPlugin' registered successfully with priority 600\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'CleanDocxPreviewPlugin' registered successfully with priority 500\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'ClientSideDocumentProcessor' registered successfully with priority 350\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'UniversalDocumentProcessor' registered successfully with priority 300\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'RobustOffice' registered successfully with priority 150\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'DefaultPDFPlugin' registered successfully with priority 100\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'AdvancedPDFJSPlugin' registered successfully with priority 99\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'SimplePDFPlugin' registered successfully with priority 98\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'EnhancedOfficeDocument' registered successfully with priority 97\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'ProfessionalDocumentPreview' registered successfully with priority 95\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'ProductionExcelPreview' registered successfully with priority 93\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'AdvancedPowerPointPreview' registered successfully with priority 95\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'PowerPointPreview' registered successfully with priority 80\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'ProductionWordPreview' registered successfully with priority 50\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'PDFPreview' registered successfully with priority 85\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'EnhancedImagePreview' registered successfully with priority 81\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'ImagePreview' registered successfully with priority 80\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'EnhancedTextFile' registered successfully with priority 79\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'TextFilePreview' registered successfully with priority 78\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'CSVPreview' registered successfully with priority 90\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'UniversalFallback' registered successfully with priority 1\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Successfully registered 21/21 preview plugins\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Preview plugin system is healthy\n"
+                        },
+                        {
+                          "text": "🔴 BROWSER ERROR: Failed to load resource: the server responded with a status of 404 (Not Found)\n"
+                        },
+                        {
+                          "text": "🔴 BROWSER ERROR: Failed to load resource: the server responded with a status of 404 (Not Found)\n"
+                        },
+                        {
+                          "text": "📄 Step 2: Uploading test document...\n"
+                        },
+                        {
+                          "text": "Already on documents page or navigation not needed\n"
+                        }
+                      ],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2025-09-26T06:02:42.440Z",
+                      "annotations": [],
+                      "attachments": [
+                        {
+                          "name": "screenshot",
+                          "contentType": "image/png",
+                          "path": "D:\\main\\project\\docsafe\\test-results\\e2e-create-external-share--95739-ould-upload-a-test-document-chromium\\test-failed-1.png"
+                        },
+                        {
+                          "name": "error-context",
+                          "contentType": "text/markdown",
+                          "path": "D:\\main\\project\\docsafe\\test-results\\e2e-create-external-share--95739-ould-upload-a-test-document-chromium\\error-context.md"
+                        }
+                      ],
+                      "errorLocation": {
+                        "file": "D:\\main\\project\\docsafe\\tests\\e2e\\create-external-share.spec.js",
+                        "column": 16,
+                        "line": 91
+                      }
+                    }
+                  ],
+                  "status": "unexpected"
+                }
+              ],
+              "id": "beccf946f73a43afcb5a-db21e4ba856bc2d0bd6b",
+              "file": "e2e/create-external-share.spec.js",
+              "line": 80,
+              "column": 3
+            },
+            {
+              "title": "should create external share via UI",
+              "ok": false,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 2,
+                      "parallelIndex": 0,
+                      "status": "failed",
+                      "duration": 10447,
+                      "error": {
+                        "message": "TimeoutError: locator.waitFor: Timeout 10000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('text=sample_document.txt').first() to be visible\u001b[22m\n",
+                        "stack": "TimeoutError: locator.waitFor: Timeout 10000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('text=sample_document.txt').first() to be visible\u001b[22m\n\n    at D:\\main\\project\\docsafe\\tests\\e2e\\create-external-share.spec.js:124:23",
+                        "location": {
+                          "file": "D:\\main\\project\\docsafe\\tests\\e2e\\create-external-share.spec.js",
+                          "column": 23,
+                          "line": 124
+                        },
+                        "snippet": "\u001b[0m \u001b[90m 122 |\u001b[39m     \u001b[90m// Find the uploaded document and click share button\u001b[39m\n \u001b[90m 123 |\u001b[39m     \u001b[36mconst\u001b[39m documentRow \u001b[33m=\u001b[39m \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mlocator(\u001b[32m'text=sample_document.txt'\u001b[39m)\u001b[33m.\u001b[39mfirst()\u001b[33m;\u001b[39m\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 124 |\u001b[39m     \u001b[36mawait\u001b[39m documentRow\u001b[33m.\u001b[39mwaitFor({ timeout\u001b[33m:\u001b[39m \u001b[35m10000\u001b[39m })\u001b[33m;\u001b[39m\n \u001b[90m     |\u001b[39m                       \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 125 |\u001b[39m\n \u001b[90m 126 |\u001b[39m     \u001b[90m// Look for share button near the document\u001b[39m\n \u001b[90m 127 |\u001b[39m     \u001b[36mconst\u001b[39m shareButton \u001b[33m=\u001b[39m \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mlocator(\u001b[0m"
+                      },
+                      "errors": [
+                        {
+                          "location": {
+                            "file": "D:\\main\\project\\docsafe\\tests\\e2e\\create-external-share.spec.js",
+                            "column": 23,
+                            "line": 124
+                          },
+                          "message": "TimeoutError: locator.waitFor: Timeout 10000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('text=sample_document.txt').first() to be visible\u001b[22m\n\n\n  122 |     // Find the uploaded document and click share button\n  123 |     const documentRow = await page.locator('text=sample_document.txt').first();\n> 124 |     await documentRow.waitFor({ timeout: 10000 });\n      |                       ^\n  125 |\n  126 |     // Look for share button near the document\n  127 |     const shareButton = await page.locator(\n    at D:\\main\\project\\docsafe\\tests\\e2e\\create-external-share.spec.js:124:23"
+                        }
+                      ],
+                      "stdout": [
+                        {
+                          "text": "🚀 Starting External Share Creation Test...\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'UniversalFormattedPreviewPlugin' registered successfully with priority 600\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'CleanDocxPreviewPlugin' registered successfully with priority 500\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'ClientSideDocumentProcessor' registered successfully with priority 350\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'UniversalDocumentProcessor' registered successfully with priority 300\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'RobustOffice' registered successfully with priority 150\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'DefaultPDFPlugin' registered successfully with priority 100\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'AdvancedPDFJSPlugin' registered successfully with priority 99\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'SimplePDFPlugin' registered successfully with priority 98\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'EnhancedOfficeDocument' registered successfully with priority 97\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'ProfessionalDocumentPreview' registered successfully with priority 95\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'ProductionExcelPreview' registered successfully with priority 93\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'AdvancedPowerPointPreview' registered successfully with priority 95\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'PowerPointPreview' registered successfully with priority 80\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'ProductionWordPreview' registered successfully with priority 50\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'PDFPreview' registered successfully with priority 85\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'EnhancedImagePreview' registered successfully with priority 81\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'ImagePreview' registered successfully with priority 80\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'EnhancedTextFile' registered successfully with priority 79\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'TextFilePreview' registered successfully with priority 78\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'CSVPreview' registered successfully with priority 90\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'UniversalFallback' registered successfully with priority 1\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Successfully registered 21/21 preview plugins\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Preview plugin system is healthy\n"
+                        },
+                        {
+                          "text": "🔴 BROWSER ERROR: Failed to load resource: the server responded with a status of 404 (Not Found)\n"
+                        },
+                        {
+                          "text": "🔴 BROWSER ERROR: Failed to load resource: the server responded with a status of 404 (Not Found)\n"
+                        },
+                        {
+                          "text": "🔗 Step 3: Creating external share via UI...\n"
+                        }
+                      ],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2025-09-26T06:03:10.022Z",
+                      "annotations": [],
+                      "attachments": [
+                        {
+                          "name": "screenshot",
+                          "contentType": "image/png",
+                          "path": "D:\\main\\project\\docsafe\\test-results\\e2e-create-external-share--e1d47-reate-external-share-via-UI-chromium\\test-failed-1.png"
+                        },
+                        {
+                          "name": "error-context",
+                          "contentType": "text/markdown",
+                          "path": "D:\\main\\project\\docsafe\\test-results\\e2e-create-external-share--e1d47-reate-external-share-via-UI-chromium\\error-context.md"
+                        }
+                      ],
+                      "errorLocation": {
+                        "file": "D:\\main\\project\\docsafe\\tests\\e2e\\create-external-share.spec.js",
+                        "column": 23,
+                        "line": 124
+                      }
+                    }
+                  ],
+                  "status": "unexpected"
+                }
+              ],
+              "id": "beccf946f73a43afcb5a-e25e9f1946367461ed80",
+              "file": "e2e/create-external-share.spec.js",
+              "line": 119,
+              "column": 3
+            },
+            {
+              "title": "should test external share accessibility",
+              "ok": false,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 3,
+                      "parallelIndex": 0,
+                      "status": "failed",
+                      "duration": 390,
+                      "error": {
+                        "message": "Error: Share link not created in previous test",
+                        "stack": "Error: Share link not created in previous test\n    at D:\\main\\project\\docsafe\\tests\\e2e\\create-external-share.spec.js:199:13",
+                        "location": {
+                          "file": "D:\\main\\project\\docsafe\\tests\\e2e\\create-external-share.spec.js",
+                          "column": 13,
+                          "line": 199
+                        },
+                        "snippet": "\u001b[0m \u001b[90m 197 |\u001b[39m\n \u001b[90m 198 |\u001b[39m     \u001b[36mif\u001b[39m (\u001b[33m!\u001b[39msharedLink) {\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 199 |\u001b[39m       \u001b[36mthrow\u001b[39m \u001b[36mnew\u001b[39m \u001b[33mError\u001b[39m(\u001b[32m'Share link not created in previous test'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m     |\u001b[39m             \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 200 |\u001b[39m     }\n \u001b[90m 201 |\u001b[39m\n \u001b[90m 202 |\u001b[39m     \u001b[90m// Open share link in new tab (simulating external user)\u001b[39m\u001b[0m"
+                      },
+                      "errors": [
+                        {
+                          "location": {
+                            "file": "D:\\main\\project\\docsafe\\tests\\e2e\\create-external-share.spec.js",
+                            "column": 13,
+                            "line": 199
+                          },
+                          "message": "Error: Share link not created in previous test\n\n  197 |\n  198 |     if (!sharedLink) {\n> 199 |       throw new Error('Share link not created in previous test');\n      |             ^\n  200 |     }\n  201 |\n  202 |     // Open share link in new tab (simulating external user)\n    at D:\\main\\project\\docsafe\\tests\\e2e\\create-external-share.spec.js:199:13"
+                        }
+                      ],
+                      "stdout": [
+                        {
+                          "text": "🚀 Starting External Share Creation Test...\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'UniversalFormattedPreviewPlugin' registered successfully with priority 600\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'CleanDocxPreviewPlugin' registered successfully with priority 500\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'ClientSideDocumentProcessor' registered successfully with priority 350\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'UniversalDocumentProcessor' registered successfully with priority 300\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'RobustOffice' registered successfully with priority 150\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'DefaultPDFPlugin' registered successfully with priority 100\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'AdvancedPDFJSPlugin' registered successfully with priority 99\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'SimplePDFPlugin' registered successfully with priority 98\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'EnhancedOfficeDocument' registered successfully with priority 97\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'ProfessionalDocumentPreview' registered successfully with priority 95\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'ProductionExcelPreview' registered successfully with priority 93\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'AdvancedPowerPointPreview' registered successfully with priority 95\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'PowerPointPreview' registered successfully with priority 80\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'ProductionWordPreview' registered successfully with priority 50\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'PDFPreview' registered successfully with priority 85\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'EnhancedImagePreview' registered successfully with priority 81\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'ImagePreview' registered successfully with priority 80\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'EnhancedTextFile' registered successfully with priority 79\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'TextFilePreview' registered successfully with priority 78\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'CSVPreview' registered successfully with priority 90\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'UniversalFallback' registered successfully with priority 1\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Successfully registered 21/21 preview plugins\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Preview plugin system is healthy\n"
+                        },
+                        {
+                          "text": "🔴 BROWSER ERROR: Failed to load resource: the server responded with a status of 404 (Not Found)\n"
+                        },
+                        {
+                          "text": "🔴 BROWSER ERROR: Failed to load resource: the server responded with a status of 404 (Not Found)\n"
+                        },
+                        {
+                          "text": "🌐 Step 4: Testing external share accessibility...\n"
+                        }
+                      ],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2025-09-26T06:03:27.017Z",
+                      "annotations": [],
+                      "attachments": [
+                        {
+                          "name": "screenshot",
+                          "contentType": "image/png",
+                          "path": "D:\\main\\project\\docsafe\\test-results\\e2e-create-external-share--39789-xternal-share-accessibility-chromium\\test-failed-1.png"
+                        },
+                        {
+                          "name": "error-context",
+                          "contentType": "text/markdown",
+                          "path": "D:\\main\\project\\docsafe\\test-results\\e2e-create-external-share--39789-xternal-share-accessibility-chromium\\error-context.md"
+                        }
+                      ],
+                      "errorLocation": {
+                        "file": "D:\\main\\project\\docsafe\\tests\\e2e\\create-external-share.spec.js",
+                        "column": 13,
+                        "line": 199
+                      }
+                    }
+                  ],
+                  "status": "unexpected"
+                }
+              ],
+              "id": "beccf946f73a43afcb5a-bcfec6a8a73215e753dc",
+              "file": "e2e/create-external-share.spec.js",
+              "line": 195,
+              "column": 3
+            },
+            {
+              "title": "should verify share via API",
+              "ok": false,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 4,
+                      "parallelIndex": 0,
+                      "status": "failed",
+                      "duration": 414,
+                      "error": {
+                        "message": "Error: Share token not available",
+                        "stack": "Error: Share token not available\n    at D:\\main\\project\\docsafe\\tests\\e2e\\create-external-share.spec.js:247:13",
+                        "location": {
+                          "file": "D:\\main\\project\\docsafe\\tests\\e2e\\create-external-share.spec.js",
+                          "column": 13,
+                          "line": 247
+                        },
+                        "snippet": "\u001b[0m \u001b[90m 245 |\u001b[39m\n \u001b[90m 246 |\u001b[39m     \u001b[36mif\u001b[39m (\u001b[33m!\u001b[39mshareToken) {\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 247 |\u001b[39m       \u001b[36mthrow\u001b[39m \u001b[36mnew\u001b[39m \u001b[33mError\u001b[39m(\u001b[32m'Share token not available'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m     |\u001b[39m             \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 248 |\u001b[39m     }\n \u001b[90m 249 |\u001b[39m\n \u001b[90m 250 |\u001b[39m     \u001b[90m// Test share access endpoint\u001b[39m\u001b[0m"
+                      },
+                      "errors": [
+                        {
+                          "location": {
+                            "file": "D:\\main\\project\\docsafe\\tests\\e2e\\create-external-share.spec.js",
+                            "column": 13,
+                            "line": 247
+                          },
+                          "message": "Error: Share token not available\n\n  245 |\n  246 |     if (!shareToken) {\n> 247 |       throw new Error('Share token not available');\n      |             ^\n  248 |     }\n  249 |\n  250 |     // Test share access endpoint\n    at D:\\main\\project\\docsafe\\tests\\e2e\\create-external-share.spec.js:247:13"
+                        }
+                      ],
+                      "stdout": [
+                        {
+                          "text": "🚀 Starting External Share Creation Test...\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'UniversalFormattedPreviewPlugin' registered successfully with priority 600\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'CleanDocxPreviewPlugin' registered successfully with priority 500\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'ClientSideDocumentProcessor' registered successfully with priority 350\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'UniversalDocumentProcessor' registered successfully with priority 300\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'RobustOffice' registered successfully with priority 150\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'DefaultPDFPlugin' registered successfully with priority 100\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'AdvancedPDFJSPlugin' registered successfully with priority 99\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'SimplePDFPlugin' registered successfully with priority 98\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'EnhancedOfficeDocument' registered successfully with priority 97\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'ProfessionalDocumentPreview' registered successfully with priority 95\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'ProductionExcelPreview' registered successfully with priority 93\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'AdvancedPowerPointPreview' registered successfully with priority 95\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'PowerPointPreview' registered successfully with priority 80\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'ProductionWordPreview' registered successfully with priority 50\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'PDFPreview' registered successfully with priority 85\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'EnhancedImagePreview' registered successfully with priority 81\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'ImagePreview' registered successfully with priority 80\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'EnhancedTextFile' registered successfully with priority 79\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'TextFilePreview' registered successfully with priority 78\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'CSVPreview' registered successfully with priority 90\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'UniversalFallback' registered successfully with priority 1\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Successfully registered 21/21 preview plugins\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Preview plugin system is healthy\n"
+                        },
+                        {
+                          "text": "🔴 BROWSER ERROR: Failed to load resource: the server responded with a status of 404 (Not Found)\n"
+                        },
+                        {
+                          "text": "🔴 BROWSER ERROR: Failed to load resource: the server responded with a status of 404 (Not Found)\n"
+                        },
+                        {
+                          "text": "🔌 Step 5: Verifying share via API...\n"
+                        }
+                      ],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2025-09-26T06:03:33.659Z",
+                      "annotations": [],
+                      "attachments": [
+                        {
+                          "name": "screenshot",
+                          "contentType": "image/png",
+                          "path": "D:\\main\\project\\docsafe\\test-results\\e2e-create-external-share--6e82e-should-verify-share-via-API-chromium\\test-failed-1.png"
+                        },
+                        {
+                          "name": "error-context",
+                          "contentType": "text/markdown",
+                          "path": "D:\\main\\project\\docsafe\\test-results\\e2e-create-external-share--6e82e-should-verify-share-via-API-chromium\\error-context.md"
+                        }
+                      ],
+                      "errorLocation": {
+                        "file": "D:\\main\\project\\docsafe\\tests\\e2e\\create-external-share.spec.js",
+                        "column": 13,
+                        "line": 247
+                      }
+                    }
+                  ],
+                  "status": "unexpected"
+                }
+              ],
+              "id": "beccf946f73a43afcb5a-661f22bf776771c0b9b9",
+              "file": "e2e/create-external-share.spec.js",
+              "line": 243,
+              "column": 3
+            },
+            {
+              "title": "should display test summary",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 5,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 14,
+                      "errors": [],
+                      "stdout": [
+                        {
+                          "text": "🚀 Starting External Share Creation Test...\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'UniversalFormattedPreviewPlugin' registered successfully with priority 600\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'CleanDocxPreviewPlugin' registered successfully with priority 500\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'ClientSideDocumentProcessor' registered successfully with priority 350\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'UniversalDocumentProcessor' registered successfully with priority 300\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'RobustOffice' registered successfully with priority 150\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'DefaultPDFPlugin' registered successfully with priority 100\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'AdvancedPDFJSPlugin' registered successfully with priority 99\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'SimplePDFPlugin' registered successfully with priority 98\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'EnhancedOfficeDocument' registered successfully with priority 97\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'ProfessionalDocumentPreview' registered successfully with priority 95\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'ProductionExcelPreview' registered successfully with priority 93\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'AdvancedPowerPointPreview' registered successfully with priority 95\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'PowerPointPreview' registered successfully with priority 80\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'ProductionWordPreview' registered successfully with priority 50\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'PDFPreview' registered successfully with priority 85\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'EnhancedImagePreview' registered successfully with priority 81\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'ImagePreview' registered successfully with priority 80\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'EnhancedTextFile' registered successfully with priority 79\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'TextFilePreview' registered successfully with priority 78\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'CSVPreview' registered successfully with priority 90\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Plugin 'UniversalFallback' registered successfully with priority 1\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Successfully registered 21/21 preview plugins\n"
+                        },
+                        {
+                          "text": "🟢 BROWSER SUCCESS: ✅ Preview plugin system is healthy\n"
+                        },
+                        {
+                          "text": "🔴 BROWSER ERROR: Failed to load resource: the server responded with a status of 404 (Not Found)\n"
+                        },
+                        {
+                          "text": "🔴 BROWSER ERROR: Failed to load resource: the server responded with a status of 404 (Not Found)\n"
+                        },
+                        {
+                          "text": "\n============================================================\n"
+                        },
+                        {
+                          "text": "📊 EXTERNAL SHARE CREATION TEST SUMMARY\n"
+                        },
+                        {
+                          "text": "============================================================\n"
+                        },
+                        {
+                          "text": "✅ Login: Success\n"
+                        },
+                        {
+                          "text": "✅ Document Upload: Success (sample_document.txt)\n"
+                        },
+                        {
+                          "text": "✅ External Share Creation: Success\n"
+                        },
+                        {
+                          "text": "✅ Share Link: \n"
+                        },
+                        {
+                          "text": "✅ Share Token: \n"
+                        },
+                        {
+                          "text": "✅ External Access: Success (no authentication required)\n"
+                        },
+                        {
+                          "text": "✅ API Verification: Success\n"
+                        },
+                        {
+                          "text": "============================================================\n"
+                        },
+                        {
+                          "text": "🎉 All tests passed! External sharing is working correctly.\n"
+                        },
+                        {
+                          "text": "============================================================\n\n"
+                        }
+                      ],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2025-09-26T06:03:41.269Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "beccf946f73a43afcb5a-0693840bf80c27506d1a",
+              "file": "e2e/create-external-share.spec.js",
+              "line": 271,
+              "column": 3
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2025-09-26T06:02:08.675Z",
+    "duration": 98513.897,
+    "expected": 1,
+    "skipped": 0,
+    "unexpected": 5,
+    "flaky": 0
+  }
+}

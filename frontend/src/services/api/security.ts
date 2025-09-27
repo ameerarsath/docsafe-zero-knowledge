@@ -188,12 +188,33 @@ export const securityApi = {
 
   // Security Dashboard
   async getSecurityDashboard(hours: number = 24): Promise<SecurityDashboard> {
-    const response = await apiRequest('GET', `/security/dashboard?hours=${hours}`);
+    console.log('🔐 Requesting security dashboard (hours:', hours, ')');
+    const response = await apiRequest('GET', `/api/v1/security/dashboard?hours=${hours}`);
+    if (!response.success) {
+      const error = response.error;
+      console.error('🚨 Security dashboard request failed:', error);
+      
+      // Create a custom error with status code for role-based handling
+      const customError = new Error(error?.detail || 'Failed to load security dashboard');
+      (customError as any).statusCode = error?.status_code;
+      (customError as any).errorCode = error?.error_code;
+      throw customError;
+    }
     return response.data;
   },
 
   async getSecurityMetrics(days: number = 7): Promise<SecurityMetrics> {
-    const response = await apiRequest('GET', `/security/metrics?days=${days}`);
+    console.log('🔐 Requesting security metrics (days:', days, ')');
+    const response = await apiRequest('GET', `/api/v1/security/metrics?days=${days}`);
+    if (!response.success) {
+      const error = response.error;
+      console.error('🚨 Security metrics request failed:', error);
+      
+      const customError = new Error(error?.detail || 'Failed to load security metrics');
+      (customError as any).statusCode = error?.status_code;
+      (customError as any).errorCode = error?.error_code;
+      throw customError;
+    }
     return response.data;
   },
 

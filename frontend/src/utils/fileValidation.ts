@@ -9,45 +9,109 @@
  * - Malware detection patterns
  */
 
-// File type definitions
+// File type definitions - Comprehensive support for all common file types
 export const ALLOWED_MIME_TYPES = {
   // Documents
   'application/pdf': { extension: '.pdf', category: 'document', icon: '📄' },
   'application/msword': { extension: '.doc', category: 'document', icon: '📝' },
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': { 
-    extension: '.docx', category: 'document', icon: '📝' 
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': {
+    extension: '.docx', category: 'document', icon: '📝'
   },
   'application/vnd.ms-excel': { extension: '.xls', category: 'spreadsheet', icon: '📊' },
-  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': { 
-    extension: '.xlsx', category: 'spreadsheet', icon: '📊' 
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': {
+    extension: '.xlsx', category: 'spreadsheet', icon: '📊'
   },
   'application/vnd.ms-powerpoint': { extension: '.ppt', category: 'presentation', icon: '📋' },
-  'application/vnd.openxmlformats-officedocument.presentationml.presentation': { 
-    extension: '.pptx', category: 'presentation', icon: '📋' 
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation': {
+    extension: '.pptx', category: 'presentation', icon: '📋'
   },
-  
+  'application/rtf': { extension: '.rtf', category: 'document', icon: '📝' },
+  'application/epub+zip': { extension: '.epub', category: 'document', icon: '📚' },
+  'application/vnd.oasis.opendocument.text': { extension: '.odt', category: 'document', icon: '📝' },
+  'application/vnd.oasis.opendocument.spreadsheet': { extension: '.ods', category: 'spreadsheet', icon: '📊' },
+  'application/vnd.oasis.opendocument.presentation': { extension: '.odp', category: 'presentation', icon: '📋' },
+
   // Text files
   'text/plain': { extension: '.txt', category: 'text', icon: '📃' },
   'text/csv': { extension: '.csv', category: 'data', icon: '📊' },
   'text/markdown': { extension: '.md', category: 'text', icon: '📃' },
+  'text/html': { extension: '.html', category: 'text', icon: '🌐' },
+  'text/css': { extension: '.css', category: 'text', icon: '🎨' },
+  'text/javascript': { extension: '.js', category: 'code', icon: '💻' },
+  'text/typescript': { extension: '.ts', category: 'code', icon: '💻' },
+  'text/x-python': { extension: '.py', category: 'code', icon: '🐍' },
+  'text/x-java-source': { extension: '.java', category: 'code', icon: '☕' },
+  'text/x-c': { extension: '.c', category: 'code', icon: '💻' },
+  'text/x-c++': { extension: '.cpp', category: 'code', icon: '💻' },
+  'text/x-csharp': { extension: '.cs', category: 'code', icon: '💻' },
+  'text/x-php': { extension: '.php', category: 'code', icon: '💻' },
+  'text/x-ruby': { extension: '.rb', category: 'code', icon: '💎' },
+  'text/x-go': { extension: '.go', category: 'code', icon: '🔵' },
+  'text/x-rust': { extension: '.rs', category: 'code', icon: '🦀' },
   'application/json': { extension: '.json', category: 'data', icon: '📋' },
   'application/xml': { extension: '.xml', category: 'data', icon: '📋' },
-  
+  'application/yaml': { extension: '.yaml', category: 'data', icon: '📋' },
+  'application/x-yaml': { extension: '.yml', category: 'data', icon: '📋' },
+  'text/x-sql': { extension: '.sql', category: 'code', icon: '🗄️' },
+
   // Images
   'image/jpeg': { extension: '.jpg', category: 'image', icon: '🖼️' },
   'image/png': { extension: '.png', category: 'image', icon: '🖼️' },
   'image/gif': { extension: '.gif', category: 'image', icon: '🖼️' },
   'image/webp': { extension: '.webp', category: 'image', icon: '🖼️' },
   'image/svg+xml': { extension: '.svg', category: 'image', icon: '🖼️' },
-  
+  'image/bmp': { extension: '.bmp', category: 'image', icon: '🖼️' },
+  'image/tiff': { extension: '.tiff', category: 'image', icon: '🖼️' },
+  'image/x-icon': { extension: '.ico', category: 'image', icon: '🖼️' },
+  'image/heic': { extension: '.heic', category: 'image', icon: '🖼️' },
+  'image/avif': { extension: '.avif', category: 'image', icon: '🖼️' },
+
+  // Video files
+  'video/mp4': { extension: '.mp4', category: 'video', icon: '🎥' },
+  'video/avi': { extension: '.avi', category: 'video', icon: '🎥' },
+  'video/quicktime': { extension: '.mov', category: 'video', icon: '🎥' },
+  'video/x-msvideo': { extension: '.avi', category: 'video', icon: '🎥' },
+  'video/webm': { extension: '.webm', category: 'video', icon: '🎥' },
+  'video/x-flv': { extension: '.flv', category: 'video', icon: '🎥' },
+  'video/3gpp': { extension: '.3gp', category: 'video', icon: '🎥' },
+
+  // Audio files
+  'audio/mpeg': { extension: '.mp3', category: 'audio', icon: '🎵' },
+  'audio/wav': { extension: '.wav', category: 'audio', icon: '🎵' },
+  'audio/x-wav': { extension: '.wav', category: 'audio', icon: '🎵' },
+  'audio/ogg': { extension: '.ogg', category: 'audio', icon: '🎵' },
+  'audio/aac': { extension: '.aac', category: 'audio', icon: '🎵' },
+  'audio/flac': { extension: '.flac', category: 'audio', icon: '🎵' },
+  'audio/x-m4a': { extension: '.m4a', category: 'audio', icon: '🎵' },
+
   // Archives
   'application/zip': { extension: '.zip', category: 'archive', icon: '📦' },
   'application/x-rar-compressed': { extension: '.rar', category: 'archive', icon: '📦' },
   'application/x-7z-compressed': { extension: '.7z', category: 'archive', icon: '📦' },
-  
-  // Other
-  'application/rtf': { extension: '.rtf', category: 'document', icon: '📝' },
-  'application/epub+zip': { extension: '.epub', category: 'document', icon: '📚' }
+  'application/x-tar': { extension: '.tar', category: 'archive', icon: '📦' },
+  'application/gzip': { extension: '.gz', category: 'archive', icon: '📦' },
+  'application/x-bzip2': { extension: '.bz2', category: 'archive', icon: '📦' },
+
+  // CAD and Design
+  'application/x-autocad': { extension: '.dwg', category: 'cad', icon: '📐' },
+  'application/dxf': { extension: '.dxf', category: 'cad', icon: '📐' },
+  'application/x-photoshop': { extension: '.psd', category: 'design', icon: '🎨' },
+  'application/illustrator': { extension: '.ai', category: 'design', icon: '🎨' },
+
+  // Fonts
+  'font/ttf': { extension: '.ttf', category: 'font', icon: '🔤' },
+  'font/otf': { extension: '.otf', category: 'font', icon: '🔤' },
+  'font/woff': { extension: '.woff', category: 'font', icon: '🔤' },
+  'font/woff2': { extension: '.woff2', category: 'font', icon: '🔤' },
+
+  // Specialized formats
+  'application/vnd.google-earth.kml+xml': { extension: '.kml', category: 'geo', icon: '🌍' },
+  'application/vnd.google-earth.kmz': { extension: '.kmz', category: 'geo', icon: '🌍' },
+  'application/x-sqlite3': { extension: '.db', category: 'database', icon: '🗄️' },
+  'application/x-msaccess': { extension: '.mdb', category: 'database', icon: '🗄️' },
+
+  // Catch-all for other file types
+  'application/octet-stream': { extension: '', category: 'binary', icon: '📁' }
 } as const;
 
 // Dangerous file extensions that should never be allowed
@@ -67,6 +131,15 @@ export const MAX_FILE_SIZES = {
   text: 10 * 1024 * 1024, // 10MB
   data: 25 * 1024 * 1024, // 25MB
   archive: 200 * 1024 * 1024, // 200MB
+  code: 10 * 1024 * 1024, // 10MB
+  video: 500 * 1024 * 1024, // 500MB
+  audio: 100 * 1024 * 1024, // 100MB
+  cad: 200 * 1024 * 1024, // 200MB
+  design: 100 * 1024 * 1024, // 100MB
+  font: 5 * 1024 * 1024, // 5MB
+  geo: 50 * 1024 * 1024, // 50MB
+  database: 500 * 1024 * 1024, // 500MB
+  binary: 100 * 1024 * 1024, // 100MB
   default: 50 * 1024 * 1024 // 50MB
 } as const;
 

@@ -1,0 +1,521 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Client-Side Document Processing Test</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 2rem;
+            background: #f8fafc;
+        }
+        .header {
+            background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+            color: white;
+            padding: 2rem;
+            border-radius: 12px;
+            margin-bottom: 2rem;
+            text-align: center;
+        }
+        .test-section {
+            background: white;
+            border-radius: 8px;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        .test-controls {
+            display: flex;
+            gap: 1rem;
+            flex-wrap: wrap;
+            margin-bottom: 1rem;
+        }
+        button {
+            background: #2563eb;
+            color: white;
+            border: none;
+            padding: 0.75rem 1.5rem;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.875rem;
+            font-weight: 600;
+        }
+        button:hover {
+            background: #1d4ed8;
+        }
+        button:disabled {
+            background: #9ca3af;
+            cursor: not-allowed;
+        }
+        .file-input {
+            margin: 1rem 0;
+        }
+        .results {
+            margin-top: 1rem;
+            padding: 1rem;
+            background: #f1f5f9;
+            border-radius: 6px;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .log-entry {
+            margin: 0.25rem 0;
+            font-family: 'Courier New', monospace;
+            font-size: 0.875rem;
+        }
+        .success { color: #059669; }
+        .error { color: #dc2626; }
+        .warning { color: #d97706; }
+        .info { color: #2563eb; }
+        .preview-container {
+            margin-top: 1rem;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            overflow: hidden;
+        }
+        .preview-content {
+            max-height: 500px;
+            overflow: auto;
+        }
+        .file-info {
+            background: #f8fafc;
+            padding: 1rem;
+            border-bottom: 1px solid #e2e8f0;
+            font-size: 0.875rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🚀 Client-Side Document Processing Test</h1>
+        <p>Test the new client-side document processor that bypasses server dependencies</p>
+    </div>
+
+    <div class="test-section">
+        <h2>📄 File Upload Test</h2>
+        <p>Upload a document to test client-side processing:</p>
+
+        <div class="file-input">
+            <input type="file" id="fileInput" accept=".docx,.xlsx,.pptx,.txt,.csv,.json,.md,.html,.doc,.xls,.ppt">
+        </div>
+
+        <div class="test-controls">
+            <button onclick="testUploadedFile()">Process Uploaded File</button>
+            <button onclick="clearResults()">Clear Results</button>
+        </div>
+
+        <div id="uploadResults" class="results" style="display: none;"></div>
+        <div id="uploadPreview" class="preview-container" style="display: none;">
+            <div class="file-info" id="fileInfo"></div>
+            <div class="preview-content" id="previewContent"></div>
+        </div>
+    </div>
+
+    <div class="test-section">
+        <h2>🧪 Automated Test Suite</h2>
+        <p>Run comprehensive tests for different document types:</p>
+
+        <div class="test-controls">
+            <button onclick="runBasicTests()">Run Basic Tests</button>
+            <button onclick="runTypeRecognitionTests()">Test Type Recognition</button>
+            <button onclick="runErrorHandlingTests()">Test Error Handling</button>
+            <button onclick="runPerformanceTests()">Test Performance</button>
+            <button onclick="runAllTests()">Run All Tests</button>
+        </div>
+
+        <div id="testResults" class="results" style="display: none;"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>📊 Sample File Tests</h2>
+        <p>Test with generated sample files:</p>
+
+        <div class="test-controls">
+            <button onclick="testSampleText()">Test Text File</button>
+            <button onclick="testSampleCSV()">Test CSV File</button>
+            <button onclick="testSampleJSON()">Test JSON File</button>
+            <button onclick="testSampleMarkdown()">Test Markdown</button>
+            <button onclick="testSampleHTML()">Test HTML</button>
+        </div>
+
+        <div id="sampleResults" class="results" style="display: none;"></div>
+        <div id="samplePreview" class="preview-container" style="display: none;">
+            <div class="file-info" id="sampleFileInfo"></div>
+            <div class="preview-content" id="samplePreviewContent"></div>
+        </div>
+    </div>
+
+    <script>
+        // Initialize logging
+        function log(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const className = type;
+            return `<div class="log-entry ${className}">[${timestamp}] ${message}</div>`;
+        }
+
+        function appendLog(containerId, message, type = 'info') {
+            const container = document.getElementById(containerId);
+            container.style.display = 'block';
+            container.innerHTML += log(message, type);
+            container.scrollTop = container.scrollHeight;
+        }
+
+        function clearResults() {
+            document.getElementById('uploadResults').style.display = 'none';
+            document.getElementById('uploadResults').innerHTML = '';
+            document.getElementById('uploadPreview').style.display = 'none';
+            document.getElementById('testResults').style.display = 'none';
+            document.getElementById('testResults').innerHTML = '';
+            document.getElementById('sampleResults').style.display = 'none';
+            document.getElementById('sampleResults').innerHTML = '';
+            document.getElementById('samplePreview').style.display = 'none';
+        }
+
+        // Mock the client-side processor for testing
+        class MockClientSideProcessor {
+            constructor() {
+                this.name = 'MockClientSideProcessor';
+                this.version = '2.0.0';
+            }
+
+            canPreview(mimeType, fileName) {
+                const supportedTypes = [
+                    'text/plain', 'text/csv', 'text/markdown', 'text/html',
+                    'application/json', 'application/xml',
+                    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                    'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+                ];
+
+                const extension = fileName.toLowerCase().split('.').pop();
+                const supportedExtensions = ['txt', 'csv', 'md', 'html', 'json', 'xml', 'docx', 'xlsx', 'pptx'];
+
+                return supportedTypes.includes(mimeType) || supportedExtensions.includes(extension);
+            }
+
+            async preview(blob, fileName, mimeType) {
+                const startTime = performance.now();
+
+                try {
+                    let content = '';
+                    let method = 'text_reading';
+
+                    if (mimeType.startsWith('text/') || mimeType.includes('json') || mimeType.includes('xml')) {
+                        content = await blob.text();
+
+                        if (mimeType.includes('json')) {
+                            try {
+                                const parsed = JSON.parse(content);
+                                content = JSON.stringify(parsed, null, 2);
+                                method = 'json_formatting';
+                            } catch (e) {
+                                method = 'text_reading';
+                            }
+                        }
+                    } else {
+                        // Mock processing for Office documents
+                        content = `Mock content extraction for ${fileName}\n\nThis demonstrates how the client-side processor would handle Office documents.\n\nFile Information:\n• Name: ${fileName}\n• Size: ${blob.size} bytes\n• Type: ${mimeType}\n\nThe actual processor would use libraries like:\n• mammoth.js for Word documents\n• xlsx.js for Excel files\n• jszip for PowerPoint extraction`;
+                        method = 'mock_office_processing';
+                    }
+
+                    const processingTime = performance.now() - startTime;
+                    const words = content.trim().split(/\s+/).length;
+
+                    return {
+                        type: 'success',
+                        format: 'html',
+                        content: this.generateHTML(fileName, content, method, processingTime, blob.size),
+                        metadata: {
+                            pluginName: this.name,
+                            extractionMethod: method,
+                            processingTime: `${processingTime.toFixed(1)}ms`,
+                            wordCount: words,
+                            fileSize: blob.size
+                        }
+                    };
+                } catch (error) {
+                    const processingTime = performance.now() - startTime;
+
+                    return {
+                        type: 'error',
+                        format: 'html',
+                        error: error.message,
+                        content: this.generateErrorHTML(fileName, error.message),
+                        metadata: {
+                            pluginName: this.name,
+                            processingTime: `${processingTime.toFixed(1)}ms`,
+                            error: error.message
+                        }
+                    };
+                }
+            }
+
+            generateHTML(fileName, content, method, processingTime, fileSize) {
+                const words = content.trim().split(/\s+/).length;
+
+                return `
+                    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;">
+                        <div style="background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%); color: white; padding: 1.5rem; border-radius: 8px 8px 0 0;">
+                            <h2 style="margin: 0; font-size: 1.5rem;">📄 ${fileName}</h2>
+                            <p style="margin: 0.5rem 0 0 0; opacity: 0.9; font-size: 0.9rem;">${this.formatFileSize(fileSize)} • ${words} words • ${processingTime.toFixed(1)}ms</p>
+                        </div>
+                        <div style="background: white; padding: 1.5rem;">
+                            <div style="background: #f8fafc; border-radius: 6px; padding: 1rem; margin-bottom: 1rem;">
+                                <strong>Processing Method:</strong> ${this.getMethodDisplayName(method)}
+                            </div>
+                            <div style="background: #f8fafc; border-radius: 6px; padding: 1rem; white-space: pre-wrap; font-family: 'Segoe UI', monospace; line-height: 1.6; max-height: 400px; overflow-y: auto;">
+${content}
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+
+            generateErrorHTML(fileName, error) {
+                return `
+                    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;">
+                        <div style="background: #dc2626; color: white; padding: 1.5rem; border-radius: 8px 8px 0 0;">
+                            <h2 style="margin: 0; font-size: 1.5rem;">❌ ${fileName}</h2>
+                            <p style="margin: 0.5rem 0 0 0; opacity: 0.9;">Processing Error</p>
+                        </div>
+                        <div style="background: white; padding: 1.5rem;">
+                            <div style="background: #fef2f2; border: 1px solid #fecaca; border-radius: 6px; padding: 1rem; color: #dc2626;">
+                                <strong>Error:</strong> ${error}
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+
+            getMethodDisplayName(method) {
+                const names = {
+                    'text_reading': 'Text Reader',
+                    'json_formatting': 'JSON Parser',
+                    'mock_office_processing': 'Mock Office Processing'
+                };
+                return names[method] || method;
+            }
+
+            formatFileSize(bytes) {
+                if (bytes === 0) return '0 Bytes';
+                const k = 1024;
+                const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+                const i = Math.floor(Math.log(bytes) / Math.log(k));
+                return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+            }
+        }
+
+        const processor = new MockClientSideProcessor();
+
+        // Test uploaded file
+        async function testUploadedFile() {
+            const fileInput = document.getElementById('fileInput');
+            const file = fileInput.files[0];
+
+            if (!file) {
+                appendLog('uploadResults', 'Please select a file first', 'error');
+                return;
+            }
+
+            appendLog('uploadResults', `Testing file: ${file.name} (${file.type || 'unknown type'})`, 'info');
+
+            try {
+                const canPreview = processor.canPreview(file.type, file.name);
+                appendLog('uploadResults', `Can preview: ${canPreview ? 'Yes' : 'No'}`, canPreview ? 'success' : 'warning');
+
+                if (!canPreview) {
+                    appendLog('uploadResults', 'File type not supported by client-side processor', 'warning');
+                    return;
+                }
+
+                appendLog('uploadResults', 'Starting processing...', 'info');
+                const result = await processor.preview(file, file.name, file.type);
+
+                appendLog('uploadResults', `Processing result: ${result.type}`, result.type === 'success' ? 'success' : 'error');
+                appendLog('uploadResults', `Method: ${result.metadata?.extractionMethod}`, 'info');
+                appendLog('uploadResults', `Time: ${result.metadata?.processingTime}`, 'info');
+
+                if (result.content) {
+                    document.getElementById('fileInfo').innerHTML = `
+                        <strong>File:</strong> ${file.name} |
+                        <strong>Size:</strong> ${processor.formatFileSize(file.size)} |
+                        <strong>Type:</strong> ${file.type || 'unknown'} |
+                        <strong>Method:</strong> ${result.metadata?.extractionMethod}
+                    `;
+                    document.getElementById('previewContent').innerHTML = result.content;
+                    document.getElementById('uploadPreview').style.display = 'block';
+
+                    appendLog('uploadResults', 'Preview generated successfully', 'success');
+                }
+
+            } catch (error) {
+                appendLog('uploadResults', `Error: ${error.message}`, 'error');
+            }
+        }
+
+        // Sample file tests
+        async function testSampleFile(fileName, content, mimeType, resultContainer, previewContainer) {
+            appendLog(resultContainer, `Testing ${fileName}...`, 'info');
+
+            try {
+                const blob = new Blob([content], { type: mimeType });
+                const result = await processor.preview(blob, fileName, mimeType);
+
+                appendLog(resultContainer, `✅ ${fileName}: ${result.type} (${result.metadata?.processingTime})`,
+                    result.type === 'success' ? 'success' : 'error');
+
+                if (result.content && previewContainer) {
+                    document.getElementById('sampleFileInfo').innerHTML = `
+                        <strong>File:</strong> ${fileName} |
+                        <strong>Size:</strong> ${processor.formatFileSize(blob.size)} |
+                        <strong>Method:</strong> ${result.metadata?.extractionMethod}
+                    `;
+                    document.getElementById('samplePreviewContent').innerHTML = result.content;
+                    document.getElementById(previewContainer).style.display = 'block';
+                }
+
+            } catch (error) {
+                appendLog(resultContainer, `❌ ${fileName}: ${error.message}`, 'error');
+            }
+        }
+
+        function testSampleText() {
+            const content = 'This is a sample text file.\nWith multiple lines.\nTesting client-side processing.';
+            testSampleFile('sample.txt', content, 'text/plain', 'sampleResults', 'samplePreview');
+        }
+
+        function testSampleCSV() {
+            const content = 'Name,Age,City\nJohn,25,New York\nJane,30,Los Angeles\nBob,35,Chicago';
+            testSampleFile('sample.csv', content, 'text/csv', 'sampleResults', 'samplePreview');
+        }
+
+        function testSampleJSON() {
+            const content = JSON.stringify({
+                "name": "Sample Document",
+                "version": "1.0",
+                "data": {
+                    "items": [1, 2, 3],
+                    "description": "Test JSON file"
+                }
+            });
+            testSampleFile('sample.json', content, 'application/json', 'sampleResults', 'samplePreview');
+        }
+
+        function testSampleMarkdown() {
+            const content = '# Sample Markdown\n\nThis is **bold** and *italic* text.\n\n- List item 1\n- List item 2\n\n## Code\n\n`console.log("Hello");`';
+            testSampleFile('sample.md', content, 'text/markdown', 'sampleResults', 'samplePreview');
+        }
+
+        function testSampleHTML() {
+            const content = '<!DOCTYPE html>\n<html>\n<head><title>Sample</title></head>\n<body>\n<h1>Sample HTML</h1>\n<p>Testing HTML processing.</p>\n</body>\n</html>';
+            testSampleFile('sample.html', content, 'text/html', 'sampleResults', 'samplePreview');
+        }
+
+        // Automated tests
+        async function runBasicTests() {
+            appendLog('testResults', 'Starting basic tests...', 'info');
+
+            const tests = [
+                { name: 'test.txt', content: 'Sample text', type: 'text/plain' },
+                { name: 'test.csv', content: 'a,b,c\n1,2,3', type: 'text/csv' },
+                { name: 'test.json', content: '{"test": true}', type: 'application/json' }
+            ];
+
+            let passed = 0;
+            for (const test of tests) {
+                try {
+                    const blob = new Blob([test.content], { type: test.type });
+                    const result = await processor.preview(blob, test.name, test.type);
+
+                    if (result.type === 'success') {
+                        passed++;
+                        appendLog('testResults', `✅ ${test.name}: PASSED`, 'success');
+                    } else {
+                        appendLog('testResults', `❌ ${test.name}: FAILED`, 'error');
+                    }
+                } catch (error) {
+                    appendLog('testResults', `❌ ${test.name}: ERROR - ${error.message}`, 'error');
+                }
+            }
+
+            appendLog('testResults', `Basic tests completed: ${passed}/${tests.length} passed`,
+                passed === tests.length ? 'success' : 'warning');
+        }
+
+        async function runTypeRecognitionTests() {
+            appendLog('testResults', 'Testing type recognition...', 'info');
+
+            const types = [
+                { name: 'document.docx', mime: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' },
+                { name: 'spreadsheet.xlsx', mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' },
+                { name: 'presentation.pptx', mime: 'application/vnd.openxmlformats-officedocument.presentationml.presentation' },
+                { name: 'text.txt', mime: 'text/plain' },
+                { name: 'data.csv', mime: 'text/csv' },
+                { name: 'config.json', mime: 'application/json' }
+            ];
+
+            let supported = 0;
+            for (const type of types) {
+                const canPreview = processor.canPreview(type.mime, type.name);
+                if (canPreview) {
+                    supported++;
+                    appendLog('testResults', `✅ ${type.name}: Supported`, 'success');
+                } else {
+                    appendLog('testResults', `❌ ${type.name}: Not supported`, 'warning');
+                }
+            }
+
+            appendLog('testResults', `Type recognition: ${supported}/${types.length} types supported`, 'info');
+        }
+
+        async function runErrorHandlingTests() {
+            appendLog('testResults', 'Testing error handling...', 'info');
+
+            const errorTests = [
+                { name: 'empty.txt', content: '', type: 'text/plain' },
+                { name: 'invalid.json', content: '{invalid}', type: 'application/json' }
+            ];
+
+            for (const test of errorTests) {
+                try {
+                    const blob = new Blob([test.content], { type: test.type });
+                    const result = await processor.preview(blob, test.name, test.type);
+                    appendLog('testResults', `✅ ${test.name}: Error handled gracefully`, 'success');
+                } catch (error) {
+                    appendLog('testResults', `⚠️ ${test.name}: Unexpected error - ${error.message}`, 'warning');
+                }
+            }
+        }
+
+        async function runPerformanceTests() {
+            appendLog('testResults', 'Testing performance...', 'info');
+
+            const largeContent = Array(1000).fill('Performance test line.\n').join('');
+            const blob = new Blob([largeContent], { type: 'text/plain' });
+
+            const startTime = performance.now();
+            const result = await processor.preview(blob, 'large.txt', 'text/plain');
+            const totalTime = performance.now() - startTime;
+
+            appendLog('testResults', `Performance test: ${totalTime.toFixed(1)}ms for ${Math.round(blob.size/1024)}KB`,
+                totalTime < 1000 ? 'success' : 'warning');
+        }
+
+        async function runAllTests() {
+            appendLog('testResults', '🚀 Running comprehensive test suite...', 'info');
+            await runTypeRecognitionTests();
+            await runBasicTests();
+            await runErrorHandlingTests();
+            await runPerformanceTests();
+            appendLog('testResults', '✅ All tests completed', 'success');
+        }
+
+        // Initialize
+        appendLog('uploadResults', 'Client-side document processor test page ready', 'success');
+        appendLog('uploadResults', 'Upload a file or run automated tests to begin', 'info');
+    </script>
+</body>
+</html>

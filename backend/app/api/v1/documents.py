@@ -84,88 +84,101 @@ async def list_documents(
     db: Session = Depends(get_db)
 ):
     """List documents and folders with filtering and pagination."""
-    # Build base query with permission filtering and eager loading
-    query = db.query(Document).options(
-        joinedload(Document.permissions),
-        joinedload(Document.owner),
-        joinedload(Document.parent)
-    ).filter(Document.status == status)
-    
-    # Filter by parent folder
-    if parent_id is not None:
-        query = query.filter(Document.parent_id == parent_id)
-    else:
-        query = query.filter(Document.parent_id.is_(None))  # Root level
-    
-    # Filter by document type
-    if document_type:
-        query = query.filter(Document.document_type == document_type)
-    
-    # Filter by search term
-    if search:
-        search_term = f"%{search}%"
-        query = query.filter(
-            or_(
-                Document.name.ilike(search_term),
-                Document.description.ilike(search_term)
+    try:
+        print(f"[DOCUMENTS] Listing documents for user {current_user.username} (ID: {current_user.id})")
+        print(f"[DOCUMENTS] Parameters: parent_id={parent_id}, status={status}, page={page}, size={size}")
+
+        # Build base query with permission filtering and eager loading
+        query = db.query(Document).options(
+            joinedload(Document.permissions),
+            joinedload(Document.owner),
+            joinedload(Document.parent)
+        ).filter(Document.status == status)
+
+        # Filter by parent folder
+        if parent_id is not None:
+            query = query.filter(Document.parent_id == parent_id)
+        else:
+            query = query.filter(Document.parent_id.is_(None))  # Root level
+
+        # Filter by document type
+        if document_type:
+            query = query.filter(Document.document_type == document_type)
+
+        # Filter by search term
+        if search:
+            search_term = f"%{search}%"
+            query = query.filter(
+                or_(
+                    Document.name.ilike(search_term),
+                    Document.description.ilike(search_term)
+                )
             )
-        )
-    
-    # Get all matching documents for tag and permission filtering
-    all_docs = query.all()
-    
-    # Apply tag filtering (done in Python because tags are stored as JSON)
-    if tags:
-        tag_list = [tag.strip().lower() for tag in tags.split(",") if tag.strip()]
-        filtered_docs = []
+
+        # Get all matching documents for tag and permission filtering
+        all_docs = query.all()
+
+        # Apply tag filtering (done in Python because tags are stored as JSON)
+        if tags:
+            tag_list = [tag.strip().lower() for tag in tags.split(",") if tag.strip()]
+            filtered_docs = []
+            for doc in all_docs:
+                if doc.tags and isinstance(doc.tags, list):
+                    doc_tags_lower = [tag.lower() for tag in doc.tags]
+                    # Check if all requested tags are present (AND logic)
+                    if all(tag in doc_tags_lower for tag in tag_list):
+                        filtered_docs.append(doc)
+            all_docs = filtered_docs
+
+        # Apply permission filtering - simplified approach
+        accessible_docs = []
+
         for doc in all_docs:
-            if doc.tags and isinstance(doc.tags, list):
-                doc_tags_lower = [tag.lower() for tag in doc.tags]
-                # Check if all requested tags are present (AND logic)
-                if all(tag in doc_tags_lower for tag in tag_list):
-                    filtered_docs.append(doc)
-        all_docs = filtered_docs
-    
-    # Apply permission filtering - simplified approach
-    accessible_docs = []
-    
-    for doc in all_docs:
-        # Simplified access check: owner always has access, admin sees all
-        if current_user.is_admin or doc.owner_id == current_user.id:
-            accessible_docs.append(doc)
-    
-    total_count = len(accessible_docs)
-    
-    # Apply sorting
-    if sort_order.lower() == "desc":
-        accessible_docs.sort(key=lambda d: getattr(d, sort_by, ""), reverse=True)
-    else:
-        accessible_docs.sort(key=lambda d: getattr(d, sort_by, ""))
-    
-    # Apply pagination
-    offset = (page - 1) * size
-    paginated_docs = accessible_docs[offset:offset + size]
-    
-    # Convert to response format with permissions
-    document_responses = []
-    for doc in paginated_docs:
-        doc_dict = doc.to_dict()
-        
-        # Add computed permission flags
-        doc_dict["can_read"] = doc.can_user_access(current_user, "read")
-        doc_dict["can_write"] = doc.can_user_access(current_user, "write") 
-        doc_dict["can_delete"] = doc.can_user_access(current_user, "delete")
-        doc_dict["can_share"] = doc.can_user_access(current_user, "share")
-        
-        document_responses.append(DocumentSchema(**doc_dict))
-    
-    return DocumentList(
-        documents=document_responses,
-        total=total_count,
-        page=page,
-        size=size,
-        has_next=offset + size < total_count
-    )
+            # Simplified access check: owner always has access, admin sees all
+            if current_user.is_admin or doc.owner_id == current_user.id:
+                accessible_docs.append(doc)
+
+        total_count = len(accessible_docs)
+
+        # Apply sorting
+        if sort_order.lower() == "desc":
+            accessible_docs.sort(key=lambda d: getattr(d, sort_by, ""), reverse=True)
+        else:
+            accessible_docs.sort(key=lambda d: getattr(d, sort_by, ""))
+
+        # Apply pagination
+        offset = (page - 1) * size
+        paginated_docs = accessible_docs[offset:offset + size]
+
+        # Convert to response format with permissions
+        document_responses = []
+        for doc in paginated_docs:
+            doc_dict = doc.to_dict()
+
+            # Add computed permission flags
+            doc_dict["can_read"] = doc.can_user_access(current_user, "read")
+            doc_dict["can_write"] = doc.can_user_access(current_user, "write")
+            doc_dict["can_delete"] = doc.can_user_access(current_user, "delete")
+            doc_dict["can_share"] = doc.can_user_access(current_user, "share")
+
+            document_responses.append(DocumentSchema(**doc_dict))
+
+        return DocumentList(
+            documents=document_responses,
+            total=total_count,
+            page=page,
+            size=size,
+            has_next=offset + size < total_count
+        )
+
+    except Exception as e:
+        print(f"[ERROR] Documents listing failed: {str(e)}")
+        import traceback
+        print(f"[ERROR] Traceback: {traceback.format_exc()}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to list documents: {str(e)}"
+        )
 
 
 # Statistics Endpoint (moved before {document_id} to avoid route conflict)
@@ -748,10 +761,8 @@ async def upload_file(
         if is_zero_knowledge:
             # Zero-knowledge encryption (DEK-per-document architecture)
             print(f"[CRYPTO] Zero-knowledge upload detected")
-            
-            # For zero-knowledge uploads, encryption_iv is already base64 string, so decode it to bytes
-            encryption_iv_bytes = base64.b64decode(upload_metadata.encryption_iv) if upload_metadata.encryption_iv else None
-            
+
+            # For zero-knowledge uploads, encryption_iv is already base64 string, store as-is
             document = Document(
                 name=upload_metadata.name,        # original name for DB/display
                 file_extension=file_extension,
@@ -766,7 +777,7 @@ async def upload_file(
                 created_by=current_user.id,
                 # Zero-knowledge specific fields
                 encrypted_dek=upload_metadata.encrypted_dek,
-                encryption_iv=encryption_iv_bytes,  # Convert base64 to bytes
+                encryption_iv=upload_metadata.encryption_iv,  # Keep as base64 string
                 encryption_algorithm=upload_metadata.encryption_algorithm or "AES-256-GCM",
                 tags=upload_metadata.tags,
                 doc_metadata=upload_metadata.doc_metadata,
@@ -777,11 +788,9 @@ async def upload_file(
         else:
             # Legacy encryption format
             print(f"[CRYPTO] Legacy encryption upload detected")
-            encryption_iv_bytes = base64.b64decode(upload_metadata.encryption_iv)
-            encryption_auth_tag_bytes = base64.b64decode(upload_metadata.encryption_auth_tag)
-            
-            print(f"[CRYPTO] Decoded encryption data: iv_length={len(encryption_iv_bytes)}, auth_tag_length={len(encryption_auth_tag_bytes)}")
-            
+
+            print(f"[CRYPTO] Encryption data: iv={upload_metadata.encryption_iv[:20]}..., auth_tag={upload_metadata.encryption_auth_tag[:20]}...")
+
             document = Document(
                 name=upload_metadata.name,        # original name for DB/display
                 file_extension=file_extension,
@@ -795,8 +804,8 @@ async def upload_file(
                 owner_id=current_user.id,
                 created_by=current_user.id,
                 encryption_key_id=upload_metadata.encryption_key_id,
-                encryption_iv=encryption_iv_bytes,
-                encryption_auth_tag=encryption_auth_tag_bytes,
+                encryption_iv=upload_metadata.encryption_iv,  # Keep as base64 string
+                encryption_auth_tag=upload_metadata.encryption_auth_tag,  # Keep as base64 string
                 tags=upload_metadata.tags,
                 doc_metadata=upload_metadata.doc_metadata,
                 is_sensitive=upload_metadata.is_sensitive,
@@ -855,31 +864,31 @@ async def download_file(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Document not found"
         )
-    
+
     # Check read permission
     if not document.can_user_access(current_user, "read"):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Insufficient privileges to download this document"
         )
-    
+
     # Check if it's a document (not folder)
     if document.document_type != DocumentType.DOCUMENT:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Cannot download a folder"
         )
-    
+
     # Check if file exists on disk with detailed error messages
     if not document.storage_path:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Document file path is not configured. The file may have been moved or deleted from the system."
         )
-    
+
     if not os.path.exists(document.storage_path):
         # Log the missing file for admin investigation
-        print(f"❌ MISSING FILE: Document '{document.name}' (ID: {document.id}) file not found at path: {document.storage_path}")
+        print(f"ERROR MISSING FILE: Document '{document.name}' (ID: {document.id}) file not found at path: {document.storage_path}")
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Document file is missing from disk storage. The file '{document.name}' may have been moved, deleted, or the storage location is no longer accessible."
@@ -888,28 +897,28 @@ async def download_file(
     # VALIDATION: Check and correct file size consistency
     try:
         actual_file_size = os.path.getsize(document.storage_path)
-        print(f"🔍 DOWNLOAD DIAGNOSTIC - Document ID: {document.id}")
-        print(f"🔍 DOWNLOAD DIAGNOSTIC - Document name: {document.name}")
-        print(f"🔍 DOWNLOAD DIAGNOSTIC - Storage path: {document.storage_path}")
-        print(f"🔍 DOWNLOAD DIAGNOSTIC - DB file_size: {document.file_size}")
-        print(f"🔍 DOWNLOAD DIAGNOSTIC - Actual file size: {actual_file_size}")
-        print(f"🔍 DOWNLOAD DIAGNOSTIC - Size mismatch: {document.file_size != actual_file_size}")
-        print(f"🔍 DOWNLOAD DIAGNOSTIC - MIME type: {document.mime_type}")
-        print(f"🔍 DOWNLOAD DIAGNOSTIC - Is encrypted: {document.is_encrypted}")
+        print(f"DOWNLOAD DIAGNOSTIC - Document ID: {document.id}")
+        print(f"DOWNLOAD DIAGNOSTIC - Document name: {document.name}")
+        print(f"DOWNLOAD DIAGNOSTIC - Storage path: {document.storage_path}")
+        print(f"DOWNLOAD DIAGNOSTIC - DB file_size: {document.file_size}")
+        print(f"DOWNLOAD DIAGNOSTIC - Actual file size: {actual_file_size}")
+        print(f"DOWNLOAD DIAGNOSTIC - Size mismatch: {document.file_size != actual_file_size}")
+        print(f"DOWNLOAD DIAGNOSTIC - MIME type: {document.mime_type}")
+        print(f"DOWNLOAD DIAGNOSTIC - Is encrypted: {document.is_encrypted}")
 
         # FIX: If there's a size mismatch, update the database with correct size
         if document.file_size != actual_file_size:
-            print(f"⚠️  SIZE MISMATCH DETECTED! Updating DB size from {document.file_size} to {actual_file_size}")
+            print(f"WARNING: SIZE MISMATCH DETECTED! Updating DB size from {document.file_size} to {actual_file_size}")
             document.file_size = actual_file_size
             db.commit()
-            print(f"✅ Database file size updated successfully")
+            print(f"SUCCESS: Database file size updated successfully")
     except Exception as e:
-        print(f"❌ Error checking/correcting file size: {e}")
+        print(f"ERROR checking/correcting file size: {e}")
         # Continue with download even if size check fails
         actual_file_size = document.file_size or 0
-    
+
     encrypted_file_size = actual_file_size
-    
+
     # Log access
     access_log = DocumentAccessLog(
         document_id=document.id,
@@ -929,9 +938,9 @@ async def download_file(
     try:
         with open(document.storage_path, 'rb') as file:
             file_content = file.read()
-        
-        print(f"✅ File read successfully, content size: {len(file_content)} bytes")
-        
+
+        print(f"SUCCESS: File read successfully, content size: {len(file_content)} bytes")
+
         # Return file content using basic Response (no Content-Length header)
         from fastapi.responses import Response
         return Response(
@@ -943,21 +952,21 @@ async def download_file(
         )
     except FileNotFoundError:
         # File was deleted between the existence check and file read
-        print(f"❌ FILE DISAPPEARED: Document '{document.name}' (ID: {document.id}) was deleted during download attempt")
+        print(f"ERROR FILE DISAPPEARED: Document '{document.name}' (ID: {document.id}) was deleted during download attempt")
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Document file '{document.name}' was deleted or moved during download. Please refresh the page and try again."
         )
     except PermissionError:
         # File access permission denied
-        print(f"❌ PERMISSION DENIED: Cannot access document '{document.name}' (ID: {document.id}) at path: {document.storage_path}")
+        print(f"ERROR PERMISSION DENIED: Cannot access document '{document.name}' (ID: {document.id}) at path: {document.storage_path}")
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=f"Access denied to document file '{document.name}'. The file permissions may have changed or the storage is inaccessible."
         )
     except Exception as e:
         # Other file read errors
-        print(f"❌ Error reading file '{document.name}' (ID: {document.id}): {e}")
+        print(f"ERROR reading file '{document.name}' (ID: {document.id}): {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to read document file '{document.name}'. The file may be corrupted or inaccessible: {str(e)}"
@@ -1033,10 +1042,125 @@ async def download_decrypted_file(
         content_generator(),
         media_type=document.mime_type or "application/octet-stream",
         headers={
-            "Content-Disposition": f'attachment; filename="{document.name}"',
+            "Content-Disposition": f'attachment; filename*=UTF-8\'\'{document.name}',
             "Content-Length": str(len(decrypted_content))
         }
     )
+
+
+
+@router.get("/{document_id}/encryption-data")
+async def get_document_encryption_data(
+    document_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get document encryption data for client-side decryption."""
+    document = db.query(Document).filter(Document.id == document_id).first()
+    if not document:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document not found"
+        )
+
+    # Check read permission
+    if not document.can_user_access(current_user, "read"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Insufficient privileges to access this document"
+        )
+
+    # Check if it's a document (not folder)
+    if document.document_type != DocumentType.DOCUMENT:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot get encryption data for a folder"
+        )
+
+    if not document.is_encrypted:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Document is not encrypted"
+        )
+
+    # Validate required encryption fields
+    if not document.ciphertext:
+        # If ciphertext is missing, try to read from file and populate it
+        if document.storage_path and os.path.exists(document.storage_path):
+            try:
+                import base64
+                with open(document.storage_path, 'rb') as file:
+                    file_content = file.read()
+                    document.ciphertext = base64.b64encode(file_content).decode('utf-8')
+                    db.commit()
+                    print(f"MIGRATION: Populated ciphertext for document {document.id} from file")
+            except Exception as e:
+                print(f"ERROR: Failed to read file content for document {document.id}: {e}")
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Failed to retrieve document content"
+                )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Document ciphertext not found and file is missing"
+            )
+
+    if not document.encryption_iv or not document.encryption_auth_tag:
+        # Check for encryption data truncation
+        iv_length = len(document.encryption_iv) if document.encryption_iv else 0
+        tag_length = len(document.encryption_auth_tag) if document.encryption_auth_tag else 0
+
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"TRUNCATION_DETECTED: Encryption data incomplete (IV: {iv_length}B, AuthTag: {tag_length}B)"
+        )
+
+    # Log access
+    access_log = DocumentAccessLog(
+        document_id=document.id,
+        user_id=current_user.id,
+        action="read",
+        access_method="api",
+        success=True,
+        details={"endpoint": "encryption-data"}
+    )
+    db.add(access_log)
+    db.commit()
+
+    # Update last accessed time
+    document.accessed_at = datetime.now()
+    db.commit()
+
+    # DEBUG: Log encryption data being returned
+    print(f"DEBUG ENCRYPTION DATA - Document {document.id}:")
+    print(f"  ciphertext type: {type(document.ciphertext)}, length: {len(document.ciphertext) if document.ciphertext else 0}")
+    print(f"  encryption_iv type: {type(document.encryption_iv)}, length: {len(document.encryption_iv) if document.encryption_iv else 0}")
+    print(f"  encryption_auth_tag type: {type(document.encryption_auth_tag)}, length: {len(document.encryption_auth_tag) if document.encryption_auth_tag else 0}")
+    print(f"  encryption_algorithm: {document.encryption_algorithm}")
+    print(f"  encrypted_dek: {document.encrypted_dek[:50] if document.encrypted_dek else None}...")
+
+    # FIX: Convert bytes to base64 strings for frontend compatibility
+    encryption_iv_b64 = base64.b64encode(document.encryption_iv).decode('utf-8') if document.encryption_iv else None
+    encryption_auth_tag_b64 = base64.b64encode(document.encryption_auth_tag).decode('utf-8') if document.encryption_auth_tag else None
+
+    print(f"DEBUG ENCRYPTION DATA - After base64 conversion:")
+    print(f"  encryption_iv_b64: {encryption_iv_b64}")
+    print(f"  encryption_auth_tag_b64: {encryption_auth_tag_b64}")
+
+    # Return encryption data for client-side decryption
+    return {
+        "id": document.id,
+        "name": document.name,
+        "mime_type": document.mime_type,
+        "file_size": document.file_size,
+        "ciphertext": document.ciphertext,
+        "encryption_iv": encryption_iv_b64,
+        "encryption_auth_tag": encryption_auth_tag_b64,
+        "encryption_algorithm": document.encryption_algorithm,
+        "encrypted_dek": document.encrypted_dek,
+        "is_encrypted": document.is_encrypted
+    }
 
 
 # Search and Filter Endpoints

@@ -470,7 +470,7 @@ def verify_totp_token(secret: str, token: str) -> bool:
         # Create TOTP instance and verify
         totp = pyotp.TOTP(secret)
         
-        # Verify with a window of ±1 (allows for 30-second clock drift)
+        # Verify with a window of plus/minus 1 (allows for 30-second clock drift)
         return totp.verify(clean_token, valid_window=1)
         
     except Exception as e:
@@ -553,6 +553,46 @@ async def get_current_user(token: HTTPAuthorizationCredentials = Depends(HTTPBea
             detail="Authentication failed",
             headers={"WWW-Authenticate": "Bearer"},
         )
+
+
+async def get_current_user_optional(
+    token: Optional[HTTPAuthorizationCredentials] = Depends(HTTPBearer(auto_error=False))
+) -> Optional['User']:
+    """
+    Get current user from JWT token (optional - returns None if no token).
+
+    Args:
+        token: Optional authorization token from request header
+
+    Returns:
+        User object or None if no token provided or invalid
+    """
+    if not token:
+        return None
+
+    try:
+        # Use the existing get_current_user logic but catch exceptions
+        from ..models.user import User
+        from ..core.database import get_db
+
+        # Decode and verify token
+        payload = decode_token(token.credentials)
+        user_id = payload.get("user_id")
+
+        if not user_id:
+            return None
+
+        # Get user from database
+        db = next(get_db())
+        user = db.query(User).filter(User.id == user_id).first()
+
+        if not user or not user.is_active:
+            return None
+
+        return user
+
+    except (ExpiredTokenError, InvalidTokenError, MalformedTokenError, Exception):
+        return None
 
 
 def require_role(allowed_roles: List[str]):

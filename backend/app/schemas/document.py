@@ -319,6 +319,7 @@ class BulkPermissionUpdate(BaseModel):
 # Share schemas
 class DocumentShareBase(BaseModel):
     """Base schema for document shares."""
+    document_id: Optional[int] = Field(None, description="Document ID (can be provided in body or query)")
     share_name: Optional[str] = Field(None, max_length=100, description="Optional share name")
     share_type: DocumentShareType = Field(DocumentShareType.INTERNAL, description="Share type")
     allow_download: bool = Field(True, description="Allow downloads")
@@ -326,9 +327,10 @@ class DocumentShareBase(BaseModel):
     allow_comment: bool = Field(False, description="Allow comments")
     require_password: bool = Field(False, description="Require password for access")
     password: Optional[str] = Field(None, description="Share password")
-    expires_at: Optional[datetime] = Field(None, description="Share expiration")
+    expires_at: Optional[datetime] = Field(None, description="Share expiration (optional)")
     max_access_count: Optional[int] = Field(None, gt=0, description="Maximum access count")
     access_restrictions: Dict[str, Any] = Field(default_factory=dict, description="Access restrictions")
+    encryption_password: Optional[str] = Field(None, description="Document encryption password for validation")
 
 
 class DocumentShareCreate(DocumentShareBase):

@@ -266,30 +266,31 @@ async def get_security_dashboard(
     try:
         since_time = datetime.utcnow() - timedelta(hours=hours)
         
-        # FIXED: Get active sessions from database
-        active_sessions = db.query(func.count(func.distinct(DocumentAccessLog.session_id))).filter(
+        # Get active sessions from security events (approximation)
+        active_sessions = db.query(func.count(func.distinct(SecurityEvent.session_id))).filter(
             and_(
-                DocumentAccessLog.accessed_at >= datetime.utcnow() - timedelta(minutes=30),
-                DocumentAccessLog.session_id.isnot(None)
+                SecurityEvent.detected_at >= datetime.utcnow() - timedelta(minutes=30),
+                SecurityEvent.session_id.isnot(None)
             )
         ).scalar() or 0
         
-        # FIXED: Get last login times per user
+        # Get recent user activity from security events
         last_logins = db.query(
-            DocumentAccessLog.user_id,
-            func.max(DocumentAccessLog.accessed_at).label('last_login')
+            SecurityEvent.user_id,
+            func.max(SecurityEvent.detected_at).label('last_activity')
         ).filter(
             and_(
-                DocumentAccessLog.action == 'login',
-                DocumentAccessLog.accessed_at >= since_time
+                SecurityEvent.event_type.in_(['login_success', 'document_access']),
+                SecurityEvent.detected_at >= since_time,
+                SecurityEvent.user_id.isnot(None)
             )
-        ).group_by(DocumentAccessLog.user_id).all()
+        ).group_by(SecurityEvent.user_id).all()
         
-        # FIXED: Get key usage statistics
-        key_operations = db.query(func.count(DocumentAccessLog.id)).filter(
+        # Get security-related operations count
+        key_operations = db.query(func.count(SecurityEvent.id)).filter(
             and_(
-                DocumentAccessLog.action.in_(['encrypt', 'decrypt', 'key_rotation']),
-                DocumentAccessLog.accessed_at >= since_time
+                SecurityEvent.event_type.in_(['key_rotation', 'encryption_event', 'decryption_event']),
+                SecurityEvent.detected_at >= since_time
             )
         ).scalar() or 0
         
@@ -373,19 +374,25 @@ async def get_security_dashboard(
             "last_logins": [
                 {
                     "user_id": login.user_id,
-                    "last_login": login.last_login.isoformat()
+                    "last_activity": login.last_activity.isoformat()
                 }
-                for login in last_logins[:10]  # Top 10 recent logins
+                for login in last_logins[:10]  # Top 10 recent activities
             ],
             "audit_summary": {
-                "total_events": db.query(DocumentAccessLog).filter(
-                    DocumentAccessLog.accessed_at >= since_time
+                "total_events": db.query(SecurityEvent).filter(
+                    SecurityEvent.detected_at >= since_time
                 ).count(),
-                "unique_users": db.query(func.count(func.distinct(DocumentAccessLog.user_id))).filter(
-                    DocumentAccessLog.accessed_at >= since_time
+                "unique_users": db.query(func.count(func.distinct(SecurityEvent.user_id))).filter(
+                    and_(
+                        SecurityEvent.detected_at >= since_time,
+                        SecurityEvent.user_id.isnot(None)
+                    )
                 ).scalar() or 0,
-                "unique_ips": db.query(func.count(func.distinct(DocumentAccessLog.ip_address))).filter(
-                    DocumentAccessLog.accessed_at >= since_time
+                "unique_ips": db.query(func.count(func.distinct(SecurityEvent.source_ip))).filter(
+                    and_(
+                        SecurityEvent.detected_at >= since_time,
+                        SecurityEvent.source_ip.isnot(None)
+                    )
                 ).scalar() or 0
             }
         }

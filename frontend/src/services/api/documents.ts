@@ -422,8 +422,18 @@ export class DocumentsApiService {
         keyId: metadata.keyId,
         hasIV: !!metadata.iv,
         hasAuthTag: !!metadata.authTag,
-        hasPassword: !!password
+        hasPassword: !!password,
+        ivFormat: metadata.iv ? 'base64' : 'missing',
+        authTagFormat: metadata.authTag ? 'base64' : 'missing'
       });
+
+      // Validate base64 format of critical fields
+      if (metadata.iv && !/^[A-Za-z0-9+/]*={0,2}$/.test(metadata.iv)) {
+        throw new Error(`Invalid IV format from database: not valid base64. Got: ${metadata.iv.substring(0, 50)}...`);
+      }
+      if (metadata.authTag && !/^[A-Za-z0-9+/]*={0,2}$/.test(metadata.authTag)) {
+        throw new Error(`Invalid authTag format from database: not valid base64. Got: ${metadata.authTag.substring(0, 50)}...`);
+      }
 
       // Import the decryptDownloadedFile function from the hook
       // Note: This is a bit hacky, but necessary since we're not in a React component
@@ -442,7 +452,7 @@ export class DocumentsApiService {
       const authTag = encryptedArray.slice(-authTagSize);
 
       // Convert to base64 for decryption
-      const { uint8ArrayToBase64, deriveKey } = await import('../../utils/encryption');
+      const { uint8ArrayToBase64, deriveKey, base64ToArrayBuffer } = await import('../../utils/encryption');
       
       console.log('📥 Legacy download: Deriving key from password');
       
@@ -450,9 +460,20 @@ export class DocumentsApiService {
       // For now, let's try using the document metadata for salt/iterations
       let derivedKey;
       if (document.doc_metadata?.encryption_salt) {
-        const salt = new Uint8Array(atob(document.doc_metadata.encryption_salt).split('').map(c => c.charCodeAt(0)));
-        const iterations = document.doc_metadata.encryption_iterations || 100000;
+        const salt = new Uint8Array(base64ToArrayBuffer(document.doc_metadata.encryption_salt));
+        // Use iterations from document metadata, user profile, or secure default
+        const iterations = document.doc_metadata.encryption_iterations ||
+                          document.doc_metadata.key_derivation_iterations ||
+                          500000; // Secure default matching backend
         
+        console.log('📥 Legacy download: Key derivation parameters:', {
+          saltLength: salt.length,
+          iterations: iterations,
+          source: document.doc_metadata.encryption_iterations ? 'doc_metadata.encryption_iterations' :
+                  document.doc_metadata.key_derivation_iterations ? 'doc_metadata.key_derivation_iterations' :
+                  'default(500000)'
+        });
+
         derivedKey = await deriveKey({
           password,
           salt,
@@ -464,10 +485,10 @@ export class DocumentsApiService {
 
       console.log('📥 Legacy download: Decrypting file data');
       
-      // Create decrypted file
+      // Create decrypted file - ensure all fields are base64 encoded
       const decryptedData = await decryptFile({
         ciphertext: uint8ArrayToBase64(ciphertext),
-        iv: metadata.iv!,
+        iv: metadata.iv!, // This should already be base64 from database
         authTag: uint8ArrayToBase64(authTag),
         key: derivedKey
       }, filename, metadata.mimeType || 'application/octet-stream');

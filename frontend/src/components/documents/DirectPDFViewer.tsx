@@ -140,10 +140,47 @@ export const DirectPDFViewer: React.FC<DirectPDFViewerProps> = ({
       const pdf = await loadingTask.promise;
 
       console.log('✅ PDF loaded successfully:', pdf.numPages, 'pages');
+      console.log('📄 PDF Diagnostic Info:', {
+        fileName,
+        actualPages: pdf.numPages,
+        fileSize: fileUrl.startsWith('blob:') ? 'blob URL' : 'external URL',
+        pdfInfo: pdf._pdfInfo || 'No PDF info available'
+      });
+
+      // Additional validation for single-page documents
+      let actualPageCount = pdf.numPages;
+
+      if (pdf.numPages === 1) {
+        console.log('📋 Single-page PDF detected - verifying page structure...');
+      } else if (pdf.numPages > 10) {
+        console.log('⚠️ Large page count detected:', pdf.numPages, 'pages - this might indicate a metadata issue');
+
+        // Try to validate if this is actually a single-page document
+        try {
+          const firstPage = await pdf.getPage(1);
+          const secondPage = await pdf.getPage(2).catch(() => null);
+
+          if (firstPage && !secondPage) {
+            console.log('🔍 Only first page accessible - treating as single-page document');
+            actualPageCount = 1;
+          } else if (firstPage && secondPage) {
+            // Check if the pages are actually different
+            const viewport1 = firstPage.getViewport({ scale: 1.0 });
+            const viewport2 = secondPage.getViewport({ scale: 1.0 });
+
+            if (viewport1.width === viewport2.width && viewport1.height === viewport2.height) {
+              console.log('🔍 Multiple pages detected with same dimensions');
+            }
+          }
+        } catch (validationError) {
+          console.warn('⚠️ Page validation failed:', validationError);
+        }
+      }
+
       setState(prev => ({
         ...prev,
         pdf,
-        numPages: pdf.numPages,
+        numPages: actualPageCount,
         isLoading: false,
         currentPage: 1,
         error: null

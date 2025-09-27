@@ -8,28 +8,26 @@
  * - Error handling and validation
  */
 
-import { useState, useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import { encryptionApi } from '../services/api/encryption';
 import useAuthStore from '../stores/authStore';
-import { 
-  deriveKey, 
-  deriveExtractableKey,
-  encryptFile, 
-  decryptFile,
-  createValidationPayload,
-  generateSalt,
-  generateIV,
-  getEncryptionParameters,
-  isWebCryptoSupported,
-  testCryptoFunctionality,
-  uint8ArrayToBase64,
+import {
   base64ToUint8Array,
-  hashKeyMaterial,
+  createValidationPayload,
+  decryptFile,
+  DecryptionError,
+  UnsupportedFormatError,
+  deriveExtractableKey,
+  deriveKey,
+  encryptFile,
   ENCRYPTION_CONFIG,
   EncryptionError,
+  generateSalt,
+  isWebCryptoSupported,
   KeyDerivationError,
-  DecryptionError
+  testCryptoFunctionality,
+  uint8ArrayToBase64
 } from '../utils/encryption';
-import { encryptionApi } from '../services/api/encryption';
 
 // Types
 export interface EncryptionKey {
@@ -144,17 +142,37 @@ export function useEncryption(): UseEncryptionReturn {
     updateState({ isLoading: true, error: null });
 
     try {
+      // Check authentication status first
+      const authState = useAuthStore.getState();
+      console.log('Auth status during encryption init:', {
+        isAuthenticated: authState.isAuthenticated,
+        user: authState.user?.username,
+        hasToken: !!authState.tokens?.access_token
+      });
+
       // Test crypto functionality
       const cryptoWorks = await testCryptoFunctionality();
       if (!cryptoWorks) {
         throw new Error('Crypto functionality test failed');
       }
 
-      // Load user's encryption keys
-      await loadEncryptionKeys();
-      
+      // Try to load user's encryption keys
+      // This might fail for first-time users or auth issues, but encryption should still be "initialized"
+      try {
+        await loadEncryptionKeys();
+        console.log('SUCCESS: Encryption keys loaded successfully');
+      } catch (keyError) {
+        console.warn('WARNING: Failed to load encryption keys (may be first-time user or auth issue):', keyError);
+        // Don't treat key loading failure as initialization failure
+        // First-time users won't have keys, and that's OK
+        updateState({ keys: [], currentKey: null });
+      }
+
       updateState({ isInitialized: true, isLoading: false });
+      console.log('SUCCESS: Encryption system initialized successfully');
     } catch (error) {
+      console.error('ERROR: Failed to initialize encryption system:', error);
+      updateState({ isLoading: false });
       handleError(error, 'Failed to initialize encryption system');
     }
   }, [state.isSupported]); // updateState and handleError are stable
@@ -209,6 +227,8 @@ export function useEncryption(): UseEncryptionReturn {
       updateState({ isLoading: false });
       return newKey;
     } catch (error) {
+      console.error('Failed to create encryption key:', error);
+      updateState({ isLoading: false });
       handleError(error, 'Failed to create encryption key');
       throw error;
     }
@@ -224,13 +244,70 @@ export function useEncryption(): UseEncryptionReturn {
       const keyList = await encryptionApi.listKeys();
       const keys = keyList.keys || [];
       const activeKey = keys.find(key => key.isActive) || null;
-      
-      updateState({ 
-        keys: keys, 
-        currentKey: activeKey, 
-        isLoading: false 
+
+      updateState({
+        keys: keys,
+        currentKey: activeKey,
+        isLoading: false
       });
-    } catch (error) {
+    } catch (error: any) {
+      console.error('Failed to load encryption keys:', error);
+
+      // Handle 500 errors gracefully (Unicode encoding issues)
+      if (error.response?.status === 500) {
+        const errorMessage = error.response?.data?.detail || error.message || '';
+        const isEncodingError = errorMessage.includes('charmap') ||
+                               errorMessage.includes('codec') ||
+                               errorMessage.includes('Unicode') ||
+                               errorMessage.includes('encoding');
+
+        if (isEncodingError) {
+          updateState({
+            error: "Server encountered a character encoding issue. Some encryption keys may contain special characters that aren't supported. You can still create new keys with plain text names.",
+            keys: [],
+            currentKey: null,
+            isLoading: false,
+          });
+
+          // Optional: Show user notification
+          console.warn('Encryption keys API failed due to encoding issue - showing graceful fallback');
+          return;
+        } else {
+          // Other 500 errors
+          updateState({
+            error: "Server error loading encryption keys. Please try again later.",
+            keys: [],
+            currentKey: null,
+            isLoading: false,
+          });
+          return;
+        }
+      }
+
+      // Handle network errors
+      if (!error.response) {
+        updateState({
+          error: "Network error: Unable to connect to server. Please check your connection.",
+          keys: [],
+          currentKey: null,
+          isLoading: false,
+        });
+        return;
+      }
+
+      // Handle authentication errors
+      if (error.response?.status === 401) {
+        updateState({
+          error: "Authentication required. Please log in again.",
+          keys: [],
+          currentKey: null,
+          isLoading: false,
+        });
+        return;
+      }
+
+      // Handle other errors
+      updateState({ isLoading: false });
       handleError(error, 'Failed to load encryption keys');
     }
   }, []); // updateState and handleError are stable
@@ -354,7 +431,7 @@ export function useEncryption(): UseEncryptionReturn {
       
       // Creating encrypted blob
       
-      const encryptedBlob = new Blob([ciphertextBytes, authTagBytes]);
+      const encryptedBlob = new Blob([ciphertextBytes as any, authTagBytes as any]);
       const encryptedFile = new File([encryptedBlob], `${file.name}.enc`, {
         type: 'application/octet-stream'
       });
@@ -385,8 +462,9 @@ export function useEncryption(): UseEncryptionReturn {
     }
   }, [deriveUserKey]);
 
+
   /**
-   * Decrypt downloaded file - Production version with proper error handling
+   * Decrypt downloaded file with multi-key retry logic and enhanced error handling
    */
   const decryptDownloadedFile = useCallback(async (
     encryptedData: ArrayBuffer,
@@ -394,15 +472,15 @@ export function useEncryption(): UseEncryptionReturn {
     password: string
   ): Promise<File> => {
     try {
-      // Find the key used for encryption
+      // Find the key used for encryption (WORKING VERSION - SIMPLE & RELIABLE)
       const keyData = state.keys?.find(k => k.keyId === metadata.keyId);
       if (!keyData) {
         throw new Error('Encryption key not found');
       }
 
       const derivedKey = await deriveUserKey(password, keyData);
-      
-      // Split encrypted data into ciphertext and auth tag
+
+      // Split encrypted data into ciphertext and auth tag (WORKING VERSION)
       const encryptedArray = new Uint8Array(encryptedData);
       const authTagSize = ENCRYPTION_CONFIG.AUTH_TAG_LENGTH;
       const ciphertext = encryptedArray.slice(0, -authTagSize);

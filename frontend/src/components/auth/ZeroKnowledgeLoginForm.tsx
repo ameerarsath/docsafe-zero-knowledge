@@ -166,7 +166,19 @@ export default function ZeroKnowledgeLoginForm({
           });
         }
       } else {
-        setError(response.error?.detail || 'Login failed');
+        const errorDetail = response.error?.detail || 'Login failed';
+        const errorCode = response.error?.error_code;
+
+        // Provide specific messages for different error types
+        if (errorCode === 'RATE_LIMITED') {
+          setError('Too many login attempts. Please wait a few minutes before trying again.');
+        } else if (errorCode === 'UNAUTHORIZED') {
+          setError('Invalid credentials. Please check your username and password.');
+        } else if (errorCode === 'CONNECTION_REFUSED' || errorCode === 'NETWORK_ERROR') {
+          setError('Cannot connect to the server. Please check your internet connection.');
+        } else {
+          setError(errorDetail);
+        }
       }
     } catch (err: any) {
       console.error('Stage 1 login error:', err);
@@ -188,7 +200,16 @@ export default function ZeroKnowledgeLoginForm({
 
     try {
       // Derive master key from encryption password
-      const salt = base64ToUint8Array(stage1Response.encryption_salt!);
+      // Handle both base64-encoded salt and plain text salt
+      let salt: Uint8Array;
+      try {
+        // Try to decode as base64 first
+        salt = base64ToUint8Array(stage1Response.encryption_salt!);
+      } catch {
+        // If base64 decoding fails, treat as plain text and encode it
+        console.log('Salt is not base64, treating as plain text');
+        salt = new TextEncoder().encode(stage1Response.encryption_salt!);
+      }
       let masterKey = await deriveKey({
         password: data.encryptionPassword,
         salt,
@@ -196,117 +217,25 @@ export default function ZeroKnowledgeLoginForm({
       });
 
       // Verify the derived key using the verification payload
-      console.log('🔐 Starting comprehensive key validation...');
-      console.log('Username:', stage1Response.username);
-      console.log('Encryption Password Entered:', data.encryptionPassword);
-      console.log('Expected Password (JHNpAZ39g!&Y):', data.encryptionPassword === 'JHNpAZ39g!&Y');
-      console.log('Encryption Salt (base64):', stage1Response.encryption_salt);
-      console.log('Key Verification Payload:', stage1Response.key_verification_payload);
       
-      // Try multiple validation approaches for maximum compatibility
+      // Validate only the entered password
       let isValidKey = false;
-      let workingPassword = data.encryptionPassword;
-      let workingMasterKey = masterKey;
       
       try {
-        // Method 1: Standard validation with entered password
-        console.log('🔍 Method 1: Standard validation');
+        // Validate the entered encryption password
         isValidKey = await verifyKeyValidation(
           stage1Response.username,
           masterKey,
           stage1Response.key_verification_payload!
         );
-        console.log('Standard validation result:', isValidKey);
-        
-        if (!isValidKey) {
-          // Method 2: Try known working passwords (prioritize expected ones)
-          console.log('🔍 Method 2: Trying known passwords');
-          const knownPasswords = [
-            'JHNpAZ39g!&Y',  // Expected default encryption password from CLAUDE.md
-            'TestPass123@',   // Same as login password (common pattern)
-            stage1Response.username, // Username as password (some systems use this)
-            'password',       // Simple common password
-            'admin',          // Admin password
-            'secret',         // Common test password
-            'encryption123',  // Alternative pattern
-            'testpass'        // Simple test password
-          ];
-          
-          for (const testPassword of knownPasswords) {
-            if (testPassword !== data.encryptionPassword) {
-              console.log(`Trying password: ${testPassword.substring(0, 3)}...`);
-              
-              try {
-                const salt = base64ToUint8Array(stage1Response.encryption_salt!);
-                const testMasterKey = await deriveKey({
-                  password: testPassword,
-                  salt,
-                  iterations: stage1Response.key_derivation_iterations || 500000
-                });
-                
-                const testValidation = await verifyKeyValidation(
-                  stage1Response.username,
-                  testMasterKey,
-                  stage1Response.key_verification_payload!
-                );
-                
-                if (testValidation) {
-                  console.log(`✅ SUCCESS with password: ${testPassword}`);
-                  isValidKey = true;
-                  workingPassword = testPassword;
-                  workingMasterKey = testMasterKey;
-                  break;
-                }
-              } catch (testError) {
-                console.log(`Failed with ${testPassword}:`, testError.message);
-              }
-            }
-          }
-          
-          // Method 3: Development bypass for testing
-          if (!isValidKey) {
-            console.log('🔍 Method 3: Checking development bypass');
-            const isDevelopment = window.location.hostname === 'localhost' || 
-                                window.location.hostname === '127.0.0.1';
-            
-            if (isDevelopment && (
-              data.encryptionPassword === 'BYPASS_FOR_TESTING' || 
-              data.encryptionPassword === 'bypass' ||
-              data.encryptionPassword === 'test'
-            )) {
-              console.log('⚠️ DEVELOPMENT BYPASS ACTIVATED');
-              isValidKey = true;
-            }
-          }
-        }
-        
+
       } catch (validationError) {
-        console.error('Validation process error:', validationError);
+        console.error('Key validation error:', validationError);
       }
 
       if (!isValidKey) {
-        console.error('❌ All validation methods failed');
-        console.log('💡 Debugging info:');
-        console.log('- Salt length:', base64ToUint8Array(stage1Response.encryption_salt!).length);
-        console.log('- Payload format:', typeof stage1Response.key_verification_payload);
-        console.log('- Iterations:', stage1Response.key_derivation_iterations);
-        
-        setError(`Invalid encryption password. Please try again.
-
-🔑 Try these passwords:
-• JHNpAZ39g!&Y (expected)
-• TestPass123@ (same as login)  
-• BYPASS_FOR_TESTING (development)
-
-Check browser console for detailed debugging info.`);
+        setError('Invalid encryption password. Please check your password and try again.');
         return;
-      } else {
-        console.log('✅ Key validation successful!');
-        if (workingPassword !== data.encryptionPassword) {
-          console.log(`💡 Working password was: ${workingPassword}`);
-        }
-        // Use the working master key
-        masterKey = workingMasterKey;
       }
 
       // Key is valid, complete login with master key

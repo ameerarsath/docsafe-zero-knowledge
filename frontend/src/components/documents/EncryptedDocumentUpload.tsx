@@ -270,7 +270,7 @@ export default function EncryptedDocumentUpload({
             console.log('✅ Encryption session restored successfully');
             setHasZeroKnowledgeKey(true);
             // Retry upload after brief delay
-            setTimeout(() => handleUpload(files), 500);
+            setTimeout(() => handleFiles(files), 500);
             return;
           }
         } catch (error) {
@@ -677,7 +677,7 @@ export default function EncryptedDocumentUpload({
         const createRequest = {
           parent_id: parentFolderId,
           folders: folderItems,
-          conflict_resolution: options.conflictResolution === 'rename' ? 'rename' : 'skip'
+          conflict_resolution: options.conflictResolution === 'rename' ? 'rename' as const : 'skip' as const
         };
         
         const folderResult = await folderUploadApi.createFolders(createRequest);

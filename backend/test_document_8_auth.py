@@ -31,7 +31,7 @@ async def test_document_8():
     # Check document details
     document = db.query(Document).filter(Document.id == document_id).first()
     if not document:
-        print("❌ ERROR: Document 8 not found")
+        print("ERROR: Document 8 not found")
         return False
     
     print(f"\nDocument Details:")
@@ -43,7 +43,7 @@ async def test_document_8():
     # Check user details
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
-        print("❌ ERROR: User not found")
+        print("ERROR: User not found")
         return False
         
     print(f"\nUser Details:")
@@ -53,12 +53,12 @@ async def test_document_8():
     
     # Check ownership match
     if document.owner_id != user.id:
-        print(f"❌ ERROR: Ownership mismatch!")
+        print(f"ERROR: Ownership mismatch!")
         print(f"  Document owner: {document.owner_id}")
         print(f"  Current user: {user.id}")
         return False
     else:
-        print("✅ Ownership check passed")
+        print("SUCCESS: Ownership check passed")
     
     # Test document service directly (bypassing authentication)
     print(f"\nTesting document service...")
@@ -69,11 +69,11 @@ async def test_document_8():
         decrypted_data = await service.decrypt_document_content(
             document_id, user_id, password
         )
-        print(f"✅ Decryption successful: {len(decrypted_data)} bytes")
+        print(f"SUCCESS: Decryption successful: {len(decrypted_data)} bytes")
         print(f"Content preview: {decrypted_data[:80].decode()}...")
         return True
     except Exception as e:
-        print(f"❌ Decryption failed: {str(e)}")
+        print(f"ERROR: Decryption failed: {str(e)}")
         import traceback
         traceback.print_exc()
         return False

@@ -926,11 +926,11 @@ export class DocumentEncryptionService {
         authTagLength: legacyEncryptedObject.authTag.length
       });
 
-      // First derive the key from password  
-      const { deriveKeyFromPassword } = await import('../utils/encryption');
+      // First derive the key from password
+      const { deriveKey } = await import('../utils/encryption');
       const salt = base64ToArrayBuffer(document.encryption_key_id!); // Use key_id as salt for legacy
-      
-      const derivedKey = await deriveKeyFromPassword({
+
+      const derivedKey = await deriveKey({
         password: password,
         salt: new Uint8Array(salt),
         iterations: 100000 // Default iterations for legacy documents
@@ -984,9 +984,14 @@ export class DocumentEncryptionService {
    * Get user's decryption password (prompt if needed)
    */
   private async getUserDecryptionPassword(): Promise<string> {
-    // Try to get the stored password from session (if available)
-    const storedPassword = sessionStorage.getItem('temp_decryption_password');
+    // Try to get the stored password from multiple sources
+    const storedPassword =
+      sessionStorage.getItem('temp_decryption_password') ||
+      localStorage.getItem('encryption_password') ||
+      sessionStorage.getItem('encryption_password');
+
     if (storedPassword) {
+      console.log('🔑 Using stored encryption password for decryption');
       return storedPassword;
     }
 

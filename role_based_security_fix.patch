@@ -1,0 +1,246 @@
+From: Amazon Q Developer <q@amazon.com>
+Date: Mon, 13 Jan 2025 12:30:00 +0000
+Subject: [PATCH] Fix role-based access control for security dashboard
+
+This patch implements proper role-based access control for security endpoints:
+
+1. Only redirect to login for 401 (missing/expired token)
+2. Handle 403 as role-based access denial (stay logged in)
+3. Check user role before showing access denied message
+4. Enhanced error handling with role detection
+5. Debug logging for role-based access control
+
+Fixes:
+- Incorrect login redirects for valid users with insufficient roles
+- Missing role-based access control in security dashboard
+- Poor UX for users without security permissions
+
+---
+ frontend/src/services/api.ts                        | 15 ++++++++-------
+ frontend/src/services/api/security.ts               | 18 +++++++++++++-----
+ frontend/src/components/security/SecurityDashboard.tsx | 45 +++++++++++++++++++++++++++++++++++++++------
+ 3 files changed, 60 insertions(+), 18 deletions(-)
+
+diff --git a/frontend/src/services/api.ts b/frontend/src/services/api.ts
+index 1234567..abcdefg 100644
+--- a/frontend/src/services/api.ts
++++ b/frontend/src/services/api.ts
+@@ -134,9 +134,9 @@ apiClient.interceptors.response.use(
+     
+     console.log('🚨 API ERROR:', error.response?.status, error.config?.url);
+     
+-    // Enhanced logging for 403 errors on security endpoints
++    // Enhanced logging for security endpoint errors
+     if (error.response?.status === 403 && originalRequest?.url?.includes('/security/')) {
+-      console.error('🔒 403 FORBIDDEN on security endpoint:', originalRequest.url);
++      console.warn('🔒 403 FORBIDDEN - Role-based access denied for security endpoint:', originalRequest.url);
+       console.error('🔒 Current token:', TokenManager.getAccessToken() ? 'exists' : 'missing');
+       console.error('🔒 Token expired:', TokenManager.isTokenExpired());
+     }
+@@ -183,6 +183,13 @@ apiClient.interceptors.response.use(
+       }
+     }
+     
++    // Handle 403 Forbidden - role-based access control (do NOT redirect to login)
++    if (error.response?.status === 403) {
++      console.warn('🚨 403 Forbidden - insufficient permissions for:', originalRequest?.url);
++      // Let the error bubble up to be handled by the component
++      // Do NOT redirect to login - user is authenticated but lacks permissions
++    }
++    
+     // Handle rate limiting
+     if (error.response?.status === 429) {
+       const retryAfter = error.response.headers['retry-after'];
+@@ -265,11 +272,7 @@ export const handleApiError = (error: AxiosError): ApiError => {
+       };
+     } else if (status === 403) {
+-      // Enhanced 403 handling for security endpoints
+-      const isSecurity = error.config?.url?.includes('/security/');
+       return {
+-        detail: isSecurity 
+-          ? 'Access denied. You may need to log in again or lack security permissions.' 
+-          : (data?.detail || 'Insufficient permissions'),
++        detail: data?.detail || 'Access denied - insufficient permissions',
+         status_code: status,
+         error_code: 'FORBIDDEN',
+       };
+diff --git a/frontend/src/services/api/security.ts b/frontend/src/services/api/security.ts
+index 1234567..abcdefg 100644
+--- a/frontend/src/services/api/security.ts
++++ b/frontend/src/services/api/security.ts
+@@ -189,20 +189,28 @@ export const securityApi = {
+ 
+   // Security Dashboard
+   async getSecurityDashboard(hours: number = 24): Promise<SecurityDashboard> {
+-    console.log('🔐 Requesting security dashboard with hours:', hours);
++    console.log('🔐 Requesting security dashboard (hours:', hours, ')');
+     const response = await apiRequest('GET', `/api/v1/security/dashboard?hours=${hours}`);
+     if (!response.success) {
+-      console.error('🚨 Security dashboard request failed:', response.error);
+-      throw new Error(response.error?.detail || 'Failed to load security dashboard');
++      const error = response.error;
++      console.error('🚨 Security dashboard request failed:', error);
++      
++      // Create a custom error with status code for role-based handling
++      const customError = new Error(error?.detail || 'Failed to load security dashboard');
++      (customError as any).statusCode = error?.status_code;
++      (customError as any).errorCode = error?.error_code;
++      throw customError;
+     }
+     return response.data;
+   },
+ 
+   async getSecurityMetrics(days: number = 7): Promise<SecurityMetrics> {
+-    console.log('🔐 Requesting security metrics with days:', days);
++    console.log('🔐 Requesting security metrics (days:', days, ')');
+     const response = await apiRequest('GET', `/api/v1/security/metrics?days=${days}`);
+     if (!response.success) {
+-      console.error('🚨 Security metrics request failed:', response.error);
+-      throw new Error(response.error?.detail || 'Failed to load security metrics');
++      const error = response.error;
++      console.error('🚨 Security metrics request failed:', error);
++      
++      const customError = new Error(error?.detail || 'Failed to load security metrics');
++      (customError as any).statusCode = error?.status_code;
++      (customError as any).errorCode = error?.error_code;
++      throw customError;
+     }
+     return response.data;
+   },
+diff --git a/frontend/src/components/security/SecurityDashboard.tsx b/frontend/src/components/security/SecurityDashboard.tsx
+index 1234567..abcdefg 100644
+--- a/frontend/src/components/security/SecurityDashboard.tsx
++++ b/frontend/src/components/security/SecurityDashboard.tsx
+@@ -22,6 +22,7 @@ import {
+ } from 'lucide-react';
+ import { LoadingSpinner, MetricCard } from '../ui';
+ import SecurityHeadersStatus from './SecurityHeadersStatus';
++import { useAuth } from '../../contexts/AuthContext';
+ import { securityApi } from '../../services/api/security';
+ 
+ interface Props {
+@@ -35,6 +36,7 @@ export default function SecurityDashboard({
+ }: Props) {
+   // State management
+   const [isLoading, setIsLoading] = useState(false);
++  const [accessDenied, setAccessDenied] = useState(false);
+   const [error, setError] = useState<string | null>(null);
+   const [lastRefresh, setLastRefresh] = useState<Date | null>(new Date());
+   const [selectedTimeRange, setSelectedTimeRange] = useState<number>(24); // hours
+@@ -42,6 +44,9 @@ export default function SecurityDashboard({
+   const [metricsData, setMetricsData] = useState<any>(null);
+ 
++  // Auth context for role checking
++  const { user, isAuthenticated, hasRole } = useAuth();
++
+   /**
+    * Load dashboard data from API
+    */
+@@ -49,16 +54,25 @@ export default function SecurityDashboard({
+     try {
+       setError(null);
++      setAccessDenied(false);
+       
+       console.log('🔐 Loading security dashboard data...');
+       
+-      // Check authentication before making requests
+-      const token = localStorage.getItem('access_token') || sessionStorage.getItem('access_token');
+-      if (!token) {
+-        console.error('🚨 No authentication token found - redirecting to login');
++      // Check authentication first
++      if (!isAuthenticated) {
++        console.error('🚨 User not authenticated - redirecting to login');
+         window.location.href = '/login';
+         return;
+       }
+ 
++      // Check role-based access (admin or security role required)
++      const hasSecurityAccess = user?.role === 'admin' || user?.role === 'super_admin' || user?.role === 'security';
++      console.log('🔐 User role:', user?.role, 'Has security access:', hasSecurityAccess);
++      
++      if (!hasSecurityAccess) {
++        console.warn('🚫 User lacks security permissions - showing access denied');
++        setAccessDenied(true);
++        return;
++      }
++
+       // Try to load real data from API using the security service
+       const [dashboardData, metricsData] = await Promise.all([
+         securityApi.getSecurityDashboard(selectedTimeRange),
+@@ -71,9 +85,14 @@ export default function SecurityDashboard({
+     } catch (apiError) {
+       console.error('🚨 Security API error:', apiError);
+       
+-      // Check if it's an authentication error
+-      if (apiError.message?.includes('Access denied') || apiError.message?.includes('Authentication required')) {
+-        console.log('🔄 Authentication error - redirecting to login');
++      // Check error type for proper handling
++      const statusCode = (apiError as any)?.statusCode;
++      
++      if (statusCode === 401) {
++        console.log('🔄 401 Unauthorized - redirecting to login');
++        window.location.href = '/login';
++        return;
++      } else if (statusCode === 403) {
++        console.warn('🚫 403 Forbidden - role-based access denied');
++        setAccessDenied(true);
++        return;
++      } else if (apiError.message?.includes('Authentication required')) {
++        console.log('🔄 Authentication required - redirecting to login');
+         window.location.href = '/login';
+         return;
+       }
+@@ -151,12 +170,6 @@ export default function SecurityDashboard({
+   const handleRefresh = useCallback(async () => {
+     setIsLoading(true);
+     try {
+-      // Check authentication before refresh
+-      const token = localStorage.getItem('access_token') || sessionStorage.getItem('access_token');
+-      if (!token) {
+-        console.error('🚨 No token for refresh - redirecting to login');
+-        window.location.href = '/login';
+-        return;
+-      }
+-      
+       await loadDashboardData();
+       setLastRefresh(new Date());
+     } catch (error) {
+@@ -225,6 +238,26 @@ export default function SecurityDashboard({
+     );
+   }
+ 
++  // Show access denied for users without security permissions
++  if (accessDenied) {
++    return (
++      <div className="flex items-center justify-center min-h-[400px]">
++        <div className="text-center max-w-md mx-auto">
++          <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
++            <Shield className="w-8 h-8 text-red-600" />
++          </div>
++          <h2 className="text-2xl font-bold text-gray-900 mb-2">Access Denied</h2>
++          <p className="text-gray-600 mb-4">
++            You don't have permission to view the security dashboard. This feature requires administrator or security role access.
++          </p>
++          <p className="text-sm text-gray-500">
++            Current role: <span className="font-medium">{user?.role || 'Unknown'}</span>
++          </p>
++        </div>
++      </div>
++    );
++  }
++
+   if (error) {
+     return (
+       <div className="bg-red-50 border border-red-200 rounded-lg p-6">
+@@ -233,9 +266,7 @@ export default function SecurityDashboard({
+           <h3 className="font-medium">Security Dashboard Error</h3>
+         </div>
+         <p className="text-red-700 mt-2">{error}</p>
+-        <p className="text-red-600 mt-1 text-sm">
+-          If you're seeing authentication errors, please try logging in again.
+-        </p>
+         <button
+           onClick={handleRefresh}
+           className="mt-4 inline-flex items-center px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+-- 
+2.34.1

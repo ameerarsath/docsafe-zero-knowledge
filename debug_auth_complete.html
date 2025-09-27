@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>SecureVault Auth Diagnostics</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+        .status {
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 8px;
+            border-left: 5px solid;
+        }
+        .success { background: #e8f5e8; border-color: #4caf50; color: #2e7d32; }
+        .error { background: #ffeaea; border-color: #f44336; color: #c62828; }
+        .warning { background: #fff8e1; border-color: #ff9800; color: #ef6c00; }
+        .info { background: #e3f2fd; border-color: #2196f3; color: #1565c0; }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 10px 5px;
+        }
+        button:hover { background: #0056b3; }
+        .btn-danger { background: #dc3545; }
+        .btn-danger:hover { background: #c82333; }
+        .btn-success { background: #28a745; }
+        .btn-success:hover { background: #1e7e34; }
+        pre {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 6px;
+            overflow-x: auto;
+            font-size: 14px;
+        }
+        .step {
+            margin: 20px 0;
+            padding: 20px;
+            border: 2px solid #e9ecef;
+            border-radius: 8px;
+        }
+        .step h3 {
+            margin-top: 0;
+            color: #495057;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 SecureVault Authentication Diagnostics</h1>
+        <p>This tool will automatically check your authentication status and tell you exactly what's wrong.</p>
+
+        <div class="step">
+            <h3>Step 1: Check Authentication Tokens</h3>
+            <button onclick="checkTokens()">🔑 Check My Tokens</button>
+            <div id="token-results"></div>
+        </div>
+
+        <div class="step">
+            <h3>Step 2: Test API Connection</h3>
+            <button onclick="testConnection()">🌐 Test API Connection</button>
+            <div id="connection-results"></div>
+        </div>
+
+        <div class="step">
+            <h3>Step 3: Test Authentication</h3>
+            <button onclick="testAuth()">🔐 Test My Authentication</button>
+            <div id="auth-results"></div>
+        </div>
+
+        <div class="step">
+            <h3>Step 4: Test Shares API</h3>
+            <button onclick="testShares()">📊 Test Shares API</button>
+            <div id="shares-results"></div>
+        </div>
+
+        <div class="step">
+            <h3>🚀 Quick Fix Actions</h3>
+            <button onclick="tryLogin()" class="btn-success">🔑 Try Login</button>
+            <button onclick="clearTokens()" class="btn-danger">🗑️ Clear All Tokens</button>
+            <button onclick="refreshToken()" class="btn-success">🔄 Refresh Token</button>
+        </div>
+
+        <div id="final-diagnosis"></div>
+    </div>
+
+    <script>
+        let diagnosisData = {};
+
+        function checkTokens() {
+            const accessToken = localStorage.getItem('access_token') || sessionStorage.getItem('access_token');
+            const refreshToken = localStorage.getItem('refresh_token') || sessionStorage.getItem('refresh_token');
+            const expiresAt = localStorage.getItem('expires_at') || sessionStorage.getItem('expires_at');
+
+            const now = Date.now();
+            const isExpired = expiresAt ? parseInt(expiresAt) < now : 'Unknown';
+
+            diagnosisData.tokens = {
+                hasAccessToken: !!accessToken,
+                hasRefreshToken: !!refreshToken,
+                isExpired: isExpired,
+                expiresAt: expiresAt ? new Date(parseInt(expiresAt)).toLocaleString() : 'Unknown'
+            };
+
+            let html = '';
+
+            if (accessToken) {
+                html += '<div class="status success">✅ Access Token Found</div>';
+                html += `<div class="status info">📅 Expires: ${diagnosisData.tokens.expiresAt}</div>`;
+                if (isExpired === true) {
+                    html += '<div class="status error">⚠️ Token is EXPIRED</div>';
+                } else if (isExpired === false) {
+                    html += '<div class="status success">✅ Token is Valid (not expired)</div>';
+                }
+            } else {
+                html += '<div class="status error">❌ No Access Token Found - You need to login!</div>';
+            }
+
+            if (refreshToken) {
+                html += '<div class="status success">✅ Refresh Token Found</div>';
+            } else {
+                html += '<div class="status error">❌ No Refresh Token Found</div>';
+            }
+
+            document.getElementById('token-results').innerHTML = html;
+            generateDiagnosis();
+        }
+
+        async function testConnection() {
+            try {
+                const response = await fetch('http://localhost:8002/health');
+                const data = await response.text();
+
+                diagnosisData.connection = {
+                    status: response.status,
+                    success: response.ok,
+                    data: data
+                };
+
+                if (response.ok) {
+                    document.getElementById('connection-results').innerHTML =
+                        '<div class="status success">✅ Backend server is running and responding</div>';
+                } else {
+                    document.getElementById('connection-results').innerHTML =
+                        `<div class="status error">❌ Backend server error: ${response.status}</div>`;
+                }
+            } catch (error) {
+                diagnosisData.connection = { success: false, error: error.message };
+                document.getElementById('connection-results').innerHTML =
+                    `<div class="status error">❌ Cannot connect to backend server: ${error.message}</div>`;
+            }
+            generateDiagnosis();
+        }
+
+        async function testAuth() {
+            const accessToken = localStorage.getItem('access_token') || sessionStorage.getItem('access_token');
+
+            if (!accessToken) {
+                document.getElementById('auth-results').innerHTML =
+                    '<div class="status error">❌ No token to test - please login first</div>';
+                return;
+            }
+
+            try {
+                const response = await fetch('http://localhost:8002/api/auth/me', {
+                    headers: {
+                        'Authorization': `Bearer ${accessToken}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                const data = await response.json();
+
+                diagnosisData.auth = {
+                    status: response.status,
+                    success: response.ok,
+                    data: data
+                };
+
+                if (response.ok) {
+                    document.getElementById('auth-results').innerHTML =
+                        `<div class="status success">✅ Authentication works! Logged in as: ${data.username || 'Unknown'}</div>`;
+                } else {
+                    document.getElementById('auth-results').innerHTML =
+                        `<div class="status error">❌ Authentication failed: ${data.detail || 'Unknown error'}</div>`;
+                }
+            } catch (error) {
+                diagnosisData.auth = { success: false, error: error.message };
+                document.getElementById('auth-results').innerHTML =
+                    `<div class="status error">❌ Auth test failed: ${error.message}</div>`;
+            }
+            generateDiagnosis();
+        }
+
+        async function testShares() {
+            const accessToken = localStorage.getItem('access_token') || sessionStorage.getItem('access_token');
+
+            if (!accessToken) {
+                document.getElementById('shares-results').innerHTML =
+                    '<div class="status error">❌ No token to test - please login first</div>';
+                return;
+            }
+
+            try {
+                // Test with a document that should exist
+                const response = await fetch('http://localhost:8002/api/v1/shares/document/12', {
+                    headers: {
+                        'Authorization': `Bearer ${accessToken}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                const data = await response.json();
+
+                diagnosisData.shares = {
+                    status: response.status,
+                    success: response.ok,
+                    data: data
+                };
+
+                if (response.ok) {
+                    document.getElementById('shares-results').innerHTML =
+                        `<div class="status success">✅ Shares API works! Found ${data.shares?.length || 0} shares</div>`;
+                } else if (response.status === 403) {
+                    document.getElementById('shares-results').innerHTML =
+                        '<div class="status warning">⚠️ 403 Forbidden - This is the exact error you\'re seeing. You either don\'t own this document or lack permissions.</div>';
+                } else {
+                    document.getElementById('shares-results').innerHTML =
+                        `<div class="status error">❌ Shares API failed: ${data.detail || 'Unknown error'}</div>`;
+                }
+            } catch (error) {
+                diagnosisData.shares = { success: false, error: error.message };
+                document.getElementById('shares-results').innerHTML =
+                    `<div class="status error">❌ Shares test failed: ${error.message}</div>`;
+            }
+            generateDiagnosis();
+        }
+
+        async function tryLogin() {
+            try {
+                const response = await fetch('http://localhost:8002/api/auth/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        username: 'rahumana',
+                        password: 'TestPass123@'
+                    })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    // Store tokens
+                    localStorage.setItem('access_token', data.access_token);
+                    localStorage.setItem('refresh_token', data.refresh_token);
+                    localStorage.setItem('expires_at', (Date.now() + (data.expires_in * 1000)).toString());
+
+                    alert('✅ Login successful! Tokens stored. Try testing again.');
+                    checkTokens();
+                } else {
+                    alert(`❌ Login failed: ${data.detail || 'Unknown error'}`);
+                }
+            } catch (error) {
+                alert(`❌ Login error: ${error.message}`);
+            }
+        }
+
+        function clearTokens() {
+            localStorage.removeItem('access_token');
+            localStorage.removeItem('refresh_token');
+            localStorage.removeItem('expires_at');
+            sessionStorage.removeItem('access_token');
+            sessionStorage.removeItem('refresh_token');
+            sessionStorage.removeItem('expires_at');
+
+            alert('🗑️ All tokens cleared! You are now logged out.');
+            checkTokens();
+        }
+
+        async function refreshToken() {
+            const refreshToken = localStorage.getItem('refresh_token') || sessionStorage.getItem('refresh_token');
+
+            if (!refreshToken) {
+                alert('❌ No refresh token found - please login instead');
+                return;
+            }
+
+            try {
+                const response = await fetch('http://localhost:8002/api/auth/refresh', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ refresh_token: refreshToken })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    localStorage.setItem('access_token', data.access_token);
+                    localStorage.setItem('expires_at', (Date.now() + (data.expires_in * 1000)).toString());
+
+                    alert('✅ Token refreshed successfully!');
+                    checkTokens();
+                } else {
+                    alert(`❌ Token refresh failed: ${data.detail || 'Unknown error'}`);
+                }
+            } catch (error) {
+                alert(`❌ Refresh error: ${error.message}`);
+            }
+        }
+
+        function generateDiagnosis() {
+            if (!diagnosisData.tokens) return;
+
+            let diagnosis = '<div class="step"><h3>🎯 Diagnosis & Next Steps</h3>';
+
+            if (!diagnosisData.tokens.hasAccessToken) {
+                diagnosis += '<div class="status error">🔴 <strong>PROBLEM:</strong> You are not logged in!</div>';
+                diagnosis += '<div class="status info">✅ <strong>SOLUTION:</strong> Click "Try Login" button above or go to your app\'s login page.</div>';
+            } else if (diagnosisData.tokens.isExpired === true) {
+                diagnosis += '<div class="status error">🔴 <strong>PROBLEM:</strong> Your login token has expired!</div>';
+                diagnosis += '<div class="status info">✅ <strong>SOLUTION:</strong> Click "Refresh Token" button above or login again.</div>';
+            } else if (diagnosisData.shares && diagnosisData.shares.status === 403) {
+                diagnosis += '<div class="status warning">🟡 <strong>PROBLEM:</strong> You don\'t have permission to view shares for document #12.</div>';
+                diagnosis += '<div class="status info">✅ <strong>SOLUTION:</strong> This is normal! You can only view shares for documents you own or if you\'re an admin. The app should handle this gracefully by showing empty shares.</div>';
+            } else if (diagnosisData.auth && diagnosisData.auth.success) {
+                diagnosis += '<div class="status success">🟢 <strong>GOOD:</strong> Your authentication is working perfectly!</div>';
+                diagnosis += '<div class="status info">ℹ️ The 403 errors you\'re seeing are normal when trying to access documents you don\'t own.</div>';
+            }
+
+            diagnosis += '</div>';
+            document.getElementById('final-diagnosis').innerHTML = diagnosis;
+        }
+
+        // Auto-run first check
+        window.onload = function() {
+            checkTokens();
+        };
+    </script>
+</body>
+</html>

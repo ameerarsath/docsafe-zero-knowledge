@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>DOCX Preview Test</title>
+    <link rel="stylesheet" href="src/styles/document-preview.css">
+</head>
+<body>
+    <h2>Testing DOCX Preview Rendering</h2>
+
+    <h3>1. Raw HTML Content (what should be shown):</h3>
+    <div class="clean-docx-preview">
+        <div class="document-container">
+            <div class="document-header">
+                <h1 class="document-title">Mohamed+Ameer+Arsath+-+Resume.docx</h1>
+            </div>
+            <div class="document-content">
+                <div class="docx-preview formatted-content">
+                    <p><strong>MOHAMED AMEER ARSATH</strong></p>
+                    <p><strong>Full-Stack Developer | Java Spring Boot | React.js | AI/ML Enthusiast</strong></p>
+                    <p>📍 Dindigul, Tamil Nadu, India 📧 <a href="mailto:ameerarsath2@gmail.com">ameerarsath2@gmail.com</a></p>
+                    <h1><strong>PROFESSIONAL SUMMARY</strong></h1>
+                    <p>Dedicated BTech IT student and Full-Stack Developer with comprehensive expertise in Java Spring Boot backend development and React.js frontend technologies.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <h3>2. Text Content (what's being shown incorrectly):</h3>
+    <div style="background: #f0f0f0; padding: 1rem; font-family: monospace;">
+        &lt;div class="docx-preview"&gt;&lt;p&gt;MOHAMED AMEER ARSATH&lt;/p&gt;&lt;p&gt; &lt;strong&gt;Full-Stack Developer | Java Spring Boot | React.js | AI/ML Enthusiast&lt;/strong&gt;
+    </div>
+
+    <h3>3. dangerouslySetInnerHTML test:</h3>
+    <div id="test-container"></div>
+
+    <script>
+        // Test dangerouslySetInnerHTML equivalent
+        const testContent = `
+            <div class="docx-preview">
+                <p><strong>MOHAMED AMEER ARSATH</strong></p>
+                <p><strong>Full-Stack Developer | Java Spring Boot | React.js | AI/ML Enthusiast</strong></p>
+                <p>📍 Dindigul, Tamil Nadu, India</p>
+                <h2><strong>PROFESSIONAL SUMMARY</strong></h2>
+                <p>Dedicated BTech IT student and Full-Stack Developer with comprehensive expertise in Java Spring Boot backend development and React.js frontend technologies.</p>
+            </div>
+        `;
+
+        document.getElementById('test-container').innerHTML = testContent;
+
+        console.log('Test content:', testContent);
+    </script>
+</body>
+</html>

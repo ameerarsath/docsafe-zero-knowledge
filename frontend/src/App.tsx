@@ -49,6 +49,9 @@ import SecurityMonitoringPage from './pages/SecurityMonitoringPage';
 import KeyManagementPage from './pages/KeyManagementPage';
 import SecurityDashboardTest from './components/security/SecurityDashboardTest';
 
+// Shared Document Page
+import SharedDocumentPage from './pages/SharedDocumentPage';
+
 // Styles
 import './App.css';
 
@@ -70,6 +73,9 @@ function App() {
             <Route path="/register" element={<RegisterPage />} />
             <Route path="/forgot-password" element={<ForgotPasswordPage />} />
             <Route path="/reset-password" element={<ResetPasswordPage />} />
+
+            {/* Shared document access (public) */}
+            <Route path="/share/:shareToken" element={<SharedDocumentPage />} />
             
             {/* Protected routes */}
             <Route path="/dashboard" element={<ModernDashboardPage />} />

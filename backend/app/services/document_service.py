@@ -123,8 +123,15 @@ class DocumentService:
             raise PermissionError("Password is required for encrypted document")
         
         # Validate encryption metadata - support both encryption models
-        if not document.encrypted_dek and not document.encryption_key_id:
+        has_zero_knowledge = bool(document.encrypted_dek)
+        has_legacy_encryption = bool(document.encryption_key_id and document.encryption_iv and document.encryption_auth_tag)
+        
+        if not has_zero_knowledge and not has_legacy_encryption:
             raise ValueError(f"Document {document_id} missing encryption key data")
+        
+        # Log encryption model for debugging
+        encryption_model = "zero-knowledge" if has_zero_knowledge else "legacy"
+        logger.info(f"Document {document_id} uses {encryption_model} encryption model")
         
         logger.info(f"Generating preview content for encrypted document {document_id}")
         
@@ -208,10 +215,10 @@ using zero-knowledge encryption. Only users with the correct password
 can decrypt and view the actual content.
 
 Key Features:
-• Client-side encryption ensures server never sees plaintext
-• Unique Document Encryption Key (DEK) per file
-• AES-256-GCM encryption algorithm
-• Password-protected access
+- Client-side encryption ensures server never sees plaintext
+- Unique Document Encryption Key (DEK) per file
+- AES-256-GCM encryption algorithm
+- Password-protected access
 
 Technical Details:
 - Original file size: {document.file_size} bytes

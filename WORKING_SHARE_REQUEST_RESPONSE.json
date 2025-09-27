@@ -1,0 +1,76 @@
+{
+  "working_share_creation": {
+    "description": "Successful share creation with document_id=47 and user rahumana",
+    "request": {
+      "method": "POST",
+      "url": "http://localhost:8003/api/v1/shares/?document_id=47",
+      "headers": {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoyLCJ1c2VybmFtZSI6InJhaHVtYW5hIiwiZW1haWwiOiJyYWh1bWFuYUBleGFtcGxlLmNvbSIsInJvbGUiOiJ1c2VyIiwiaWF0IjoxNzU4Nzc3NjAyLCJleHAiOjE7NTg4NjQwMDJ9.VOYheS1Yix7KYuxtOJKJVpIHv58m3cnFJGOtV4r3a-4"
+      },
+      "body": {
+        "share_name": "Test External Share",
+        "share_type": "external",
+        "allow_download": false,
+        "allow_preview": true,
+        "allow_comment": false,
+        "require_password": false,
+        "password": null,
+        "expires_at": null,
+        "max_access_count": null,
+        "access_restrictions": {}
+      }
+    },
+    "response": {
+      "status": 201,
+      "headers": {
+        "content-type": "application/json"
+      },
+      "body": {
+        "share": {
+          "id": 1,
+          "shareToken": "541Nwe0wK4ytEJYez_TnvoXNH49Io-36ilgFNKTeFaI",
+          "documentId": 47,
+          "shareName": "Test External Share",
+          "shareType": "external",
+          "permissions": ["read"],
+          "expiresAt": null,
+          "createdAt": "2025-09-25T05:48:34",
+          "accessCount": 0,
+          "lastAccessedAt": null,
+          "isActive": true,
+          "createdBy": {
+            "id": 2,
+            "username": "rahumana",
+            "email": "rahumana@example.com"
+          }
+        },
+        "shareUrl": "http://localhost:3005/share/541Nwe0wK4ytEJYez_TnvoXNH49Io-36ilgFNKTeFaI"
+      }
+    }
+  },
+  "user_credentials": {
+    "username": "rahumana",
+    "password": "TestPass123@",
+    "encryption_password": "JHNpAZ39g!&Y"
+  },
+  "test_data": {
+    "user_id": 2,
+    "document_id": 47,
+    "document_name": "Document47.pdf"
+  },
+  "frontend_payload_mapping": {
+    "description": "How frontend settings should map to backend schema",
+    "frontend_to_backend": {
+      "settings.shareName": "share_name",
+      "settings.shareType": "share_type",
+      "settings.permissions.includes('download')": "allow_download",
+      "settings.permissions.includes('read')": "allow_preview",
+      "settings.permissions.includes('comment')": "allow_comment",
+      "settings.requirePassword": "require_password",
+      "settings.sharePassword": "password",
+      "settings.expiresAt": "expires_at",
+      "settings.maxAccess": "max_access_count"
+    }
+  }
+}

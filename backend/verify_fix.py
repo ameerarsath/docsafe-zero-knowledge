@@ -84,12 +84,12 @@ def main():
         
         if result["success"]:
             if result["status_code"] == test_case["expected_status"]:
-                print(f"✅ {test_case['description']}: PASS ({result['status_code']})")
+                print(f"SUCCESS: {test_case['description']}: PASS ({result['status_code']})")
                 tests_passed += 1
             else:
-                print(f"⚠️  {test_case['description']}: UNEXPECTED STATUS ({result['status_code']})")
+                print(f"WARNING:  {test_case['description']}: UNEXPECTED STATUS ({result['status_code']})")
         else:
-            print(f"❌ {test_case['description']}: FAIL - {result['error']}")
+            print(f"ERROR: {test_case['description']}: FAIL - {result['error']}")
     
     print()
     print("🔍 CORS Test...")
@@ -111,7 +111,7 @@ def main():
         }
         
         if cors_headers["Access-Control-Allow-Origin"]:
-            print("✅ CORS: Headers present")
+            print("SUCCESS: CORS: Headers present")
             total_tests += 1
             tests_passed += 1
             
@@ -119,11 +119,11 @@ def main():
             print(f"   Methods: {cors_headers['Access-Control-Allow-Methods']}")
             print(f"   Credentials: {cors_headers['Access-Control-Allow-Credentials']}")
         else:
-            print("❌ CORS: Missing headers")
+            print("ERROR: CORS: Missing headers")
             total_tests += 1
             
     except Exception as e:
-        print(f"❌ CORS: Test failed - {e}")
+        print(f"ERROR: CORS: Test failed - {e}")
         total_tests += 1
     
     print()
@@ -133,12 +133,12 @@ def main():
     root_result = test_endpoint(f"{base_url}/", "Configuration check")
     if root_result["success"] and isinstance(root_result["data"], dict):
         config_data = root_result["data"]
-        print(f"✅ App Name: {config_data.get('message', 'Unknown')}")
-        print(f"✅ Version: {config_data.get('version', 'Unknown')}")
-        print(f"✅ Environment: {config_data.get('environment', 'Unknown')}")
-        print(f"✅ Status: {config_data.get('status', 'Unknown')}")
+        print(f"SUCCESS: App Name: {config_data.get('message', 'Unknown')}")
+        print(f"SUCCESS: Version: {config_data.get('version', 'Unknown')}")
+        print(f"SUCCESS: Environment: {config_data.get('environment', 'Unknown')}")
+        print(f"SUCCESS: Status: {config_data.get('status', 'Unknown')}")
     else:
-        print("❌ Could not retrieve configuration info")
+        print("ERROR: Could not retrieve configuration info")
     
     print()
     print("=" * 50)
@@ -147,14 +147,14 @@ def main():
     if tests_passed == total_tests:
         print("🎉 ALL TESTS PASSED! Your DocSafe backend is working correctly.")
         print()
-        print("✅ Next steps:")
+        print("SUCCESS: Next steps:")
         print("   1. Start your frontend with: npm run dev")
         print("   2. Access the app at: http://localhost:3005")
         print("   3. API docs available at: http://localhost:8002/docs")
         print()
         return True
     else:
-        print("❌ Some tests failed. Check the issues above.")
+        print("ERROR: Some tests failed. Check the issues above.")
         print()
         print("🔧 Troubleshooting:")
         if tests_passed == 0:

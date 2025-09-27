@@ -218,7 +218,7 @@ export default function ZeroKnowledgeRegistrationWizard({
       if (response.success) {
         setState(prev => ({ ...prev, registrationComplete: true }));
         setCurrentStep(4);
-        onSuccess?.(response.data);
+        onSuccess?.(response.data as { user_id: number; username: string });
       } else {
         throw new Error(response.error?.detail || 'Registration failed');
       }

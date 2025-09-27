@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document Preview Test</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+        .test-section {
+            background: white;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .file-input {
+            margin: 10px 0;
+            padding: 10px;
+            border: 2px dashed #ddd;
+            border-radius: 4px;
+            width: 100%;
+        }
+        .preview-container {
+            margin-top: 20px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            min-height: 400px;
+            background: white;
+        }
+        .test-files {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+        .test-file-btn {
+            padding: 15px;
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            text-align: center;
+            transition: background-color 0.2s;
+        }
+        .test-file-btn:hover {
+            background: #0056b3;
+        }
+        .status {
+            margin-top: 10px;
+            padding: 10px;
+            border-radius: 4px;
+            font-weight: 500;
+        }
+        .status.success { background: #d4edda; color: #155724; }
+        .status.error { background: #f8d7da; color: #721c24; }
+        .status.info { background: #d1ecf1; color: #0c5460; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Document Preview Test - 4-Line Header Format</h1>
+
+        <div class="test-section">
+            <h2>Expected Header Format:</h2>
+            <div style="background: #f8f9fa; padding: 15px; border-radius: 6px; border: 1px solid #e9ecef;">
+                <div><strong>Line 1:</strong> File Name (exactly as uploaded)</div>
+                <div><strong>Line 2:</strong> MIME Type (e.g., application/vnd.openxmlformats-officedocument.wordprocessingml.document)</div>
+                <div><strong>Line 3:</strong> File Size · Word Count · Page Count (e.g., 45.24 KB · 534 words · 2 pages)</div>
+                <div><strong>Line 4:</strong> Modified Date (e.g., Modified 9/24/2025)</div>
+            </div>
+        </div>
+
+        <div class="test-section">
+            <h2>Test File Upload</h2>
+            <input type="file" id="fileInput" class="file-input" accept=".docx,.pdf,.txt,.csv,.json,.md,.xlsx,.xls,.png,.jpg,.jpeg,.gif">
+            <div id="status" class="status" style="display: none;"></div>
+            <div id="previewContainer" class="preview-container"></div>
+        </div>
+
+        <div class="test-section">
+            <h2>Test Different File Types</h2>
+            <div class="test-files">
+                <button class="test-file-btn" onclick="testDocumentType('docx')">Test DOCX File</button>
+                <button class="test-file-btn" onclick="testDocumentType('pdf')">Test PDF File</button>
+                <button class="test-file-btn" onclick="testDocumentType('txt')">Test Text File</button>
+                <button class="test-file-btn" onclick="testDocumentType('csv')">Test CSV File</button>
+                <button class="test-file-btn" onclick="testDocumentType('json')">Test JSON File</button>
+                <button class="test-file-btn" onclick="testDocumentType('xlsx')">Test Excel File</button>
+                <button class="test-file-btn" onclick="testDocumentType('png')">Test Image File</button>
+            </div>
+        </div>
+
+        <div class="test-section">
+            <h2>Verification Checklist</h2>
+            <div style="background: #fff3cd; padding: 15px; border-radius: 6px;">
+                <h4>✅ What to Verify:</h4>
+                <ul>
+                    <li><strong>Single Header:</strong> Only ONE header should appear, not duplicated</li>
+                    <li><strong>4 Lines:</strong> Header should have exactly 4 lines as specified</li>
+                    <li><strong>Correct Info:</strong> File name, MIME type, size/metadata, and date should all be present</li>
+                    <li><strong>No Redundancy:</strong> No repeated file information anywhere in the preview</li>
+                    <li><strong>Professional Look:</strong> Clean typography and consistent spacing</li>
+                    <li><strong>Cross-File Compatibility:</strong> Works consistently across DOCX, PDF, Excel, TXT, and images</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Note: This is a simplified test interface
+        // In the actual application, the preview functionality would be handled by React components
+
+        const fileInput = document.getElementById('fileInput');
+        const status = document.getElementById('status');
+        const previewContainer = document.getElementById('previewContainer');
+
+        fileInput.addEventListener('change', handleFileSelect);
+
+        function handleFileSelect(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            showStatus('info', `Selected: ${file.name} (${file.type || 'unknown'}) - ${formatFileSize(file.size)}`);
+
+            // Simulate preview generation
+            previewContainer.innerHTML = `
+                <div style="padding: 20px; text-align: center;">
+                    <h3>📄 File Preview Simulation</h3>
+                    <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px; margin: 20px 0; text-align: left;">
+                        <div style="margin-bottom: 0.25rem; font-size: 1.125rem; font-weight: 600; color: #1e293b;">${file.name}</div>
+                        <div style="margin-bottom: 0.25rem; font-size: 0.875rem; color: #4a5568; font-weight: 500;">${file.type || 'application/octet-stream'}</div>
+                        <div style="margin-bottom: 0.25rem; font-size: 0.875rem; color: #64748b; font-weight: 500;">${formatFileSize(file.size)} · ${estimateWordCount(file)} words · ${estimatePageCount(file)} pages</div>
+                        <div style="font-size: 0.875rem; color: #64748b; font-style: italic;">Modified ${new Date().toLocaleDateString()}</div>
+                    </div>
+                    <div style="background: #f0f0f0; padding: 40px; border-radius: 6px; margin-top: 20px;">
+                        <p>🎯 <strong>Header Format Test</strong></p>
+                        <p>This demonstrates the expected 4-line header format.</p>
+                        <p>In the actual application, the document content would appear below this header.</p>
+                    </div>
+                </div>
+            `;
+
+            showStatus('success', 'Preview generated with 4-line header format!');
+        }
+
+        function testDocumentType(type) {
+            const mockFiles = {
+                'docx': { name: 'Mohamed+Ameer+Arsath+-+Resume.docx', type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', size: 46326 },
+                'pdf': { name: 'Report-2024.pdf', type: 'application/pdf', size: 125440 },
+                'txt': { name: 'Notes.txt', type: 'text/plain', size: 2048 },
+                'csv': { name: 'data-export.csv', type: 'text/csv', size: 5120 },
+                'json': { name: 'config.json', type: 'application/json', size: 1024 },
+                'xlsx': { name: 'Budget_Spreadsheet.xlsx', type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', size: 15360 },
+                'png': { name: 'Screenshot_2024-09-24.png', type: 'image/png', size: 102400 }
+            };
+
+            const mockFile = mockFiles[type];
+            if (!mockFile) return;
+
+            showStatus('info', `Testing ${type.toUpperCase()} file format...`);
+
+            previewContainer.innerHTML = `
+                <div style="padding: 20px;">
+                    <h3>📄 ${type.toUpperCase()} File Preview Test</h3>
+                    <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px; margin: 20px 0; text-align: left;">
+                        <div style="margin-bottom: 0.25rem; font-size: 1.125rem; font-weight: 600; color: #1e293b;">${mockFile.name}</div>
+                        <div style="margin-bottom: 0.25rem; font-size: 0.875rem; color: #4a5568; font-weight: 500;">${mockFile.type}</div>
+                        <div style="margin-bottom: 0.25rem; font-size: 0.875rem; color: #64748b; font-weight: 500;">${formatFileSize(mockFile.size)}${getMetadataForType(type)}</div>
+                        <div style="font-size: 0.875rem; color: #64748b; font-style: italic;">Modified ${new Date().toLocaleDateString()}</div>
+                    </div>
+                    <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; border-radius: 6px; text-align: center; margin-top: 20px;">
+                        <h4 style="margin: 0 0 10px 0;">${type.toUpperCase()} Content Preview</h4>
+                        <p style="margin: 0;">This area would contain the formatted ${type} document content with proper styling and layout.</p>
+                    </div>
+                </div>
+            `;
+
+            showStatus('success', `${type.toUpperCase()} preview test completed with 4-line header!`);
+        }
+
+        function getMetadataForType(type) {
+            const metadata = {
+                'docx': ' · 534 words · 2 pages',
+                'pdf': ' · 1,240 words · 5 pages',
+                'txt': ' · 256 words · 1 page',
+                'csv': ' · 1 sheet',
+                'json': '',
+                'xlsx': ' · 3 sheets',
+                'png': ' · 1920 × 1080 pixels'
+            };
+            return metadata[type] || '';
+        }
+
+        function estimateWordCount(file) {
+            // Rough estimation based on file size
+            return Math.round(file.size / 10);
+        }
+
+        function estimatePageCount(file) {
+            // Rough estimation
+            return Math.max(1, Math.round(file.size / 5000));
+        }
+
+        function formatFileSize(bytes) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+
+        function showStatus(type, message) {
+            status.style.display = 'block';
+            status.className = `status ${type}`;
+            status.textContent = message;
+
+            if (type === 'success' || type === 'info') {
+                setTimeout(() => {
+                    status.style.display = 'none';
+                }, 3000);
+            }
+        }
+    </script>
+</body>
+</html>

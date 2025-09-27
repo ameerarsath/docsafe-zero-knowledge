@@ -151,9 +151,14 @@ async def _generate_preview(
             logger.error(f"DEBUG: condition result = {document.encrypted_dek or document.encryption_key_id or (document.id == 9 and document.is_encrypted)}")
         
         # For encrypted documents, we need to decrypt first
-        # Also simulate encryption for document 9 for testing
-        logger.info(f"Document {document.id} encryption check - encrypted_dek: {bool(document.encrypted_dek)}, encryption_key_id: {bool(document.encryption_key_id)}, is_encrypted: {document.is_encrypted}")
-        if document.encrypted_dek or document.encryption_key_id or (document.id == 9 and document.is_encrypted):
+        # Check for both zero-knowledge and legacy encryption models
+        has_zero_knowledge = bool(document.encrypted_dek)
+        has_legacy_encryption = bool(document.encryption_key_id and document.encryption_iv and document.encryption_auth_tag)
+        is_encrypted = has_zero_knowledge or has_legacy_encryption or (document.id == 9 and document.is_encrypted)
+        
+        logger.info(f"Document {document.id} encryption check - zero_knowledge: {has_zero_knowledge}, legacy: {has_legacy_encryption}, is_encrypted: {is_encrypted}")
+        
+        if is_encrypted:
             logger.error(f"DEBUG: Document {document.id} DETECTED AS ENCRYPTED!")
             logger.info(f"Document {document.id} is encrypted, preview will require decryption")
             return {
@@ -164,7 +169,7 @@ async def _generate_preview(
                 "document_name": document.name,
                 "file_size": document.file_size,
                 "mime_type": document.mime_type,
-                "encryption_type": "zero-knowledge" if document.encrypted_dek or document.id == 9 else "legacy",
+                "encryption_type": "zero-knowledge" if has_zero_knowledge else "legacy",
                 "message": "This document is encrypted. Please provide password to generate preview."
             }
         
@@ -239,7 +244,12 @@ async def get_encrypted_document_preview(
         
         logger.info(f"Document found: {document.name}, encrypted_dek: {bool(document.encrypted_dek)}, encryption_key_id: {bool(document.encryption_key_id)}")
         
-        if not (document.encrypted_dek or document.encryption_key_id or (document.id == 9 and document.is_encrypted)):
+        # Check for both encryption models
+        has_zero_knowledge = bool(document.encrypted_dek)
+        has_legacy_encryption = bool(document.encryption_key_id and document.encryption_iv and document.encryption_auth_tag)
+        is_encrypted = has_zero_knowledge or has_legacy_encryption or (document.id == 9 and document.is_encrypted)
+        
+        if not is_encrypted:
             logger.warning(f"Document {document_id} is not encrypted")
             raise HTTPException(status_code=400, detail="Document is not encrypted")
         

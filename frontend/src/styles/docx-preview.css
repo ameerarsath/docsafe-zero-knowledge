@@ -1,0 +1,365 @@
+/* DOCX Preview Styles
+ *
+ * Comprehensive styling for DOCX document previews
+ * Provides consistent, clean document appearance
+ */
+
+.robust-docx-preview {
+  font-family: 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  line-height: 1.6;
+  color: #333;
+  max-width: 100%;
+  margin: 0;
+  padding: 0;
+  background: #ffffff;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+/* Document Header */
+.robust-docx-preview .document-header {
+  background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+  border-bottom: 2px solid #dee2e6;
+  padding: 1.25rem 1.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.robust-docx-preview .document-title {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #495057;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.robust-docx-preview .document-meta {
+  font-size: 0.85rem;
+  color: #6c757d;
+  margin-top: 0.5rem;
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.robust-docx-preview .processing-badge {
+  background: #28a745;
+  color: white;
+  padding: 0.2rem 0.6rem;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+/* Document Content */
+.robust-docx-preview .document-content {
+  padding: 0 1.5rem 1.5rem;
+  line-height: 1.7;
+  max-height: 70vh;
+  overflow-y: auto;
+}
+
+/* Typography */
+.robust-docx-preview .document-content p {
+  margin: 0 0 1rem 0;
+  line-height: 1.7;
+  text-align: left;
+}
+
+.robust-docx-preview .document-content h1 {
+  font-size: 1.75rem;
+  font-weight: 700;
+  margin: 2rem 0 1rem 0;
+  color: #212529;
+  line-height: 1.3;
+  border-bottom: 2px solid #e9ecef;
+  padding-bottom: 0.5rem;
+}
+
+.robust-docx-preview .document-content h2 {
+  font-size: 1.5rem;
+  font-weight: 600;
+  margin: 1.75rem 0 0.75rem 0;
+  color: #212529;
+  line-height: 1.3;
+}
+
+.robust-docx-preview .document-content h3 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin: 1.5rem 0 0.5rem 0;
+  color: #212529;
+  line-height: 1.3;
+}
+
+.robust-docx-preview .document-content h4 {
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin: 1.25rem 0 0.5rem 0;
+  color: #212529;
+  line-height: 1.3;
+}
+
+.robust-docx-preview .document-content h5,
+.robust-docx-preview .document-content h6 {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 1rem 0 0.5rem 0;
+  color: #212529;
+  line-height: 1.3;
+}
+
+/* Lists */
+.robust-docx-preview .document-content ul,
+.robust-docx-preview .document-content ol {
+  margin: 1rem 0;
+  padding-left: 1.5rem;
+}
+
+.robust-docx-preview .document-content li {
+  margin: 0.25rem 0;
+  line-height: 1.6;
+}
+
+.robust-docx-preview .document-content ul ul,
+.robust-docx-preview .document-content ol ol,
+.robust-docx-preview .document-content ul ol,
+.robust-docx-preview .document-content ol ul {
+  margin: 0.5rem 0;
+}
+
+/* Text formatting */
+.robust-docx-preview .document-content strong,
+.robust-docx-preview .document-content b {
+  font-weight: 600;
+}
+
+.robust-docx-preview .document-content em,
+.robust-docx-preview .document-content i {
+  font-style: italic;
+}
+
+.robust-docx-preview .document-content u {
+  text-decoration: underline;
+}
+
+.robust-docx-preview .document-content mark {
+  background-color: #fff3cd;
+  padding: 0.1rem 0.2rem;
+  border-radius: 2px;
+}
+
+/* Tables */
+.robust-docx-preview .document-content table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 1.5rem 0;
+  border: 1px solid #dee2e6;
+  border-radius: 6px;
+  overflow: hidden;
+  font-size: 0.95rem;
+}
+
+.robust-docx-preview .document-content td,
+.robust-docx-preview .document-content th {
+  border: 1px solid #dee2e6;
+  padding: 0.75rem;
+  text-align: left;
+  vertical-align: top;
+  line-height: 1.4;
+}
+
+.robust-docx-preview .document-content th {
+  background-color: #f8f9fa;
+  font-weight: 600;
+  color: #495057;
+}
+
+.robust-docx-preview .document-content tr:nth-child(even) {
+  background-color: #f8f9fa;
+}
+
+.robust-docx-preview .document-content tr:hover {
+  background-color: #e9ecef;
+}
+
+/* Images */
+.robust-docx-preview .document-content img {
+  max-width: 100%;
+  height: auto;
+  margin: 1rem 0;
+  border-radius: 6px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  display: block;
+}
+
+/* Blockquotes */
+.robust-docx-preview .document-content blockquote {
+  border-left: 4px solid #007bff;
+  margin: 1.5rem 0;
+  padding: 1rem 1.5rem;
+  background-color: #f8f9fa;
+  border-radius: 0 6px 6px 0;
+  font-style: italic;
+  color: #495057;
+}
+
+/* Code */
+.robust-docx-preview .document-content code {
+  background-color: #f8f9fa;
+  padding: 0.2rem 0.4rem;
+  border-radius: 3px;
+  font-family: 'Courier New', monospace;
+  font-size: 0.9em;
+  color: #e83e8c;
+}
+
+.robust-docx-preview .document-content pre {
+  background-color: #f8f9fa;
+  border: 1px solid #dee2e6;
+  border-radius: 6px;
+  padding: 1rem;
+  margin: 1rem 0;
+  overflow-x: auto;
+  font-family: 'Courier New', monospace;
+  font-size: 0.9em;
+  line-height: 1.4;
+}
+
+.robust-docx-preview .document-content pre code {
+  background: none;
+  padding: 0;
+  color: inherit;
+}
+
+/* Info sections */
+.robust-docx-preview .docx-info-content,
+.robust-docx-preview .docx-emergency-content {
+  background: #f8f9fa;
+  border: 1px solid #dee2e6;
+  border-radius: 8px;
+  padding: 1.5rem;
+  margin: 1rem 0;
+}
+
+.robust-docx-preview .info-message,
+.robust-docx-preview .download-message {
+  background: #e7f3ff;
+  border: 1px solid #b6d7ff;
+  border-radius: 6px;
+  padding: 1.25rem;
+  margin: 1rem 0;
+}
+
+.robust-docx-preview .info-message h3,
+.robust-docx-preview .download-message h3 {
+  margin-top: 0;
+  margin-bottom: 0.75rem;
+  color: #0056b3;
+  font-size: 1.1rem;
+}
+
+.robust-docx-preview .info-message h4 {
+  color: #0056b3;
+  margin: 1rem 0 0.5rem 0;
+  font-size: 1rem;
+}
+
+.robust-docx-preview .info-message ul,
+.robust-docx-preview .download-message ul {
+  margin: 0.75rem 0;
+  padding-left: 1.25rem;
+}
+
+.robust-docx-preview .info-message li,
+.robust-docx-preview .download-message li {
+  margin: 0.5rem 0;
+  color: #0056b3;
+}
+
+/* Emergency fallback styles */
+.robust-docx-preview .emergency-fallback {
+  text-align: center;
+  padding: 2rem;
+  background: #f8f9fa;
+  border-radius: 8px;
+  margin: 1rem 0;
+}
+
+.robust-docx-preview .emergency-fallback h2 {
+  color: #dc3545;
+  margin-bottom: 1rem;
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+  .robust-docx-preview .document-header {
+    padding: 1rem;
+  }
+
+  .robust-docx-preview .document-content {
+    padding: 0 1rem 1rem;
+  }
+
+  .robust-docx-preview .document-meta {
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .robust-docx-preview .document-content table {
+    font-size: 0.85rem;
+  }
+
+  .robust-docx-preview .document-content td,
+  .robust-docx-preview .document-content th {
+    padding: 0.5rem;
+  }
+}
+
+/* Print styles */
+@media print {
+  .robust-docx-preview {
+    box-shadow: none;
+    border: 1px solid #dee2e6;
+  }
+
+  .robust-docx-preview .processing-badge {
+    display: none;
+  }
+
+  .robust-docx-preview .document-content {
+    max-height: none;
+    overflow: visible;
+  }
+}
+
+/* Accessibility improvements */
+.robust-docx-preview .document-content a {
+  color: #007bff;
+  text-decoration: underline;
+}
+
+.robust-docx-preview .document-content a:hover,
+.robust-docx-preview .document-content a:focus {
+  color: #0056b3;
+  text-decoration: none;
+}
+
+.robust-docx-preview .document-content :focus {
+  outline: 2px solid #007bff;
+  outline-offset: 2px;
+}
+
+/* Smooth scrolling */
+.robust-docx-preview .document-content {
+  scroll-behavior: smooth;
+}
+
+/* Selection styles */
+.robust-docx-preview .document-content ::selection {
+  background-color: #007bff;
+  color: white;
+}

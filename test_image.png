@@ -1,0 +1,1 @@
+{"type":"error","format":"image","message":"Image format not supported or file is corrupted","error_detail":"Unable to decrypt image: cannot import name 'decrypt_content' from 'app.core.security' (D:\\main\\project\\docsafe\\backend\\app\\core\\security.py)","suggestion":"The image may be encrypted or corrupted. Try downloading the file."}

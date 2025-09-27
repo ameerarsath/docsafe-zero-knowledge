@@ -1,0 +1,198 @@
+diff --git a/frontend/src/services/api.ts b/frontend/src/services/api.ts
+index 1234567..abcdefg 100644
+--- a/frontend/src/services/api.ts
++++ b/frontend/src/services/api.ts
+@@ -95,11 +95,16 @@ class TokenManager {
+ // Request interceptor to add authentication token
+ apiClient.interceptors.request.use(
+   (config: InternalAxiosRequestConfig) => {
+     const token = TokenManager.getAccessToken();
+     const isExpired = TokenManager.isTokenExpired();
+     
+-    console.log('🌐 API REQUEST:', config.url, 'token exists:', !!token, 'isExpired:', isExpired);
++    console.log('🌐 API REQUEST:', config.url, 'token exists:', !!token, 'isExpired:', isExpired);
++    
++    // Debug: Log token details for security endpoints
++    if (config.url?.includes('/security/')) {
++      console.log('🔐 SECURITY ENDPOINT - Token:', token ? `${token.substring(0, 20)}...` : 'null');
++    }
+     
+     if (token && !isExpired) {
+       config.headers = config.headers || {} as AxiosRequestHeaders;
+       config.headers.Authorization = `Bearer ${token}`;
+       console.log('✅ API REQUEST: Authorization header added');
+@@ -107,6 +112,11 @@ apiClient.interceptors.request.use(
+       console.warn('❌ API REQUEST: No valid token available');
+       // Don't fail the request here - let the backend return 401
+       // This allows public endpoints to still work
++      
++      // For security endpoints, redirect to login immediately if no token
++      if (config.url?.includes('/security/')) {
++        console.error('🚨 SECURITY ENDPOINT requires authentication - redirecting to login');
++      }
+     }
+     return config;
+   },
+@@ -120,7 +130,15 @@ apiClient.interceptors.response.use(
+   (response: AxiosResponse) => {
+     return response;
+   },
+   async (error: AxiosError) => {
+     const originalRequest = error.config as CustomAxiosRequestConfig;
+     
+-    console.log('🚨 API ERROR:', error.response?.status, error.config?.url);
++    console.log('🚨 API ERROR:', error.response?.status, error.config?.url);
++    
++    // Enhanced logging for 403 errors on security endpoints
++    if (error.response?.status === 403 && originalRequest?.url?.includes('/security/')) {
++      console.error('🔒 403 FORBIDDEN on security endpoint:', originalRequest.url);
++      console.error('🔒 Current token:', TokenManager.getAccessToken() ? 'exists' : 'missing');
++      console.error('🔒 Token expired:', TokenManager.isTokenExpired());
++    }
+     
+     // Handle 401 Unauthorized - attempt token refresh
+     if (error.response?.status === 401 && originalRequest && !originalRequest._retry) {
+@@ -165,6 +183,16 @@ apiClient.interceptors.response.use(
+       }
+     }
+     
++    // Handle 403 Forbidden - insufficient permissions
++    if (error.response?.status === 403) {
++      console.error('🚨 403 Forbidden - insufficient permissions for:', originalRequest?.url);
++      
++      // For security endpoints, check if user needs to login again
++      if (originalRequest?.url?.includes('/security/')) {
++        console.log('🔄 Security endpoint forbidden - checking authentication...');
++      }
++    }
++    
+     // Handle rate limiting
+     if (error.response?.status === 429) {
+       const retryAfter = error.response.headers['retry-after'];
+@@ -248,6 +276,16 @@ export const handleApiError = (error: AxiosError): ApiError => {
+     } else if (status === 403) {
+       return {
+         detail: data?.detail || 'Insufficient permissions',
+         status_code: status,
+         error_code: 'FORBIDDEN',
+       };
++    } else if (status === 403) {
++      // Enhanced 403 handling for security endpoints
++      const isSecurity = error.config?.url?.includes('/security/');
++      return {
++        detail: isSecurity 
++          ? 'Access denied. You may need to log in again or lack security permissions.' 
++          : (data?.detail || 'Insufficient permissions'),
++        status_code: status,
++        error_code: 'FORBIDDEN',
++      };
+     } else if (status === 429) {
+       return {
+         detail: data?.detail || 'Too many requests. Please wait before trying again.',
+diff --git a/frontend/src/services/api/security.ts b/frontend/src/services/api/security.ts
+index 1234567..abcdefg 100644
+--- a/frontend/src/services/api/security.ts
++++ b/frontend/src/services/api/security.ts
+@@ -188,10 +188,22 @@ export const securityApi = {
+ 
+   // Security Dashboard
+   async getSecurityDashboard(hours: number = 24): Promise<SecurityDashboard> {
+-    const response = await apiRequest('GET', `/api/v1/security/dashboard?hours=${hours}`);
++    console.log('🔐 Requesting security dashboard with hours:', hours);
++    const response = await apiRequest('GET', `/api/v1/security/dashboard?hours=${hours}`);
++    if (!response.success) {
++      console.error('🚨 Security dashboard request failed:', response.error);
++      throw new Error(response.error?.detail || 'Failed to load security dashboard');
++    }
+     return response.data;
+   },
+ 
+   async getSecurityMetrics(days: number = 7): Promise<SecurityMetrics> {
+-    const response = await apiRequest('GET', `/api/v1/security/metrics?days=${days}`);
++    console.log('🔐 Requesting security metrics with days:', days);
++    const response = await apiRequest('GET', `/api/v1/security/metrics?days=${days}`);
++    if (!response.success) {
++      console.error('🚨 Security metrics request failed:', response.error);
++      throw new Error(response.error?.detail || 'Failed to load security metrics');
++    }
+     return response.data;
+   },
+ 
+diff --git a/frontend/src/components/security/SecurityDashboard.tsx b/frontend/src/components/security/SecurityDashboard.tsx
+index 1234567..abcdefg 100644
+--- a/frontend/src/components/security/SecurityDashboard.tsx
++++ b/frontend/src/components/security/SecurityDashboard.tsx
+@@ -52,17 +52,32 @@ export default function SecurityDashboard({
+   /**
+    * Load dashboard data from API
+    */
+   const loadDashboardData = useCallback(async () => {
+     try {
+       setError(null);
++      
++      console.log('🔐 Loading security dashboard data...');
++      
++      // Check authentication before making requests
++      const token = localStorage.getItem('access_token') || sessionStorage.getItem('access_token');
++      if (!token) {
++        console.error('🚨 No authentication token found - redirecting to login');
++        window.location.href = '/login';
++        return;
++      }
+ 
+       // Try to load real data from API using the security service
+       const [dashboardData, metricsData] = await Promise.all([
+         securityApi.getSecurityDashboard(selectedTimeRange),
+         securityApi.getSecurityMetrics(7)
+       ]);
+ 
++      console.log('✅ Security data loaded successfully');
+       setDashboardData(dashboardData);
+       setMetricsData(metricsData);
+     } catch (apiError) {
+-      console.warn('API not available, using mock data:', apiError);
++      console.error('🚨 Security API error:', apiError);
++      
++      // Check if it's an authentication error
++      if (apiError.message?.includes('Access denied') || apiError.message?.includes('Authentication required')) {
++        console.log('🔄 Authentication error - redirecting to login');
++        window.location.href = '/login';
++        return;
++      }
++      
++      console.warn('API not available, using mock data:', apiError);
+       
+       // Fallback to mock data
+       const mockDashboardData = {
+@@ -130,6 +145,12 @@ export default function SecurityDashboard({
+   const handleRefresh = useCallback(async () => {
+     setIsLoading(true);
+     try {
++      // Check authentication before refresh
++      const token = localStorage.getItem('access_token') || sessionStorage.getItem('access_token');
++      if (!token) {
++        console.error('🚨 No token for refresh - redirecting to login');
++        window.location.href = '/login';
++        return;
++      }
++      
+       await loadDashboardData();
+       setLastRefresh(new Date());
+     } catch (error) {
+@@ -200,7 +221,7 @@ export default function SecurityDashboard({
+   if (error) {
+     return (
+       <div className="bg-red-50 border border-red-200 rounded-lg p-6">
+         <div className="flex items-center space-x-2 text-red-800">
+           <AlertTriangle className="w-5 h-5" />
+-          <h3 className="font-medium">Failed to load security dashboard</h3>
++          <h3 className="font-medium">Security Dashboard Error</h3>
+         </div>
+-        <p className="text-red-700 mt-2">{error}</p>
++        <p className="text-red-700 mt-2">{error}</p>
++        <p className="text-red-600 mt-1 text-sm">
++          If you're seeing authentication errors, please try logging in again.
++        </p>
+         <button
+           onClick={handleRefresh}
+           className="mt-4 inline-flex items-center px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
