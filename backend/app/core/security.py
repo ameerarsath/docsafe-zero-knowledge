@@ -506,18 +506,22 @@ async def get_current_user(token: HTTPAuthorizationCredentials = Depends(HTTPBea
     try:
         # Decode and verify token
         payload = decode_token(token.credentials)
-        user_id = payload.get("user_id")
         
-        if not user_id:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid token payload",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
+        # Try to get user_id first, then fall back to sub field
+        user_id = payload.get("user_id")
+        username = payload.get("sub")
         
         # Get user from database
         db = next(get_db())
-        user = db.query(User).filter(User.id == user_id).first()
+        user = None
+        
+        # Try to find user by ID first (more efficient)
+        if user_id:
+            user = db.query(User).filter(User.id == user_id).first()
+        
+        # If not found by ID, try by username from sub field
+        if not user and username:
+            user = db.query(User).filter(User.username == username).first()
         
         if not user:
             raise HTTPException(
@@ -577,14 +581,22 @@ async def get_current_user_optional(
 
         # Decode and verify token
         payload = decode_token(token.credentials)
+        
+        # Try to get user_id first, then fall back to sub field
         user_id = payload.get("user_id")
-
-        if not user_id:
-            return None
-
+        username = payload.get("sub")
+        
         # Get user from database
         db = next(get_db())
-        user = db.query(User).filter(User.id == user_id).first()
+        user = None
+        
+        # Try to find user by ID first (more efficient)
+        if user_id:
+            user = db.query(User).filter(User.id == user_id).first()
+        
+        # If not found by ID, try by username from sub field
+        if not user and username:
+            user = db.query(User).filter(User.username == username).first()
 
         if not user or not user.is_active:
             return None

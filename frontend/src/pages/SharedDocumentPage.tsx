@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { DocumentPreview } from '../components/documents/DocumentPreview';
 import { SharedDocumentPreview } from '../components/documents/SharedDocumentPreview';
+import SecurePreviewOnly from '../components/documents/SecurePreviewOnly';
 import { ShareService, ShareAccessResponse } from '../services/api/shares';
 import { EncryptedShareService, SharedDocumentAccess } from '../services/encryptedShareService';
 
@@ -592,11 +593,30 @@ export const SharedDocumentPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Document Preview */}
+        {/* Document Preview - Smart Component Selection */}
         {showPreview && permissions.includes('read') && shareToken && (
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-8">
-            <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-              <SharedDocumentPreview
+            {permissions.includes('download') ? (
+              // Full preview with download capability
+              <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+                <SharedDocumentPreview
+                  shareToken={shareToken}
+                  document={{
+                    id: document.id,
+                    name: document.name,
+                    mime_type: document.mime_type,
+                    file_size: document.file_size
+                  }}
+                  isOpen={true}
+                  onClose={() => setShowPreview(false)}
+                  onDownload={() => handleDownload()}
+                  sharePassword={password}
+                  permissions={permissions}
+                />
+              </div>
+            ) : (
+              // Secure view-only preview (no download capability)
+              <SecurePreviewOnly
                 shareToken={shareToken}
                 document={{
                   id: document.id,
@@ -606,10 +626,16 @@ export const SharedDocumentPage: React.FC = () => {
                 }}
                 isOpen={true}
                 onClose={() => setShowPreview(false)}
-                onDownload={permissions.includes('download') ? (() => handleDownload()) : undefined}
                 sharePassword={password}
+                permissions={permissions}
+                securityConfig={{
+                  maxPreviewTime: 20 * 60 * 1000, // 20 minutes for view-only
+                  enableAntiBypass: true,
+                  enableWatermarking: true,
+                  auditLogging: true
+                }}
               />
-            </div>
+            )}
           </div>
         )}
       </div>

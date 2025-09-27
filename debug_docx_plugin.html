@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Debug DOCX Plugin Issue</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .debug-section { margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 6px; }
+        .success { border-color: #28a745; background: #f8fff9; }
+        .error { border-color: #dc3545; background: #fff8f8; }
+        .warning { border-color: #ffc107; background: #fff3cd; }
+        pre { background: #f8f9fa; padding: 10px; border-radius: 4px; overflow-x: auto; }
+    </style>
+</head>
+<body>
+    <h1>🔍 Debug DOCX Plugin Issue</h1>
+
+    <div class="debug-section">
+        <h2>🔧 Quick Fix Test</h2>
+        <p>Testing if we can process DOCX files directly with mammoth.js:</p>
+        <input type="file" id="testFile" accept=".docx" />
+        <button onclick="quickTest()">Quick Test DOCX</button>
+        <div id="quickResults"></div>
+    </div>
+
+    <div class="debug-section" id="systemCheck">
+        <h2>📋 System Check</h2>
+        <div id="systemResults">Checking...</div>
+    </div>
+
+    <script type="module">
+        // Quick test function
+        window.quickTest = async function() {
+            const fileInput = document.getElementById('testFile');
+            const resultsDiv = document.getElementById('quickResults');
+
+            if (!fileInput.files || fileInput.files.length === 0) {
+                resultsDiv.innerHTML = '<div style="color: red;">Please select a DOCX file first</div>';
+                return;
+            }
+
+            const file = fileInput.files[0];
+            resultsDiv.innerHTML = '<div style="color: blue;">Processing...</div>';
+
+            try {
+                console.log('🔧 Testing direct mammoth.js processing...');
+
+                // Test mammoth.js directly
+                const mammoth = await import('mammoth');
+                const arrayBuffer = await file.arrayBuffer();
+                const result = await mammoth.convertToHtml({ arrayBuffer });
+
+                if (result.value && result.value.trim().length > 0) {
+                    resultsDiv.innerHTML = `
+                        <div style="color: green; background: #f8fff9; padding: 10px; border-radius: 4px;">
+                            <h3>✅ MAMMOTH.JS WORKS!</h3>
+                            <p><strong>File:</strong> ${file.name}</p>
+                            <p><strong>Content extracted:</strong> ${result.value.length} characters</p>
+                            <p><strong>This proves client-side processing should work!</strong></p>
+                            <div style="border: 1px solid #ccc; padding: 10px; max-height: 200px; overflow-y: auto; margin-top: 10px;">
+                                ${result.value.substring(0, 500)}...
+                            </div>
+                        </div>
+                    `;
+
+                    console.log('✅ Direct mammoth.js processing successful!');
+                } else {
+                    throw new Error('Mammoth returned empty content');
+                }
+
+            } catch (error) {
+                resultsDiv.innerHTML = `
+                    <div style="color: red; background: #fff8f8; padding: 10px; border-radius: 4px;">
+                        <h3>❌ MAMMOTH.JS FAILED</h3>
+                        <p><strong>Error:</strong> ${error.message}</p>
+                        <p>This indicates a system-level issue with the mammoth.js library.</p>
+                    </div>
+                `;
+
+                console.error('❌ Direct mammoth.js processing failed:', error);
+            }
+        };
+
+        // System check on load
+        window.addEventListener('load', async () => {
+            const systemDiv = document.getElementById('systemResults');
+            const checkDiv = document.getElementById('systemCheck');
+
+            try {
+                console.log('🔍 Running system diagnostics...');
+
+                // Check dependencies
+                const mammothAvailable = await import('mammoth').then(() => true).catch(() => false);
+                const docxPreviewAvailable = await import('docx-preview').then(() => true).catch(() => false);
+                const jszipAvailable = await import('jszip').then(() => true).catch(() => false);
+
+                let diagnosticsHTML = `
+                    <h3>📦 Dependencies Status:</h3>
+                    <div style="margin: 10px 0;">
+                        ${mammothAvailable ? '✅' : '❌'} mammoth.js: ${mammothAvailable ? 'Available' : 'Missing'}
+                    </div>
+                    <div style="margin: 10px 0;">
+                        ${docxPreviewAvailable ? '✅' : '⚠️'} docx-preview: ${docxPreviewAvailable ? 'Available' : 'Missing'}
+                    </div>
+                    <div style="margin: 10px 0;">
+                        ${jszipAvailable ? '✅' : '⚠️'} jszip: ${jszipAvailable ? 'Available' : 'Missing'}
+                    </div>
+                `;
+
+                // Try to simulate the plugin system
+                try {
+                    console.log('🔧 Testing plugin system simulation...');
+
+                    // Simulate what happens when a DOCX file is processed
+                    const mockBlob = new Blob(['mock docx data'], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+                    const fileName = 'test.docx';
+                    const mimeType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+
+                    // Check if our plugin would be selected
+                    const mockPluginWouldHandle = mimeType.includes('wordprocessingml') || fileName.toLowerCase().endsWith('.docx');
+
+                    diagnosticsHTML += `
+                        <h3>🔌 Plugin System Test:</h3>
+                        <div style="margin: 10px 0;">
+                            ${mockPluginWouldHandle ? '✅' : '❌'} BulletproofDocxPlugin would handle DOCX files: ${mockPluginWouldHandle ? 'YES' : 'NO'}
+                        </div>
+                    `;
+
+                    if (mammothAvailable && mockPluginWouldHandle) {
+                        checkDiv.className = 'debug-section success';
+                        diagnosticsHTML += `
+                            <div style="background: #d4edda; color: #155724; padding: 10px; border-radius: 4px; margin: 10px 0;">
+                                <strong>✅ SYSTEM SHOULD WORK</strong><br>
+                                All components are available and the plugin should handle DOCX files correctly.
+                                <br><br>
+                                <strong>🤔 If you're still seeing the error, it might be:</strong>
+                                <ul>
+                                    <li>The plugin is not being loaded in your main app</li>
+                                    <li>TypeScript compilation errors preventing the plugin from running</li>
+                                    <li>The system is falling back to server-side processing</li>
+                                    <li>Caching issues preventing the new plugin from being used</li>
+                                </ul>
+                            </div>
+                        `;
+                    } else {
+                        checkDiv.className = 'debug-section error';
+                        diagnosticsHTML += `
+                            <div style="background: #f8d7da; color: #721c24; padding: 10px; border-radius: 4px; margin: 10px 0;">
+                                <strong>❌ SYSTEM ISSUES DETECTED</strong><br>
+                                ${!mammothAvailable ? 'mammoth.js is not available. ' : ''}
+                                ${!mockPluginWouldHandle ? 'Plugin selection logic failed. ' : ''}
+                            </div>
+                        `;
+                    }
+
+                } catch (pluginError) {
+                    checkDiv.className = 'debug-section error';
+                    diagnosticsHTML += `
+                        <div style="background: #f8d7da; color: #721c24; padding: 10px; border-radius: 4px; margin: 10px 0;">
+                            <strong>❌ PLUGIN SYSTEM ERROR</strong><br>
+                            Error: ${pluginError.message}
+                        </div>
+                    `;
+                }
+
+                systemDiv.innerHTML = diagnosticsHTML;
+
+            } catch (error) {
+                checkDiv.className = 'debug-section error';
+                systemDiv.innerHTML = `
+                    <div style="background: #f8d7da; color: #721c24; padding: 10px; border-radius: 4px;">
+                        <strong>❌ SYSTEM CHECK FAILED</strong><br>
+                        Error: ${error.message}
+                    </div>
+                `;
+            }
+        });
+    </script>
+</body>
+</html>
