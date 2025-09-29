@@ -82,7 +82,8 @@
       "Bash(tasklist:*)",
       "Bash(C:/Windows/System32/taskkill.exe /F /PID 21988 /PID 34528 /PID 36584)",
       "Bash(del D:mainprojectdocsafetest_share_fix.py)",
-      "Bash(cat:*)"
+      "Bash(cat:*)",
+      "Bash(python3:*)"
     ],
     "deny": [],
     "ask": []

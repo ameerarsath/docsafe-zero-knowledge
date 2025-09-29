@@ -1,0 +1,174 @@
+--- a/app/api/v1/shares.py
++++ b/app/api/v1/shares.py
+@@ -1208,7 +1208,8 @@ def decrypt_document_for_sharing(document, encrypted_data: bytes, password: str) -> bytes:
+     """Decrypt document content for external sharing."""
+-    # Extensive logging for final debugging
+-    print("\n--- DECRYPTION DEBUG START ---")
+-    try:
+-        print(f"Attempting to decrypt document ID: {document.id}")
+-        pw_preview = f'{password[0]}...{password[-1]}' if password and len(password) > 1 else '***'
+-        print(f"Password length: {len(password) if password else 0}, Preview: {pw_preview}")
+-        print(f"Document Salt (b64): {document.salt}")
+-        print(f"Document IV (b64): {document.encryption_iv}")
+-        print(f"Encrypted Data Length: {len(encrypted_data)} bytes")
+-    except Exception as log_e:
+-        print(f"Error during logging: {log_e}")
+-    print("----------------------------")
++    print(f"\n🔐 DECRYPTING DOCUMENT {document.id} FOR EXTERNAL SHARE")
++    print(f"Password length: {len(password) if password else 0}")
++    print(f"Encrypted data length: {len(encrypted_data)} bytes")
++    print(f"Document is_encrypted: {getattr(document, 'is_encrypted', False)}")
++    print(f"Document has salt: {bool(getattr(document, 'salt', None))}")
++    print(f"Document has encryption_iv: {bool(getattr(document, 'encryption_iv', None))}")
++    print(f"Document has encrypted_dek: {bool(getattr(document, 'encrypted_dek', None))}")
++    print(f"Document has ciphertext: {bool(getattr(document, 'ciphertext', None))}")
+
+     if not CRYPTO_AVAILABLE:
+         raise ValueError("Cryptography library not available for decryption")
+@@ -1233,25 +1234,33 @@ def decrypt_document_for_sharing(document, encrypted_data: bytes, password: str) -> bytes:
+     try:
+         # Check if document has zero-knowledge encryption metadata
+-        if document.encrypted_dek and document.ciphertext:
+-            # Zero-knowledge encryption model - decrypt using stored metadata
+-
+-            # Get salt from document or use default
+-            if hasattr(document, 'salt') and document.salt:
+-                salt = base64.b64decode(document.salt)
+-            else:
+-                # Fallback salt for legacy documents
+-                salt = b'default_salt_for_legacy_docs_16b'
+-
+-            # Derive master key from password
++        if (hasattr(document, 'encrypted_dek') and document.encrypted_dek and
++            hasattr(document, 'ciphertext') and document.ciphertext and
++            hasattr(document, 'salt') and document.salt):
++
++            print("🔑 Using modern zero-knowledge encryption format")
++
++            # Get salt from document
++            salt = base64.b64decode(document.salt)
++
++            # Derive master key from password using higher iterations for security
+             kdf = PBKDF2HMAC(
+                 algorithm=hashes.SHA256(),
+                 length=32,
+                 salt=salt,
+-                iterations=100000,
++                iterations=500000,  # Match frontend iterations
+                 backend=default_backend()
+             )
+             master_key = kdf.derive(password.encode())
++            print("✅ Master key derived successfully")
+
+             # Decrypt the DEK (Document Encryption Key)
+             encrypted_dek_data = base64.b64decode(document.encrypted_dek)
+
+             # For AES-GCM, the format is: IV (12 bytes) + ciphertext + auth tag (16 bytes)
+             if len(encrypted_dek_data) < 28:  # 12 + 16 minimum
+-                raise ValueError("Invalid encrypted DEK format")
++                raise ValueError(f"Invalid encrypted DEK format: {len(encrypted_dek_data)} bytes")
+
+             dek_iv = encrypted_dek_data[:12]  # First 12 bytes are IV for GCM
+             dek_ciphertext = encrypted_dek_data[12:-16]  # Middle part is encrypted DEK
+             dek_tag = encrypted_dek_data[-16:]  # Last 16 bytes are auth tag
+
++            print(f"📦 DEK decryption - IV: {len(dek_iv)} bytes, Ciphertext: {len(dek_ciphertext)} bytes, Tag: {len(dek_tag)} bytes")
++
+             # Decrypt DEK using AES-GCM
+             aesgcm = AESGCM(master_key)
+             dek = aesgcm.decrypt(dek_iv, dek_ciphertext + dek_tag, None)
++            print("✅ DEK decrypted successfully")
+
+             # Now decrypt the document content using the DEK
+             ciphertext_data = base64.b64decode(document.ciphertext)
+
+             if len(ciphertext_data) < 28:  # 12 + 16 minimum
+-                raise ValueError("Invalid document ciphertext format")
++                raise ValueError(f"Invalid document ciphertext format: {len(ciphertext_data)} bytes")
+
+             doc_iv = ciphertext_data[:12]  # First 12 bytes are IV
+             doc_ciphertext = ciphertext_data[12:-16]  # Middle part is encrypted content
+             doc_tag = ciphertext_data[-16:]  # Last 16 bytes are auth tag
+
++            print(f"📄 Document decryption - IV: {len(doc_iv)} bytes, Ciphertext: {len(doc_ciphertext)} bytes, Tag: {len(doc_tag)} bytes")
++
+             # Decrypt document content using DEK
+             doc_aesgcm = AESGCM(dek)
+             decrypted_content = doc_aesgcm.decrypt(doc_iv, doc_ciphertext + doc_tag, None)
+
++            print(f"✅ Document decrypted successfully! Size: {len(decrypted_content)} bytes")
+             return decrypted_content
+
+         elif document.is_encrypted and hasattr(document, 'encryption_iv') and hasattr(document, 'encryption_auth_tag):
+             # Legacy encryption model with separate IV and auth tag fields
+
+             # Get encryption metadata
+             iv = base64.b64decode(document.encryption_iv)
+             auth_tag = base64.b64decode(document.encryption_auth_tag)
+
+             # Use the file data as ciphertext
+             ciphertext = encrypted_data
+
+             # Derive key from password (using document-specific salt if available)
+             salt = base64.b64decode(document.salt) if hasattr(document, 'salt') and document.salt else b'legacy_salt_16bytes'
+             kdf = PBKDF2HMAC(
+                 algorithm=hashes.SHA256(),
+                 length=32,
+                 salt=salt,
+                 iterations=100000,
+                 backend=default_backend()
+             )
+             key = kdf.derive(password.encode())
+
+             # Decrypt using AES-GCM
+             aesgcm = AESGCM(key)
+             decrypted_content = aesgcm.decrypt(iv, ciphertext, None)
+
+             return decrypted_content
+
+         else:
+-            # Document is marked as encrypted but no encryption metadata found
+-            raise ValueError("Document is marked as encrypted but no encryption metadata was found.")
++            # Document might be using raw file-based encryption
++            print("🔍 Trying raw file-based encryption format")
++
++            if hasattr(document, 'salt') and document.salt:
++                salt = base64.b64decode(document.salt)
++
++                # Derive key from password
++                kdf = PBKDF2HMAC(
++                    algorithm=hashes.SHA256(),
++                    length=32,
++                    salt=salt,
++                    iterations=500000,
++                    backend=default_backend()
++                )
++                key = kdf.derive(password.encode())
++
++                # Try to decrypt the encrypted_data directly
++                # Format: IV (12 bytes) + ciphertext + auth tag (16 bytes)
++                if len(encrypted_data) < 28:
++                    raise ValueError(f"Invalid encrypted data format: {len(encrypted_data)} bytes")
++
++                iv = encrypted_data[:12]
++                ciphertext = encrypted_data[12:-16]
++                auth_tag = encrypted_data[-16:]
++
++                print(f"🔐 Raw format decryption - IV: {len(iv)} bytes, Ciphertext: {len(ciphertext)} bytes, Tag: {len(auth_tag)} bytes")
++
++                aesgcm = AESGCM(key)
++                decrypted_content = aesgcm.decrypt(iv, ciphertext + auth_tag, None)
++
++                print(f"✅ Raw format decrypted successfully! Size: {len(decrypted_content)} bytes")
++                return decrypted_content
++            else:
++                raise ValueError("Document is marked as encrypted but no encryption metadata was found.")
+
+     except Exception as e:
+-        print(f"Decryption error: {e}")
+-        raise ValueError(f"Failed to decrypt document: {str(e)}")
++        print(f"❌ DECRYPTION FAILED: {e}")
++        print(f"Error type: {type(e).__name__}")
++        import traceback
++        traceback.print_exc()
++        raise ValueError(f"Failed to decrypt document: {str(e)}")

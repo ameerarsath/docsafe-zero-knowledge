@@ -189,18 +189,17 @@ export class ShareService {
     try {
       // Convert frontend settings format to backend schema format
       const backendShareData = {
-        document_id: request.documentId, // Include document_id in request body
-        share_name: request.settings.shareName || null, // Convert empty string to null
+        share_name: request.settings.shareName?.trim() || `Share of Document ${request.documentId}`, // Ensure non-empty name
         share_type: request.settings.shareType,
         allow_download: request.settings.permissions.includes('download'),
         allow_preview: request.settings.permissions.includes('read'),
         allow_comment: request.settings.permissions.includes('comment'),
-        require_password: request.settings.requirePassword,
-        password: request.settings.sharePassword || null, // Convert empty string to null
-        expires_at: request.settings.expiresAt || null, // Convert empty string to null
-        max_access_count: request.settings.maxAccess || null, // Convert undefined/null to null
-        access_restrictions: {}, // Default empty restrictions
-        encryption_password: request.settings.encryptionPassword || null // Convert empty string to null
+        require_password: request.settings.requirePassword || false,
+        password: request.settings.sharePassword || null,
+        expires_at: request.settings.expiresAt || null,
+        max_access_count: request.settings.maxAccess || null,
+        access_restrictions: {},
+        encryption_password: request.settings.encryptionPassword || null
       };
 
       console.log('📋 Share payload being sent to backend:', JSON.stringify(backendShareData, null, 2));

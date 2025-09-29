@@ -13,6 +13,8 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api/, '')
       }
+      // REMOVED /share proxy rule to prevent conflicts with React Router
+      // Share routes are handled by React Router, API calls use /api/shares
     }
   },
   build: {

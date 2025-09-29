@@ -46,6 +46,7 @@ export interface Document {
   doc_metadata: Record<string, any>;
   
   encryption_key_id?: string;
+  salt?: string; // The salt used for key derivation, now a top-level field
   encrypted_dek?: string; // Document Encryption Key encrypted with user's master key
   encryption_iv?: string;
   encryption_auth_tag?: string;
@@ -338,13 +339,18 @@ export class DocumentsApiService {
   /**
    * Download a document
    */
-  async downloadDocument(documentId: number, password?: string): Promise<void> {
+  async downloadDocument(documentOrId: number | Document, password?: string): Promise<void> {
     // Starting document download
     
     try {
-      // First, get document metadata for encryption parameters
-      const document = await this.getDocument(documentId);
-      // Document retrieved successfully
+      let document: Document;
+      if (typeof documentOrId === 'number') {
+        // First, get document metadata for encryption parameters
+        document = await this.getDocument(documentOrId);
+      } else {
+        document = documentOrId;
+      }
+      const documentId = document.id;
       
       // Download the encrypted file
       const params = password ? `?password=${encodeURIComponent(password)}` : '';
@@ -459,20 +465,14 @@ export class DocumentsApiService {
       // Derive key from password - we'll need to implement this based on your legacy approach
       // For now, let's try using the document metadata for salt/iterations
       let derivedKey;
-      if (document.doc_metadata?.encryption_salt) {
-        const salt = new Uint8Array(base64ToArrayBuffer(document.doc_metadata.encryption_salt));
-        // Use iterations from document metadata, user profile, or secure default
-        const iterations = document.doc_metadata.encryption_iterations ||
-                          document.doc_metadata.key_derivation_iterations ||
-                          500000; // Secure default matching backend
+      const salt_from_metadata = document.doc_metadata?.encryption_salt;
+      const top_level_salt = (document as any).salt; // Use new top-level salt field
+
+      if (top_level_salt || salt_from_metadata) {
+        const salt_b64 = top_level_salt || salt_from_metadata;
+        const salt = new Uint8Array(base64ToArrayBuffer(salt_b64));
         
-        console.log('📥 Legacy download: Key derivation parameters:', {
-          saltLength: salt.length,
-          iterations: iterations,
-          source: document.doc_metadata.encryption_iterations ? 'doc_metadata.encryption_iterations' :
-                  document.doc_metadata.key_derivation_iterations ? 'doc_metadata.key_derivation_iterations' :
-                  'default(500000)'
-        });
+        const iterations = document.doc_metadata?.encryption_iterations || 500000;
 
         derivedKey = await deriveKey({
           password,

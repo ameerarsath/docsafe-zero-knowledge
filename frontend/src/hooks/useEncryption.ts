@@ -101,7 +101,8 @@ export interface UseEncryptionReturn extends EncryptionState, EncryptionActions 
 /**
  * Custom hook for encryption operations
  */
-export function useEncryption(): UseEncryptionReturn {
+export function useEncryption(options?: { loadKeysOnMount?: boolean }): UseEncryptionReturn {
+  const { loadKeysOnMount = true } = options || {};
   const user = useAuthStore((state) => state.user);
   
   const [state, setState] = useState<EncryptionState>({
@@ -563,10 +564,10 @@ export function useEncryption(): UseEncryptionReturn {
 
   // Initialize on mount
   useEffect(() => {
-    if (user && !state.isInitialized && state.isSupported) {
+    if (user && !state.isInitialized && state.isSupported && loadKeysOnMount) {
       initialize();
     }
-  }, [user, state.isInitialized, state.isSupported, initialize]);
+  }, [user, state.isInitialized, state.isSupported, initialize, loadKeysOnMount]);
 
   // Auto-load keys when user changes
   useEffect(() => {

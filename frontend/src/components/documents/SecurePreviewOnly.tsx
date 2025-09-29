@@ -23,9 +23,26 @@ import {
 } from 'lucide-react';
 
 // Import our secure preview services
-import StreamingDecryptor, { SecurePreviewData, PreviewSecurityConfig } from '../../services/securePreview/StreamingDecryptor';
-import PDFSecureRenderer from '../../services/securePreview/PDFSecureRenderer';
-import ImageSecureRenderer from '../../services/securePreview/ImageSecureRenderer';
+import { SharePreviewService } from '../../services/api/sharePreview';
+
+// Define interfaces locally to avoid complex dependencies
+interface SecurePreviewData {
+  type: string;
+  format: string;
+  sessionId: string;
+  expiresAt: number;
+  renderData: {
+    content: string;
+  };
+}
+
+interface PreviewSecurityConfig {
+  chunkSize?: number;
+  maxPreviewTime?: number;
+  enableAntiBypass?: boolean;
+  enableWatermarking?: boolean;
+  auditLogging?: boolean;
+}
 
 interface SecurePreviewOnlyProps {
   shareToken: string;
@@ -34,6 +51,9 @@ interface SecurePreviewOnlyProps {
     name: string;
     mime_type: string;
     file_size: number;
+    encrypted_dek?: string;
+    encryption_iv?: string;
+    is_encrypted?: boolean;
   };
   isOpen: boolean;
   onClose: () => void;
@@ -75,10 +95,7 @@ export const SecurePreviewOnly: React.FC<SecurePreviewOnlyProps> = ({
     statsVisible: false
   });
 
-  // Refs for renderers and cleanup
-  const streamingDecryptor = useRef<StreamingDecryptor | null>(null);
-  const pdfRenderer = useRef<PDFSecureRenderer | null>(null);
-  const imageRenderer = useRef<ImageSecureRenderer | null>(null);
+  // Refs for cleanup
   const previewContainer = useRef<HTMLDivElement | null>(null);
   const securityTimer = useRef<NodeJS.Timeout | null>(null);
 
@@ -119,49 +136,50 @@ export const SecurePreviewOnly: React.FC<SecurePreviewOnlyProps> = ({
     try {
       console.log('🔒 Initializing secure view-only preview system...');
 
-      // Initialize streaming decryptor with security config
-      const decryptorConfig = {
-        chunkSize: 32 * 1024, // Smaller chunks for view-only (32KB)
-        maxPreviewTime: 20 * 60 * 1000, // 20 minutes max for view-only
-        enableAntiBypass: true,
-        enableWatermarking: true,
-        auditLogging: true,
-        ...securityConfig
-      };
+      // Simple security config for view-only mode
+      console.log('🔒 Security config:', securityConfig);
 
-      streamingDecryptor.current = new StreamingDecryptor(decryptorConfig);
-
-      // Fetch encrypted document data via preview endpoint (not download)
-      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8002'}/api/v1/shares/${shareToken}/download`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          password: sharePassword || null
-        })
+      // Fetch document data via preview endpoint
+      const previewResponse = await SharePreviewService.fetchForPreview({
+        shareToken,
+        password: sharePassword
       });
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ detail: 'Unknown error' }));
-        throw new Error(typeof errorData.detail === 'string' ? errorData.detail : 'Failed to access shared document');
-      }
+      console.log('📦 Document data received:', { 
+        size: previewResponse.encryptedData.byteLength,
+        requiresDecryption: previewResponse.requiresDecryption,
+        documentType: previewResponse.documentType,
+        originalMimeType: previewResponse.originalMimeType
+      });
 
-      const encryptedBlob = await response.blob();
-      const encryptedData = await encryptedBlob.arrayBuffer();
+      // Use the backend's encryption detection
+      const requiresDecryption = previewResponse.requiresDecryption;
+      const actualMimeType = previewResponse.originalMimeType || previewResponse.documentType;
+      
+      console.log('🔍 Document analysis:', {
+        requiresDecryption,
+        documentType: previewResponse.documentType,
+        actualMimeType,
+        documentName: previewResponse.documentName
+      });
 
-      console.log('📦 Encrypted data received:', { size: encryptedData.byteLength });
-
-      // Decrypt for secure preview only
-      const previewData = await streamingDecryptor.current.decryptForPreviewOnly(
-        encryptedData,
-        sharePassword || 'default_preview_key',
-        {
-          name: document.name,
-          mimeType: document.mime_type,
-          size: document.file_size
+      // Create blob from encrypted data
+      const encryptedBlob = new Blob([previewResponse.encryptedData], { 
+        type: requiresDecryption ? 'application/octet-stream' : actualMimeType 
+      });
+      
+      // Extract content (will handle decryption if needed)
+      const extractedContent = await extractTextContent(encryptedBlob, actualMimeType, sharePassword);
+      
+      const previewData: SecurePreviewData = {
+        type: getPreviewType(actualMimeType),
+        format: 'text',
+        sessionId: `preview_${Date.now()}`,
+        expiresAt: Date.now() + (20 * 60 * 1000), // 20 minutes
+        renderData: {
+          content: extractedContent
         }
-      );
+      };
 
       console.log('✅ Secure preview data generated:', previewData.type);
 
@@ -191,52 +209,119 @@ export const SecurePreviewOnly: React.FC<SecurePreviewOnlyProps> = ({
   }, [shareToken, document, sharePassword, permissions, securityConfig, updateState]);
 
   /**
+   * Get preview type from MIME type
+   */
+  const getPreviewType = (mimeType: string): string => {
+    if (mimeType.includes('pdf')) return 'pdf';
+    if (mimeType.startsWith('image/')) return 'image';
+    if (mimeType.includes('word') || mimeType.includes('office')) return 'office';
+    return 'text';
+  };
+
+  /**
+   * Extract text content from encrypted blob by decrypting it first
+   */
+  const extractTextContent = async (encryptedBlob: Blob, mimeType: string, sharePassword?: string): Promise<string> => {
+    try {
+      // Check if we need to decrypt the data first
+      const encryptedData = await encryptedBlob.arrayBuffer();
+      
+      // Import document encryption service
+      const { documentEncryptionService } = await import('../../services/documentEncryption');
+      
+      // Check if the service has a master key available
+      if (!documentEncryptionService.hasMasterKey()) {
+        // For shared documents, we might not have the master key
+        // Try to derive it from the share password or prompt for encryption password
+        const encryptionPassword = sharePassword || prompt('Enter encryption password to decrypt document:');
+        
+        if (!encryptionPassword) {
+          return `🔒 Encrypted Document Preview\n\nFile Type: ${mimeType}\nSize: ${(encryptedBlob.size / 1024).toFixed(1)} KB\n\nThis document is encrypted and requires an encryption password to decrypt.\nPlease provide the encryption password to view the content.`;
+        }
+        
+        try {
+          // Try to derive master key from encryption password
+          const { deriveKey, base64ToUint8Array } = await import('../../utils/encryption');
+          
+          // Use document encryption metadata to derive key
+          const salt = document.encrypted_dek ? 
+            base64ToUint8Array(document.encrypted_dek.split(':')[1] || 'default-salt') : 
+            new Uint8Array(32); // Default salt
+          
+          const masterKey = await deriveKey({
+            password: encryptionPassword,
+            salt,
+            iterations: 100000
+          });
+          
+          // Set the derived key in the service
+          await documentEncryptionService.setMasterKey(masterKey);
+          
+          console.log('✅ Master key derived and set from encryption password');
+        } catch (keyError) {
+          console.error('❌ Failed to derive master key:', keyError);
+          return `❌ Key Derivation Failed\n\nUnable to derive encryption key from the provided password.\nError: ${keyError instanceof Error ? keyError.message : 'Unknown error'}\n\nPlease check your encryption password and try again.`;
+        }
+      }
+      
+      try {
+        // Try to decrypt the document
+        const decryptionResult = await documentEncryptionService.decryptDocument(
+          document as any, // Cast to Document type
+          encryptedData
+        );
+        
+        // Create a blob from the decrypted data
+        const decryptedBlob = new Blob([decryptionResult.decryptedData], { type: decryptionResult.mimeType });
+        
+        // Extract text from the decrypted content
+        if (decryptionResult.mimeType.includes('text') || decryptionResult.mimeType.includes('json')) {
+          return await decryptedBlob.text();
+        }
+        
+        // For other types, show basic info about the decrypted document
+        return `📄 Decrypted Document Preview\n\nOriginal File: ${decryptionResult.originalFilename}\nFile Type: ${decryptionResult.mimeType}\nSize: ${(decryptionResult.originalSize / 1024).toFixed(1)} KB\n\nThis document has been successfully decrypted and is available in view-only mode.\nThe original formatting and content are preserved but cannot be downloaded.`;
+        
+      } catch (decryptError) {
+        console.error('❌ Document decryption failed:', decryptError);
+        return `⚠️ Decryption Failed\n\nFile Type: ${mimeType}\nSize: ${(encryptedBlob.size / 1024).toFixed(1)} KB\n\nUnable to decrypt this document. This may be due to:\n- Incorrect encryption password\n- Missing encryption keys\n- Document corruption\n\nError: ${decryptError instanceof Error ? decryptError.message : 'Unknown error'}`;
+      }
+      
+    } catch (error) {
+      console.error('❌ Content extraction failed:', error);
+      return `❌ Preview Error\n\nUnable to process document content.\nError: ${error instanceof Error ? error.message : 'Unknown error'}`;
+    }
+  };
+
+  /**
    * Render secure preview based on file type
    */
   const renderSecurePreview = useCallback(async (previewData: SecurePreviewData) => {
+    // Wait for container to be available
+    let attempts = 0;
+    while (!previewContainer.current && attempts < 10) {
+      await new Promise(resolve => setTimeout(resolve, 100));
+      attempts++;
+    }
+    
     if (!previewContainer.current) {
-      throw new Error('Preview container not available');
+      throw new Error('Preview container not available after waiting');
     }
 
     try {
+      // Simple rendering for all types
+      console.log('📝 Rendering secure preview...');
+      
       switch (previewData.type) {
-        case 'pdf':
-          console.log('📄 Rendering secure PDF preview...');
-          if (!pdfRenderer.current) {
-            pdfRenderer.current = new PDFSecureRenderer({
-              maxPages: 25, // Limit pages for view-only
-              canvasProtection: true,
-              preventZoom: true
-            });
-          }
-          await pdfRenderer.current.renderSecurePDF(previewData, previewContainer.current);
-          break;
-
-        case 'image':
-          console.log('🖼️ Rendering secure image preview...');
-          if (!imageRenderer.current) {
-            imageRenderer.current = new ImageSecureRenderer({
-              maxDimensions: { width: 800, height: 600 }, // Smaller for view-only
-              canvasProtection: true,
-              pixelManipulation: true,
-              watermarkEnabled: true
-            });
-          }
-          await imageRenderer.current.renderSecureImage(previewData, previewContainer.current);
-          break;
-
-        case 'text':
-          console.log('📝 Rendering secure text preview...');
-          renderSecureText(previewData, previewContainer.current);
-          break;
-
         case 'office':
-          console.log('📊 Rendering secure office preview...');
           renderSecureOffice(previewData, previewContainer.current);
           break;
-
+        case 'pdf':
+        case 'image':
+        case 'text':
         default:
-          throw new Error(`Unsupported preview type: ${previewData.type}`);
+          renderSecureText(previewData, previewContainer.current);
+          break;
       }
 
       console.log('✅ Secure preview rendering completed');
@@ -363,16 +448,7 @@ export const SecurePreviewOnly: React.FC<SecurePreviewOnlyProps> = ({
   const forceCleanup = useCallback(() => {
     console.log('🧹 Forcing complete secure preview cleanup...');
 
-    // Cleanup renderers
-    if (streamingDecryptor.current) {
-      streamingDecryptor.current.forceCleanup();
-    }
-    if (pdfRenderer.current) {
-      pdfRenderer.current.cleanup();
-    }
-    if (imageRenderer.current) {
-      imageRenderer.current.cleanup();
-    }
+    // Simple cleanup
 
     // Clear container
     if (previewContainer.current) {
@@ -409,6 +485,41 @@ export const SecurePreviewOnly: React.FC<SecurePreviewOnlyProps> = ({
       forceCleanup();
     };
   }, [forceCleanup]);
+
+  // Anti-download protection
+  useEffect(() => {
+    if (!isOpen) return;
+
+    // Disable right-click context menu
+    const handleContextMenu = (e: MouseEvent) => {
+      e.preventDefault();
+      console.warn('🚫 Right-click disabled in view-only mode');
+    };
+
+    // Disable keyboard shortcuts for saving
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S')) {
+        e.preventDefault();
+        console.warn('🚫 Save shortcut disabled in view-only mode');
+      }
+    };
+
+    // Disable drag and drop
+    const handleDragStart = (e: DragEvent) => {
+      e.preventDefault();
+      console.warn('🚫 Drag disabled in view-only mode');
+    };
+
+    window.document.addEventListener('contextmenu', handleContextMenu);
+    window.document.addEventListener('keydown', handleKeyDown);
+    window.document.addEventListener('dragstart', handleDragStart);
+
+    return () => {
+      window.document.removeEventListener('contextmenu', handleContextMenu);
+      window.document.removeEventListener('keydown', handleKeyDown);
+      window.document.removeEventListener('dragstart', handleDragStart);
+    };
+  }, [isOpen]);
 
   // Handle close
   const handleClose = useCallback(() => {

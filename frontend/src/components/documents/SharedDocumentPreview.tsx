@@ -18,6 +18,9 @@ import {
 } from 'lucide-react';
 import { useEncryption } from '../../hooks/useEncryption';
 import { getDocumentPreview } from '../../services/documentPreview';
+import { base64ToUint8Array, deriveKey, uint8ArrayToBase64, decryptFile } from '../../utils/encryption';
+import { SecurePDFViewer } from './SecurePDFViewer';
+import { UniversalFileViewer } from './UniversalFileViewer';
 
 interface SharedDocumentPreviewProps {
   shareToken: string;
@@ -46,6 +49,7 @@ interface PreviewState {
   decryptedBlob: Blob | null;
   pluginResult: any | null;
   isGeneratingPreview: boolean;
+  useStreaming: boolean;
 }
 
 export const SharedDocumentPreview: React.FC<SharedDocumentPreviewProps> = ({
@@ -68,261 +72,259 @@ export const SharedDocumentPreview: React.FC<SharedDocumentPreviewProps> = ({
     needsPassword: false,
     decryptedBlob: null,
     pluginResult: null,
-    isGeneratingPreview: false
+    isGeneratingPreview: false,
+    useStreaming: false
   });
 
-  // Use encryption hook for zero-knowledge decryption
-  const { decryptDownloadedFile, keys } = useEncryption();
+  // Use encryption hook for zero-knowledge decryption, but don't load user keys
+  const { decryptDownloadedFile, keys } = useEncryption({ loadKeysOnMount: false });
 
   const updateState = useCallback((updates: Partial<PreviewState>) => {
     setState(prev => ({ ...prev, ...updates }));
   }, []);
 
+  // Detect if we should use streaming approach (for external shares)
+  useEffect(() => {
+    // Use streaming if this is an external share (no user keys loaded)
+    const shouldUseStreaming = !keys && sharePassword;
+    updateState({ useStreaming: shouldUseStreaming });
+  }, [keys, sharePassword, updateState]);
+
   const loadPreview = useCallback(async () => {
     if (!shareToken) {
-      updateState({
-        error: 'Preview not available - invalid share token',
-        isLoading: false
-      });
+      updateState({ error: 'Preview not available - invalid share token', isLoading: false });
       return;
     }
 
-    updateState({ isLoading: true, error: null, isDecrypting: true });
+    updateState({ isLoading: true, error: null, isDecrypting: false, isGeneratingPreview: false });
 
     try {
-      console.log('🔐 Loading shared document with zero-knowledge support:', { shareToken, fileName: document.name, mimeType: document.mime_type, permissions });
-
-      // 🎯 SMART PERMISSION-BASED ROUTING
-      // Check permissions to determine the best loading strategy
-      const hasDownloadPermission = permissions.includes('download');
-      const hasReadPermission = permissions.includes('read');
-
-      if (hasDownloadPermission) {
-        console.log('✅ Download permission available - using download endpoint for full functionality');
-
-        // Download endpoint provides full document access for client-side processing
-        const downloadResponse = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8002'}/api/v1/shares/${shareToken}/download`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            password: sharePassword || null
-          })
-        });
-
-        console.log('📊 Share download response status:', downloadResponse.status);
-
-        if (downloadResponse.ok) {
-          const encryptedBlob = await downloadResponse.blob();
-          console.log('📦 Downloaded shared document blob:', { size: encryptedBlob.size, type: encryptedBlob.type });
-
-          // Check if document needs decryption based on headers
-          const needsDecryption = downloadResponse.headers.get('X-Encryption-Required') === 'true';
-          const documentId = downloadResponse.headers.get('X-Document-Id');
-
-          console.log('🔍 Document encryption status:', { needsDecryption, documentId });
-
-          if (needsDecryption && sharePassword) {
-            console.log('🔑 Attempting zero-knowledge decryption for shared document...');
-
-            try {
-              // For zero-knowledge encryption, we need to simulate the decryption process
-              // Since we don't have the full document metadata, we'll try to decrypt with available info
-
-              // Check if we have encryption keys available
-              if (!keys || keys.length === 0) {
-                console.log('⚠️ No encryption keys available for zero-knowledge decryption');
-                // Fall back to direct preview without decryption
-                throw new Error('Zero-knowledge decryption requires encryption keys');
-              }
-
-              // Try client-side decryption with share password
-              const encryptedData = await encryptedBlob.arrayBuffer();
-
-              // For shared documents, we may need to construct decryption metadata
-              // This is a simplified approach - in production, share creation should include this info
-              const decryptionMetadata = {
-                keyId: 'share_key', // Placeholder - should come from share info
-                iv: sharePassword, // Simplified - should be proper IV
-                authTag: 'share_auth', // Placeholder - should come from share info
-                originalName: document.name,
-                mimeType: document.mime_type
-              };
-
-              console.log('🔄 Attempting decryption with share metadata...');
-
-              // This will likely fail due to missing proper encryption metadata
-              // But we'll catch it and fall back to server-side preview
-              const decryptedFile = await decryptDownloadedFile(encryptedData, decryptionMetadata, sharePassword);
-              console.log('✅ Zero-knowledge decryption successful!');
-
-              // Generate preview using plugin system
-              const pluginOptions = {
-                metadata: {
-                  modifiedDate: new Date().toLocaleDateString(),
-                  isSharedDocument: true
-                }
-              };
-              const previewResult = await getDocumentPreview(decryptedFile, document.name, document.mime_type || 'application/octet-stream', pluginOptions);
-
-              updateState({
-                pluginResult: previewResult,
-                previewUrl: previewResult.format === 'html' ? null : previewResult.content,
-                decryptedBlob: decryptedFile,
-                isLoading: false,
-                isDecrypting: false,
-                isGeneratingPreview: false,
-                error: null
-              });
-
-              return;
-
-            } catch (decryptionError) {
-              console.warn('⚠️ Zero-knowledge decryption failed, trying server-side preview:', decryptionError);
-              // Continue to server-side preview fallback below
-            }
-          }
-
-          // For non-encrypted or when decryption fails, use plugin system directly
-          console.log('📄 Processing shared document with plugin system...');
-
-          const pluginOptions = {
-            metadata: {
-              modifiedDate: new Date().toLocaleDateString(),
-              isSharedDocument: true
-            }
-          };
-          const previewResult = await getDocumentPreview(encryptedBlob, document.name, document.mime_type || 'application/octet-stream', pluginOptions);
-
-          updateState({
-            pluginResult: previewResult,
-            previewUrl: previewResult.format === 'html' ? null : previewResult.content,
-            decryptedBlob: encryptedBlob,
-            isLoading: false,
-            isDecrypting: false,
-            isGeneratingPreview: false,
-            error: null
-          });
-
-          return;
-        } else {
-          console.warn('❌ Download endpoint failed:', downloadResponse.status);
-          // Fall through to preview endpoint
-        }
-      } else if (hasReadPermission) {
-        console.log('👁️ Only preview permission available - using preview endpoint directly');
-      } else {
-        updateState({
-          error: 'No valid permissions for this share',
-          isLoading: false,
-          isDecrypting: false
-        });
+      console.log('📄 Fetching shared document from preview endpoint...');
+      const apiUrl = import.meta.env.VITE_API_URL;
+      if (!apiUrl) {
+        updateState({ error: 'API URL is not configured. Please check your environment variables.', isLoading: false });
         return;
       }
 
-      // Use server-side preview endpoint (for view-only shares or download fallback)
-      console.log('📄 Using server-side preview endpoint...');
+      const previewUrl = `${apiUrl}/api/v1/shares/${shareToken}/preview${sharePassword ? `?password=${encodeURIComponent(sharePassword)}` : ''}`;
+      const response = await fetch(previewUrl);
 
-      const previewResponse = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8002'}/api/v1/shares/${shareToken}/preview`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          password: sharePassword || null
-        })
-      });
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ detail: 'Failed to fetch preview' }));
+        console.error("DEBUG: Raw error data from backend:", errorData);
 
-      console.log('📊 Preview response status:', previewResponse.status);
-
-      if (previewResponse.ok) {
-        const contentType = previewResponse.headers.get('content-type');
-
-        if (contentType?.startsWith('image/')) {
-          // Handle image files
-          const imageBlob = await previewResponse.blob();
-          console.log('✅ Received image blob:', { size: imageBlob.size, type: imageBlob.type });
-
-          const objectUrl = URL.createObjectURL(imageBlob);
-          updateState({
-            previewUrl: objectUrl,
-            isLoading: false,
-            isDecrypting: false,
-            error: null
-          });
-
-          // Clean up object URL after component unmounts
-          return () => URL.revokeObjectURL(objectUrl);
-        } else if (contentType?.includes('text/html')) {
-          // Handle processed document content (HTML preview from backend)
-          const htmlContent = await previewResponse.text();
-          console.log('✅ Received HTML preview content');
-
-          // Instead of data URI, create a plugin result for proper rendering
-          updateState({
-            pluginResult: {
-              type: 'success',
-              format: 'html',
-              content: htmlContent,
-              metadata: { pluginName: 'ServerSharePreview', processingTime: '0ms' }
-            },
-            isLoading: false,
-            isDecrypting: false,
-            error: null
-          });
-        } else {
-          // Handle other content types
-          const blob = await previewResponse.blob();
-          const objectUrl = URL.createObjectURL(blob);
-
-          updateState({
-            previewUrl: objectUrl,
-            isLoading: false,
-            isDecrypting: false,
-            error: null
-          });
-
-          return () => URL.revokeObjectURL(objectUrl);
+        let errorMessage = 'An unknown error occurred while fetching the preview.';
+        if (typeof errorData === 'object' && errorData !== null) {
+            errorMessage = 
+                errorData.message || 
+                (typeof errorData.detail === 'string' ? errorData.detail : null) ||
+                (typeof errorData.detail === 'object' && errorData.detail !== null ? errorData.detail.message : null) ||
+                JSON.stringify(errorData);
         }
-      } else {
-        // Got error response - handle structured error format
-        const errorData = await previewResponse.json();
-        console.error('❌ Preview failed:', errorData);
+        throw new Error(errorMessage);
+      }
 
-        let errorMessage = 'Failed to load document preview';
+      const requiresDecryption = response.headers.get('X-Requires-Decryption') === 'true';
+      const isDecrypted = response.headers.get('X-Decrypted') === 'true';
+      let documentBlob = await response.blob();
 
-        if (typeof errorData === 'string') {
-          errorMessage = errorData;
-        } else if (typeof errorData === 'object' && errorData !== null) {
-          if (errorData.message) {
-            errorMessage = errorData.message;
-          } else if (errorData.error) {
-            errorMessage = errorData.error;
-          } else if (errorData.detail) {
-            if (typeof errorData.detail === 'object' && errorData.detail.message) {
-              errorMessage = errorData.detail.message;
-            } else if (typeof errorData.detail === 'string') {
-              errorMessage = errorData.detail;
+      if (isDecrypted) {
+        // Server already decrypted the content for us
+        console.log('📄 Server provided decrypted content');
+
+        // Get the MIME type from the response if available, otherwise use document MIME type
+        const responseMimeType = response.headers.get('Content-Type') || document.mime_type;
+        console.log(`📄 Using MIME type: ${responseMimeType}`);
+
+        // Create a new blob with the correct MIME type
+        const arrayBuffer = await documentBlob.arrayBuffer();
+        documentBlob = new Blob([arrayBuffer], { type: responseMimeType });
+
+        // Validate that we have proper content
+        if (arrayBuffer.byteLength === 0) {
+          throw new Error('Decrypted content is empty');
+        }
+
+        console.log(`📄 Decrypted blob size: ${documentBlob.size} bytes, type: ${documentBlob.type}`);
+      } else if (requiresDecryption) {
+        // Client-side decryption required
+        if (!sharePassword) {
+          updateState({ error: 'This document is encrypted. Please enter the password.', needsPassword: true, isLoading: false });
+          return;
+        }
+
+        console.log('🔑 Decrypting document on client-side with share password...');
+        updateState({ isDecrypting: true });
+
+        const salt = response.headers.get('X-Encryption-Salt');
+        const iv = response.headers.get('X-Encryption-IV');
+        const iterations = parseInt(response.headers.get('X-Encryption-Iterations') || '500000', 10);
+
+        if (!salt || !iv) {
+          throw new Error('Missing encryption metadata in response headers.');
+        }
+
+        // Use direct AES-GCM decryption first for client-side decryption
+        try {
+          const key = await deriveKey({
+            password: sharePassword,
+            salt: base64ToUint8Array(salt),
+            iterations: iterations,
+          });
+
+          const encryptedArray = new Uint8Array(await documentBlob.arrayBuffer());
+
+          console.log(`🔑 Encrypted data received: ${encryptedArray.length} bytes`);
+          console.log(`🔑 Using IV length: ${base64ToUint8Array(iv).length * 8} bits`);
+
+          let decrypted: File | null = null;
+
+          // Try different encryption formats based on the data size and structure
+          if (encryptedArray.length >= 28) {  // Minimum for IV + some data + auth tag
+            // Method 1: Standard AES-GCM format (IV + ciphertext + auth tag)
+            try {
+              console.log('🔑 Trying standard AES-GCM format...');
+              const ivBytes = base64ToUint8Array(iv);
+              const authTagSize = 16;
+
+              if (encryptedArray.length >= ivBytes.length + authTagSize) {
+                // Format: IV (from header) + ciphertext + auth tag (last 16 bytes)
+                const ciphertext = encryptedArray.slice(0, -authTagSize);
+                const authTag = encryptedArray.slice(-authTagSize);
+
+                console.log(`🔑 Ciphertext: ${ciphertext.length} bytes, Auth tag: ${authTag.length} bytes`);
+
+                decrypted = await decryptFile(
+                  {
+                    ciphertext: uint8ArrayToBase64(ciphertext),
+                    iv: iv,
+                    authTag: uint8ArrayToBase64(authTag),
+                    key: key,
+                  },
+                  document.name,
+                  document.mime_type
+                );
+
+                if (decrypted) {
+                  console.log('✅ Standard AES-GCM format decryption successful!');
+                }
+              }
+            } catch (format1Error) {
+              console.log('❌ Standard AES-GCM format failed:', format1Error.message);
+            }
+
+            // Method 2: Combined IV + ciphertext + auth tag format
+            if (!decrypted) {
+              try {
+                console.log('🔑 Trying combined IV + ciphertext + auth tag format...');
+                const ivBytes = base64ToUint8Array(iv);
+                const authTagSize = 16;
+
+                if (encryptedArray.length >= ivBytes.length + authTagSize) {
+                  // Extract IV from the beginning of the data
+                  const dataIv = encryptedArray.slice(0, ivBytes.length);
+                  const ciphertext = encryptedArray.slice(ivBytes.length, -authTagSize);
+                  const authTag = encryptedArray.slice(-authTagSize);
+
+                  console.log(`🔑 Data IV: ${dataIv.length} bytes, Ciphertext: ${ciphertext.length} bytes, Auth tag: ${authTag.length} bytes`);
+
+                  // Use the data IV instead of the header IV
+                  decrypted = await decryptFile(
+                    {
+                      ciphertext: uint8ArrayToBase64(ciphertext),
+                      iv: uint8ArrayToBase64(dataIv),
+                      authTag: uint8ArrayToBase64(authTag),
+                      key: key,
+                    },
+                    document.name,
+                    document.mime_type
+                  );
+
+                  if (decrypted) {
+                    console.log('✅ Combined format decryption successful!');
+                  }
+                }
+              } catch (format2Error) {
+                console.log('❌ Combined format failed:', format2Error.message);
+              }
             }
           }
-        }
 
-        updateState({
-          error: errorMessage,
-          isLoading: false,
-          isDecrypting: false
-        });
+          if (!decrypted) {
+            throw new Error(`Unable to decrypt document. Tried multiple encryption formats but none succeeded. Data size: ${encryptedArray.length} bytes.`);
+          }
+
+          if (!decrypted) {
+            throw new Error('Decryption failed. The password may be incorrect.');
+          }
+
+          // Basic validation - check if decrypted content looks reasonable
+          const decryptedBuffer = await decrypted.arrayBuffer();
+          const view = new Uint8Array(decryptedBuffer);
+
+          // For PDFs, check PDF signature
+          if (document.mime_type === 'application/pdf' && view.length > 4) {
+            const pdfSig = String.fromCharCode(view[0]) + String.fromCharCode(view[1]) + String.fromCharCode(view[2]) + String.fromCharCode(view[3]);
+            if (pdfSig !== '%PDF') {
+              throw new Error('Decryption succeeded but output is not a valid PDF file.');
+            }
+          }
+
+          // For DOCX, check ZIP signature
+          if (document.mime_type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' && view.length > 1) {
+            if (view[0] !== 0x50 || view[1] !== 0x4B) {
+              throw new Error('Decryption succeeded but output is not a valid DOCX (ZIP) file.');
+            }
+          }
+
+          // Use the decrypted file's type which should match the original document MIME type
+          const finalMimeType = decrypted.type || document.mime_type;
+          console.log(`📄 Client-side decrypted blob size: ${decryptedBuffer.byteLength} bytes, type: ${finalMimeType}`);
+          documentBlob = new Blob([decryptedBuffer], { type: finalMimeType });
+        } catch (error: any) {
+          updateState({ error: error.message, isLoading: false, isDecrypting: false });
+          return;
+        }
       }
-    } catch (error) {
+
+      // If it's a PDF, we can display it directly
+      if (documentBlob.type === 'application/pdf') {
+        console.log('📄 PDF detected, creating direct blob URL for preview...');
+        const pdfUrl = URL.createObjectURL(documentBlob);
+        updateState({
+          previewUrl: pdfUrl,
+          isLoading: false,
+          isGeneratingPreview: false,
+        });
+        return; // Skip the plugin system for PDFs
+      }
+
+      console.log('🖼️ Generating document preview...');
+      updateState({ isDecrypting: false, isGeneratingPreview: true });
+
+      const previewResult = await getDocumentPreview(documentBlob, document.name, document.mime_type);
+
+      if (previewResult.type === 'success') {
+        updateState({
+          pluginResult: previewResult,
+          previewUrl: previewResult.format === 'html' ? URL.createObjectURL(new Blob([previewResult.content], { type: 'text/html' })) : previewResult.content,
+          isLoading: false,
+          isGeneratingPreview: false,
+        });
+      } else {
+        throw new Error(previewResult.error || 'Failed to generate preview.');
+      }
+
+    } catch (error: any) {
       console.error('❌ Shared document preview failed:', error);
       updateState({
-        error: 'Failed to load preview. Please try downloading the file.',
+        error: error.message || 'Failed to load preview. Please try again.',
         isLoading: false,
-        isDecrypting: false
+        isDecrypting: false,
+        isGeneratingPreview: false,
       });
     }
-  }, [shareToken, document, sharePassword, permissions, updateState, keys, decryptDownloadedFile, getDocumentPreview]);
+  }, [shareToken, document, sharePassword, permissions, updateState, getDocumentPreview]);
 
   useEffect(() => {
     if (isOpen) {
@@ -426,7 +428,33 @@ export const SharedDocumentPreview: React.FC<SharedDocumentPreviewProps> = ({
 
         {/* Content */}
         <div className="flex-1 overflow-auto bg-gray-50">
-          {(state.isLoading || state.isDecrypting || state.isGeneratingPreview) && !state.pluginResult && (
+          {/* Streaming Viewer for External Shares */}
+          {state.useStreaming && !state.isLoading && !state.error && (
+            <div className="h-full">
+              {document.mime_type === 'application/pdf' ? (
+                <SecurePDFViewer
+                  shareToken={shareToken}
+                  password={sharePassword}
+                  fileName={document.name}
+                  onError={(error) => updateState({ error: error.message })}
+                />
+              ) : (
+                <UniversalFileViewer
+                  shareToken={shareToken}
+                  password={sharePassword}
+                  document={{
+                    id: document.id,
+                    name: document.name,
+                    mime_type: document.mime_type,
+                    size: document.file_size
+                  }}
+                />
+              )}
+            </div>
+          )}
+
+          {/* Traditional Viewer for Internal Shares */}
+          {!state.useStreaming && (state.isLoading || state.isDecrypting || state.isGeneratingPreview) && !state.pluginResult && (
             <div className="flex items-center justify-center h-96">
               <div className="text-center">
                 <Loader2 className="w-8 h-8 text-blue-600 mx-auto mb-4 animate-spin" />

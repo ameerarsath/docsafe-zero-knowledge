@@ -776,6 +776,7 @@ async def upload_file(
                 owner_id=current_user.id,
                 created_by=current_user.id,
                 # Zero-knowledge specific fields
+                salt=upload_metadata.salt, # Save the salt for future decryption
                 encrypted_dek=upload_metadata.encrypted_dek,
                 encryption_iv=upload_metadata.encryption_iv,  # Keep as base64 string
                 encryption_algorithm=upload_metadata.encryption_algorithm or "AES-256-GCM",
@@ -788,6 +789,17 @@ async def upload_file(
         else:
             # Legacy encryption format
             print(f"[CRYPTO] Legacy encryption upload detected")
+
+            from ...models.encryption import UserEncryptionKey
+            if not upload_metadata.encryption_key_id:
+                raise HTTPException(status_code=422, detail="encryption_key_id is required for legacy uploads.")
+
+            encryption_key = db.query(UserEncryptionKey).filter(UserEncryptionKey.key_id == upload_metadata.encryption_key_id).first()
+            if not encryption_key:
+                raise HTTPException(status_code=404, detail=f"Encryption key with id {upload_metadata.encryption_key_id} not found.")
+            
+            if not encryption_key.salt:
+                raise HTTPException(status_code=500, detail=f"Data integrity error: Encryption key {encryption_key.key_id} is missing a salt.")
 
             print(f"[CRYPTO] Encryption data: iv={upload_metadata.encryption_iv[:20]}..., auth_tag={upload_metadata.encryption_auth_tag[:20]}...")
 
@@ -803,6 +815,7 @@ async def upload_file(
                 parent_id=upload_metadata.parent_id,
                 owner_id=current_user.id,
                 created_by=current_user.id,
+                salt=encryption_key.salt, # Save the salt from the key for future decryption
                 encryption_key_id=upload_metadata.encryption_key_id,
                 encryption_iv=upload_metadata.encryption_iv,  # Keep as base64 string
                 encryption_auth_tag=upload_metadata.encryption_auth_tag,  # Keep as base64 string

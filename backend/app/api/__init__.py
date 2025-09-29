@@ -15,6 +15,7 @@ from .v1.cors_debug import router as cors_debug_router
 from .v1.monitoring import router as monitoring_router
 from .v1.key_management import router as key_management_router
 from .v1.shares import router as shares_router
+from .v1.external_shares import router as external_shares_router
 print("Shares router imported successfully with", len(shares_router.routes), "routes")
 
 # Create main API router
@@ -38,6 +39,7 @@ api_router.include_router(document_preview_router, prefix="/v1", tags=["document
 api_router.include_router(monitoring_router, prefix="/v1", tags=["monitoring"])
 api_router.include_router(key_management_router, prefix="/v1", tags=["key-management"])
 api_router.include_router(shares_router, prefix="/v1/shares", tags=["shares"])
+api_router.include_router(external_shares_router, prefix="/share", tags=["external-shares"])
 print("Shares router added to main API router")
 
 __all__ = ["api_router"]

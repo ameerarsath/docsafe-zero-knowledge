@@ -5,10 +5,11 @@
  * and protection against data loss. All backups maintain zero-knowledge encryption.
  */
 
-import { documentsApi } from './api/documents';
+import { documentsApi, Document } from './api/documents';
 
 export interface BackupMetadata {
-  documentId: number;
+  document: Document;
+  encryptedFile: File;
   originalFileName: string;
   backupPath: string;
   backupTimestamp: string;
@@ -45,27 +46,26 @@ export class EncryptedBackupService {
    * Schedule a backup for an encrypted file after upload
    */
   async scheduleBackup(
-    documentId: number,
-    fileName: string,
+    document: Document,
     encryptedFile: File,
-    encryptionKeyId: string,
     options: BackupOptions = {}
   ): Promise<string> {
-    const backupId = this.generateBackupId(documentId, fileName);
+    const backupId = this.generateBackupId(document.id, document.name);
 
     // Calculate checksum for integrity verification
     const originalChecksum = await this.calculateFileChecksum(encryptedFile);
 
     const metadata: BackupMetadata = {
-      documentId,
-      originalFileName: fileName,
-      backupPath: this.generateBackupPath(documentId, fileName),
+      document,
+      encryptedFile,
+      originalFileName: document.name,
+      backupPath: this.generateBackupPath(document.id, document.name),
       backupTimestamp: new Date().toISOString(),
       checksumOriginal: originalChecksum,
       checksumBackup: '',
       backupSize: encryptedFile.size,
       backupStatus: 'pending',
-      encryptionKeyId
+      encryptionKeyId: document.encryption_key_id || ''
     };
 
     this.backupQueue.set(backupId, metadata);
@@ -75,7 +75,7 @@ export class EncryptedBackupService {
       this.processBackupQueue(options);
     }
 
-    console.log(`Backup scheduled for document ${documentId}: ${fileName}`);
+    console.log(`Backup scheduled for document ${document.id}: ${document.name}`);
     return backupId;
   }
 
@@ -116,14 +116,10 @@ export class EncryptedBackupService {
       metadata.backupStatus = 'in_progress';
       this.backupQueue.set(backupId, metadata);
 
-      console.log(`Starting backup for document ${metadata.documentId}`);
+      console.log(`Starting backup for document ${metadata.document.id}`);
 
-      // Get the encrypted file from the server
-      const encryptedFileData = await this.getEncryptedFileData(metadata.documentId);
-
-      if (!encryptedFileData) {
-        throw new Error('Failed to retrieve encrypted file data');
-      }
+      // The encrypted file is already in the metadata, convert to ArrayBuffer
+      const encryptedFileData = await metadata.encryptedFile.arrayBuffer();
 
       // Create backup file with additional metadata
       const backupFile = await this.createBackupFile(encryptedFileData, metadata, options);
@@ -133,8 +129,6 @@ export class EncryptedBackupService {
         const backupChecksum = await this.calculateFileChecksum(backupFile);
         metadata.checksumBackup = backupChecksum;
 
-        // For encrypted files, we verify the backup file integrity rather than comparing with original
-        // since the backup may include additional metadata
         if (!await this.verifyBackupIntegrity(backupFile, metadata)) {
           throw new Error('Backup integrity verification failed');
         }
@@ -147,34 +141,19 @@ export class EncryptedBackupService {
       metadata.backupStatus = 'completed';
       metadata.backupSize = backupFile.size;
 
-      console.log(`Backup completed for document ${metadata.documentId}: ${metadata.backupPath}`);
+      console.log(`Backup completed for document ${metadata.document.id}: ${metadata.backupPath}`);
 
       // Notify success
       this.notifyBackupSuccess(metadata);
 
     } catch (error) {
-      console.error(`Backup failed for document ${metadata.documentId}:`, error);
+      console.error(`Backup failed for document ${metadata.document.id}:`, error);
       metadata.backupStatus = 'failed';
 
       // Notify failure
       this.notifyBackupFailure(metadata, error);
     } finally {
       this.backupQueue.set(backupId, metadata);
-    }
-  }
-
-  /**
-   * Get encrypted file data from the server
-   */
-  private async getEncryptedFileData(documentId: number): Promise<ArrayBuffer | null> {
-    try {
-      // This would typically call the document API to get the encrypted file
-      // For now, we'll simulate this as the actual implementation would depend on your API
-      const response = await documentsApi.downloadDocument(documentId);
-      return response;
-    } catch (error) {
-      console.error(`Failed to get encrypted file data for document ${documentId}:`, error);
-      return null;
     }
   }
 
@@ -189,11 +168,11 @@ export class EncryptedBackupService {
     // Create backup metadata
     const backupMetadata = {
       version: '1.0',
-      documentId: metadata.documentId,
+      documentId: metadata.document.id,
       originalFileName: metadata.originalFileName,
       backupTimestamp: metadata.backupTimestamp,
       encryptionKeyId: metadata.encryptionKeyId,
-      originalChecksum: metadata.checksumOriginal,
+      originalChecksum: metadata.originalChecksum,
       backupOptions: options
     };
 
@@ -224,7 +203,7 @@ export class EncryptedBackupService {
     backupData.set(new Uint8Array(encryptedData), offset);
 
     // Create backup file with .svbackup extension
-    const backupFileName = `${metadata.originalFileName}.${metadata.documentId}.svbackup`;
+    const backupFileName = `${metadata.originalFileName}.${metadata.document.id}.svbackup`;
     return new File([backupData], backupFileName, { type: 'application/octet-stream' });
   }
 
@@ -246,7 +225,7 @@ export class EncryptedBackupService {
       const backupMetadata = JSON.parse(metadataJson);
 
       // Verify metadata integrity
-      if (backupMetadata.documentId !== metadata.documentId ||
+      if (backupMetadata.documentId !== metadata.document.id ||
           backupMetadata.encryptionKeyId !== metadata.encryptionKeyId) {
         return false;
       }
@@ -317,7 +296,7 @@ export class EncryptedBackupService {
     // Dispatch custom event for UI updates
     const event = new CustomEvent('backupCompleted', {
       detail: {
-        documentId: metadata.documentId,
+        documentId: metadata.document.id,
         fileName: metadata.originalFileName,
         backupPath: metadata.backupPath,
         timestamp: metadata.backupTimestamp
@@ -333,7 +312,7 @@ export class EncryptedBackupService {
     // Dispatch custom event for UI updates
     const event = new CustomEvent('backupFailed', {
       detail: {
-        documentId: metadata.documentId,
+        documentId: metadata.document.id,
         fileName: metadata.originalFileName,
         error: error.message || 'Unknown backup error',
         timestamp: metadata.backupTimestamp
@@ -348,7 +327,7 @@ export class EncryptedBackupService {
   getBackupStatus(documentId: number): BackupMetadata[] {
     const backups: BackupMetadata[] = [];
     for (const metadata of this.backupQueue.values()) {
-      if (metadata.documentId === documentId) {
+      if (metadata.document.id === documentId) {
         backups.push(metadata);
       }
     }
@@ -380,6 +359,5 @@ export class EncryptedBackupService {
     }
   }
 }
-
 // Export singleton instance
 export const encryptedBackupService = EncryptedBackupService.getInstance();

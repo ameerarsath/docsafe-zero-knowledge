@@ -55,6 +55,25 @@ export class RobustDocxPlugin implements PreviewPlugin {
   ): Promise<PreviewResult> {
     console.log(`🔧 RobustDocxPlugin: Processing ${fileName} (${this.formatFileSize(blob.size)})`);
 
+    // First, validate the content format
+    try {
+      const validation = await this.validateDocxContent(blob, fileName, mimeType);
+      if (!validation.isValid) {
+        console.warn(`⚠️ DOCX validation failed: ${validation.error}`);
+        // If encrypted, provide a helpful message
+        if (validation.isEncrypted) {
+          console.log('🔐 Encrypted content detected, showing fallback message');
+          return this.createEncryptedContentFallback(fileName, blob.size);
+        }
+        // For invalid but not encrypted content, show appropriate error
+        return this.createInvalidContentFallback(fileName, blob.size, validation.error || 'Invalid DOCX format');
+      }
+    } catch (validationError) {
+      console.warn('Content validation error:', validationError);
+      // If validation fails completely, show a generic error
+      return this.createInvalidContentFallback(fileName, blob.size, 'Content validation failed');
+    }
+
     try {
       // Progressive enhancement approach: Try best methods first, fall back gracefully
       const extractors = [
@@ -652,6 +671,303 @@ export class RobustDocxPlugin implements PreviewPlugin {
         error: error.message
       }
     };
+  }
+
+  /**
+   * Create fallback for invalid (non-encrypted) content
+   */
+  private createInvalidContentFallback(fileName: string, fileSize: number, error: string): PreviewResult {
+    const content = `
+      <div class="invalid-docx-fallback">
+        <style>
+          .invalid-docx-fallback {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            padding: 2rem;
+            margin: 1rem 0;
+          }
+          .invalid-icon {
+            font-size: 3rem;
+            color: #6c757d;
+            margin-bottom: 1rem;
+          }
+          .error-title {
+            color: #495057;
+            margin: 0 0 1rem 0;
+            font-size: 1.25rem;
+            font-weight: 600;
+          }
+          .error-details {
+            background: #e9ecef;
+            border: 1px solid #ced4da;
+            border-radius: 6px;
+            padding: 1rem;
+            margin: 1rem 0;
+          }
+          .error-details h4 {
+            margin-top: 0;
+            color: #495057;
+          }
+          .tech-info {
+            font-family: 'Courier New', monospace;
+            font-size: 0.85rem;
+            background: #f8f9fa;
+            padding: 0.5rem;
+            border-radius: 4px;
+            margin-top: 1rem;
+            color: #6c757d;
+          }
+        </style>
+
+        <div class="invalid-icon">📄</div>
+        <h2 class="error-title">Invalid Document Format</h2>
+
+        <p><strong>File:</strong> ${this.escapeHtml(fileName)}</p>
+        <p><strong>Size:</strong> ${this.formatFileSize(fileSize)}</p>
+        <p><strong>Type:</strong> Microsoft Word Document</p>
+
+        <div class="error-details">
+          <h4>⚠️ Preview Unavailable</h4>
+          <p>This file appears to be corrupted or in an invalid format that cannot be previewed.</p>
+
+          <h4>💡 Possible solutions:</h4>
+          <ul>
+            <li><strong>Download:</strong> Use the download button to save and try opening in Microsoft Word</li>
+            <li><strong>Re-upload:</strong> The file may have been corrupted during upload</li>
+            <li><strong>Check format:</strong> Ensure this is actually a .docx file</li>
+          </ul>
+        </div>
+
+        <div class="tech-info">
+          <strong>Error details:</strong> ${this.escapeHtml(error)}
+        </div>
+      </div>
+    `;
+
+    return {
+      type: 'success',
+      format: 'html',
+      content: content,
+      metadata: {
+        title: fileName,
+        pluginName: this.name,
+        extractionMethod: 'invalid-format-fallback',
+        fileSize: fileSize,
+        error: error
+      }
+    };
+  }
+
+  /**
+   * Validate DOCX content format and check for encryption
+   */
+  private async validateDocxContent(blob: Blob, fileName: string, mimeType: string): Promise<{
+    isValid: boolean;
+    isEncrypted: boolean;
+    error?: string;
+    format?: string;
+  }> {
+    console.log('🔍 Validating DOCX content format...');
+
+    try {
+      const arrayBuffer = await blob.arrayBuffer();
+      const uint8Array = new Uint8Array(arrayBuffer);
+
+      // Check minimum size for DOCX
+      if (uint8Array.length < 4) {
+        return {
+          isValid: false,
+          isEncrypted: false,
+          error: 'Content too small to be a valid DOCX file'
+        };
+      }
+
+      // Check for ZIP signature (PK header)
+      const hasZipSignature = uint8Array[0] === 0x50 && uint8Array[1] === 0x4B &&
+                             uint8Array[2] === 0x03 && uint8Array[3] === 0x04;
+
+      if (hasZipSignature) {
+        console.log('✅ Valid ZIP/DOCX signature found');
+        return {
+          isValid: true,
+          isEncrypted: false,
+          format: 'zip'
+        };
+      }
+
+      // Check if content appears to be encrypted
+      // Encrypted content typically has high entropy and random-looking bytes
+      const entropy = this.calculateEntropy(uint8Array.slice(0, 1000)); // Check first 1KB
+      const printableRatio = this.calculatePrintableRatio(uint8Array.slice(0, 1000));
+
+      console.log(`📊 Content analysis - Entropy: ${entropy.toFixed(2)}, Printable ratio: ${printableRatio.toFixed(2)}`);
+
+      // Check for encryption indicators
+      if (entropy > 7.0 && printableRatio < 0.3) {
+        console.log('🔐 Content appears to be encrypted (high entropy, low printable ratio)');
+        return {
+          isValid: false,
+          isEncrypted: true,
+          error: 'Content appears to be encrypted and cannot be processed directly'
+        };
+      }
+
+      // Check if it's just corrupted or invalid data
+      if (printableRatio > 0.8) {
+        console.log('📄 Content appears to be plain text, not DOCX');
+        return {
+          isValid: false,
+          isEncrypted: false,
+          error: 'Content appears to be plain text, not DOCX format'
+        };
+      }
+
+      return {
+        isValid: false,
+        isEncrypted: false,
+        error: 'Invalid DOCX format - missing ZIP signature and not recognized as encrypted'
+      };
+
+    } catch (error) {
+      return {
+        isValid: false,
+        isEncrypted: false,
+        error: `Validation error: ${error.message}`
+      };
+    }
+  }
+
+  /**
+   * Create fallback content for encrypted files
+   */
+  private createEncryptedContentFallback(fileName: string, fileSize: number): PreviewResult {
+    const content = `
+      <div class="encrypted-docx-fallback">
+        <style>
+          .encrypted-docx-fallback {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            padding: 2rem;
+            margin: 1rem 0;
+          }
+          .encrypted-icon {
+            font-size: 3rem;
+            color: #dc3545;
+            margin-bottom: 1rem;
+          }
+          .error-title {
+            color: #dc3545;
+            margin: 0 0 1rem 0;
+            font-size: 1.25rem;
+            font-weight: 600;
+          }
+          .error-details {
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+            border-radius: 6px;
+            padding: 1rem;
+            margin: 1rem 0;
+          }
+          .error-details h4 {
+            margin-top: 0;
+            color: #856404;
+          }
+          .tech-info {
+            font-family: 'Courier New', monospace;
+            font-size: 0.85rem;
+            background: #f8f9fa;
+            padding: 0.5rem;
+            border-radius: 4px;
+            margin-top: 1rem;
+          }
+        </style>
+
+        <div class="encrypted-icon">🔐</div>
+        <h2 class="error-title">Encrypted Document Detected</h2>
+
+        <p><strong>File:</strong> ${this.escapeHtml(fileName)}</p>
+        <p><strong>Size:</strong> ${this.formatFileSize(fileSize)}</p>
+        <p><strong>Type:</strong> Microsoft Word Document</p>
+
+        <div class="error-details">
+          <h4>⚠️ Preview Unavailable</h4>
+          <p>This document is encrypted and cannot be previewed directly. The content you're seeing is encrypted binary data, not the actual document content.</p>
+
+          <h4>💡 Why this happens:</h4>
+          <ul>
+            <li>The document is encrypted with AES-256-GCM encryption</li>
+            <li>JSZip cannot extract content from encrypted files</li>
+            <li>The preview system requires decrypted DOCX content</li>
+          </ul>
+
+          <h4>🔧 Solutions:</h4>
+          <ul>
+            <li><strong>Download:</strong> Use the download button to save and open in Microsoft Word</li>
+            <li><strong>Decryption:</strong> If you have the password, try entering it when prompted</li>
+            <li><strong>Server-side:</strong> Contact your administrator about server-side decryption</li>
+          </ul>
+        </div>
+
+        <div class="tech-info">
+          <strong>Technical Details:</strong> JSZip expects ZIP signature (PK\\x03\\x04) but received encrypted binary data
+        </div>
+      </div>
+    `;
+
+    return {
+      type: 'success',
+      format: 'html',
+      content: content,
+      metadata: {
+        title: fileName,
+        pluginName: this.name,
+        extractionMethod: 'encrypted-fallback',
+        fileSize: fileSize,
+        error: 'Encrypted content detected'
+      }
+    };
+  }
+
+  /**
+   * Calculate entropy of data to detect encryption
+   */
+  private calculateEntropy(data: Uint8Array): number {
+    if (data.length === 0) return 0;
+
+    const frequencies = new Array(256).fill(0);
+    for (const byte of data) {
+      frequencies[byte]++;
+    }
+
+    let entropy = 0;
+    for (let i = 0; i < 256; i++) {
+      if (frequencies[i] > 0) {
+        const probability = frequencies[i] / data.length;
+        entropy -= probability * Math.log2(probability);
+      }
+    }
+
+    return entropy;
+  }
+
+  /**
+   * Calculate ratio of printable characters
+   */
+  private calculatePrintableRatio(data: Uint8Array): number {
+    if (data.length === 0) return 0;
+
+    let printableCount = 0;
+    for (const byte of data) {
+      if ((byte >= 32 && byte <= 126) || byte === 10 || byte === 13 || byte === 9) {
+        printableCount++;
+      }
+    }
+
+    return printableCount / data.length;
   }
 
   // Utility methods

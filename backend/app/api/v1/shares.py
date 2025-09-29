@@ -15,6 +15,17 @@ import base64
 from typing import List, Optional, Dict, Any
 from datetime import datetime, timedelta, timezone
 from pydantic import BaseModel
+
+# Import cryptography for decryption
+try:
+    from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+    from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.backends import default_backend
+    CRYPTO_AVAILABLE = True
+except ImportError:
+    CRYPTO_AVAILABLE = False
+    print("WARNING: cryptography library not available - decryption will not work")
 from fastapi import (
     APIRouter, Depends, HTTPException, status, Query, Request,
     Response, BackgroundTasks
@@ -91,12 +102,19 @@ def generate_share_token() -> str:
 
 def hash_password(password: str) -> str:
     """Hash a password for secure storage."""
-    return hashlib.sha256(password.encode()).hexdigest()
+    import secrets
+    salt = secrets.token_hex(16)
+    return hashlib.sha256((password + salt).encode()).hexdigest() + ':' + salt
 
 
 def verify_password(password: str, hashed: str) -> bool:
     """Verify a password against its hash."""
-    return hashlib.sha256(password.encode()).hexdigest() == hashed
+    if ':' in hashed:
+        hash_part, salt = hashed.split(':', 1)
+        return hashlib.sha256((password + salt).encode()).hexdigest() == hash_part
+    else:
+        # Legacy hash without salt
+        return hashlib.sha256(password.encode()).hexdigest() == hashed
 
 
 def log_share_access(db: Session, share: DocumentShare, request: Request, user_id: Optional[int] = None):
@@ -210,36 +228,18 @@ async def create_share(
                     }
                 )
 
-        # Validate encryption password for encrypted documents
-        if document.is_encrypted and not share_data.encryption_password:
-            print(f"DEBUG: Document {final_document_id} is encrypted but no encryption password provided")
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail={
-                    "error": "Encryption password required",
-                    "message": "Encryption password is required to share this encrypted document"
-                }
-            )
-
-        if document.is_encrypted and share_data.encryption_password:
-            print(f"DEBUG: Validating encryption password for encrypted document {final_document_id}")
-            # Basic validation - check if encryption password is provided
-            # The frontend has already performed validation, so we trust it here
-            # In a production environment, you might want additional server-side validation
-            try:
-                # Basic validation - ensure password is not empty or too short
-                if len(share_data.encryption_password.strip()) < 3:
-                    raise ValueError("Password too short")
-                print(f"DEBUG: Encryption password validation successful")
-            except Exception as e:
-                print(f"DEBUG: Encryption password validation failed: {e}")
+        # For encrypted documents in external shares, we need the encryption password
+        if document.is_encrypted and share_data.share_type in ["external", "public"]:
+            if not share_data.encryption_password:
                 raise HTTPException(
                     status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                     detail={
-                        "error": "Invalid encryption password",
-                        "message": "The provided encryption password is invalid or too short"
+                        "error": "Encryption password required",
+                        "message": "External sharing of encrypted documents requires the encryption password for server-side decryption."
                     }
                 )
+
+
 
         # Generate unique share token
         share_token = generate_share_token()
@@ -260,6 +260,7 @@ async def create_share(
             allow_comment=share_data.allow_comment,
             require_password=share_data.require_password,
             password_hash=password_hash,
+            encryption_password=share_data.encryption_password,  # Store encryption password for server-side decryption
             expires_at=share_data.expires_at,
             max_access_count=share_data.max_access_count,
             access_restrictions=share_data.access_restrictions,
@@ -823,6 +824,278 @@ async def access_shared_document(
         )
 
 
+@router.get("/{share_token}/preview")
+async def preview_shared_document(
+    share_token: str,
+    request: Request,
+    password: Optional[str] = Query(None, description="Share password if required"),
+    current_user: Optional[User] = Depends(get_current_user_optional),
+    db: Session = Depends(get_db)
+):
+    """Stream document data for preview access with proper decryption."""
+    share = db.query(DocumentShare).options(
+        joinedload(DocumentShare.document)
+    ).filter(DocumentShare.share_token == share_token).first()
+
+    if not share:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Share not found"
+        )
+
+    # Check if preview is allowed
+    if not share.allow_preview:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Preview not allowed for this share"
+        )
+
+    # Perform same validations as access endpoint
+    if not share.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_410_GONE,
+            detail="This share has been revoked"
+        )
+
+    if share.expires_at and share.expires_at < datetime.now(timezone.utc):
+        raise HTTPException(
+            status_code=status.HTTP_410_GONE,
+            detail="This share has expired"
+        )
+
+    if share.max_access_count and share.access_count >= share.max_access_count:
+        raise HTTPException(
+            status_code=status.HTTP_410_GONE,
+            detail="This share has reached its access limit"
+        )
+
+    # Check password if required
+    if share.require_password:
+        if not password:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Password required for this share"
+            )
+        if not verify_password(password, share.password_hash):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid password"
+            )
+
+    # Check share type access requirements
+    if share.share_type == DocumentShareType.INTERNAL and not current_user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required for internal shares"
+        )
+
+    document = share.document
+
+    # Check if file exists
+    if not document.storage_path or not os.path.exists(document.storage_path):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document file not found"
+        )
+
+    # Log the preview access
+    log_share_access(db, share, request, current_user.id if current_user else None)
+
+    # Get document content with appropriate encryption handling
+    try:
+        # Check if document is actually encrypted by reading the file first
+        if not document.storage_path or not os.path.exists(document.storage_path):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Document file not found on server"
+            )
+
+        # Read file from disk to check actual content
+        with open(document.storage_path, "rb") as f:
+            file_data = f.read()
+
+        # Check for inconsistent encryption state
+        has_inconsistent_state = document.is_encrypted and not document.ciphertext
+
+        if has_inconsistent_state:
+            print(f"⚠️  Document {document.id} has inconsistent encryption state:")
+            print(f"   is_encrypted: True but ciphertext: False")
+            print(f"   This appears to be an encrypted file stored directly on disk")
+            # Treat as encrypted since it doesn't have known file signatures
+            is_encrypted = True
+        else:
+            # Use proper encryption detection (same as get_original_document_content)
+            is_encrypted = detect_actual_encryption(document, file_data)
+
+        print(f"🔍 Document {document.id} encryption status:")
+        print(f"   database is_encrypted: {document.is_encrypted}")
+        print(f"   has ciphertext: {bool(document.ciphertext)}")
+        print(f"   has salt: {bool(document.salt)}")
+        print(f"   inconsistent state: {has_inconsistent_state}")
+        print(f"   actual is_encrypted: {is_encrypted}")
+        print(f"   mime_type: {document.mime_type}")
+        print(f"   file size: {len(file_data)} bytes")
+
+        if is_encrypted:
+            # For encrypted documents, try to get decrypted content for preview
+            encryption_password = None
+
+            # Try different sources for encryption password
+            if hasattr(share, 'encryption_password') and share.encryption_password:
+                encryption_password = share.encryption_password
+            elif password:  # Use the password from query parameter
+                encryption_password = password
+
+            if encryption_password:
+                print(f"🔑 Attempting server-side decryption with password length: {len(encryption_password)}")
+
+                # Handle different encryption scenarios
+                encrypted_data = None
+
+                if document.ciphertext:
+                    # Normal case: encrypted data in database
+                    import base64
+                    encrypted_data = base64.b64decode(document.ciphertext)
+                    print(f"📦 Using ciphertext from database, length: {len(encrypted_data)} bytes")
+                elif has_inconsistent_state:
+                    # Special case: file on disk is encrypted but no ciphertext in database
+                    encrypted_data = file_data
+                    print(f"📦 Using file data directly (inconsistent state), length: {len(encrypted_data)} bytes")
+
+                if encrypted_data:
+                    try:
+                        decrypted_data = decrypt_document_for_sharing(document, encrypted_data, encryption_password)
+
+                        if decrypted_data:
+                            print(f"✅ Successfully decrypted document {document.id} for preview")
+                            print(f"📄 Decrypted data length: {len(decrypted_data)} bytes")
+                            print(f"🔍 First 20 bytes: {decrypted_data[:20].hex()}")
+
+                            # Check if it's a valid DOCX
+                            if len(decrypted_data) >= 4:
+                                signature = decrypted_data[:4]
+                                if signature == b'PK':
+                                    print(f"✅ Valid DOCX signature detected")
+                                else:
+                                    print(f"⚠️  Unexpected signature: {signature.hex()}")
+
+                            headers = {
+                                "Content-Length": str(len(decrypted_data)),
+                                "X-Document-Name": document.name,
+                                "X-Share-Token": share_token,
+                                "Cache-Control": "no-cache, no-store, must-revalidate",
+                                "X-Decrypted": "true",
+                                "X-Content-Format": "decrypted"
+                            }
+                            return Response(
+                                content=decrypted_data,
+                                media_type=document.mime_type or "application/octet-stream",
+                                headers=headers
+                            )
+                        else:
+                            print(f"❌ Decryption returned None for document {document.id}")
+                    except Exception as e:
+                        print(f"❌ Server-side decryption failed for document {document.id}: {e}")
+                        import traceback
+                        traceback.print_exc()
+                else:
+                    print(f"❌ No encrypted data available for document {document.id}")
+            else:
+                print(f"❌ No encryption password available for document {document.id}")
+
+            # If decryption failed or no password available, provide encrypted data with metadata
+            import base64
+            try:
+                if document.ciphertext:
+                    encrypted_file_data = base64.b64decode(document.ciphertext)
+                elif has_inconsistent_state:
+                    # File is already encrypted on disk
+                    encrypted_file_data = file_data
+                else:
+                    print(f"❌ No encrypted data available for document {document.id}")
+                    # For documents marked as encrypted but no ciphertext found,
+                    # treat the file data as encrypted (this handles the inconsistent state)
+                    encrypted_file_data = file_data
+                    print(f"📦 Using file data as encrypted content for document {document.id}")
+
+                headers = {
+                    "Content-Length": str(len(encrypted_file_data)),
+                    "X-Document-Name": document.name,
+                    "X-Share-Token": share_token,
+                    "Cache-Control": "no-cache, no-store, must-revalidate",
+                    "X-Requires-Decryption": "true",
+                    "X-Encryption-Salt": document.salt,
+                    "X-Encryption-IV": document.encryption_iv,
+                    "X-Encryption-Algorithm": document.encryption_algorithm or "aes-256-gcm",
+                    "X-Encryption-Iterations": "500000",  # Match frontend iterations
+                    "X-Content-Format": "encrypted"
+                }
+
+                print(f"📦 Serving encrypted content for document {document.id} with decryption metadata")
+                return Response(
+                    content=encrypted_file_data,
+                    media_type="application/octet-stream",
+                    headers=headers
+                )
+
+            except Exception as e:
+                print(f"❌ Error processing encrypted document {document.id}: {e}")
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Failed to process encrypted document"
+                )
+        else:
+            # For unencrypted documents, serve the file directly from disk
+            print(f"📁 Document {document.id} is not encrypted, serving from disk")
+            if not document.storage_path or not os.path.exists(document.storage_path):
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Document file not found on server"
+                )
+
+            with open(document.storage_path, "rb") as f:
+                file_data = f.read()
+
+            print(f"📄 File data length: {len(file_data)} bytes")
+            print(f"🔍 First 20 bytes: {file_data[:20].hex()}")
+
+            # Check if the file on disk is actually a DOCX
+            if len(file_data) >= 4:
+                signature = file_data[:4]
+                if signature == b'PK':
+                    print(f"✅ Valid DOCX signature detected in file - serving original DOCX")
+                else:
+                    print(f"⚠️  Unexpected file signature: {signature.hex()}")
+
+            headers = {
+                "Content-Length": str(len(file_data)),
+                "X-Document-Name": document.name,
+                "X-Share-Token": share_token,
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+            }
+
+            return Response(
+                content=file_data,
+                media_type=document.mime_type or "application/octet-stream",
+                headers=headers
+            )
+            
+    except HTTPException:
+        # Re-raise HTTPExceptions directly to be handled by FastAPI
+        raise
+    except Exception as e:
+        # Catch any other unexpected errors
+        import traceback
+        tb_str = traceback.format_exc()
+        print(f"ERROR: Unexpected exception in preview_shared_document: {e}")
+        print(tb_str)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An unexpected error occurred while processing the document."
+        )
+
+
+
 @router.post("/{share_token}/download")
 async def download_shared_document(
     share_token: str,
@@ -898,33 +1171,262 @@ async def download_shared_document(
             detail="Document file not found"
         )
 
-    # For shared documents, we need to handle decryption
-    # Since this is a zero-knowledge system, we cannot decrypt server-side
-    # The frontend must handle decryption with the user's key
-    # So we return the encrypted file and encryption metadata
-
-    def iterfile(file_path: str):
-        with open(file_path, "rb") as file_like:
-            yield from file_like
-
     # Log the download access
     log_share_access(db, share, request, current_user.id if current_user else None)
 
-    # Return the encrypted file
-    # Note: For a true zero-knowledge system, shared documents should be
-    # re-encrypted with a share-specific key or the document should be
-    # decrypted client-side before sharing
-    return StreamingResponse(
-        iterfile(document.storage_path),
-        media_type=document.mime_type or "application/octet-stream",
-        headers={
-            "Content-Disposition": f'attachment; filename*=UTF-8\'\'{document.name}',
-            "Content-Length": str(document.file_size),
-            "X-Encryption-Required": "true",  # Indicate this file needs decryption
-            "X-Document-Id": str(document.id),
-            "X-Share-Token": share_token
-        }
-    )
+    # Get original document content with decryption if needed
+    try:
+        # For encrypted documents, try to get encryption password from share
+        encryption_password = None
+        if document.is_encrypted and hasattr(share, 'encryption_password') and share.encryption_password:
+            encryption_password = share.encryption_password
+            print(f"Using encryption password from share for document {document.id}")
+        elif document.is_encrypted:
+            print(f"Document {document.id} is encrypted but no password available in share")
+            
+        file_data = get_original_document_content(document, encryption_password)
+        
+        if file_data is None:
+            # Document is encrypted and cannot be served without decryption
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={
+                    "error": "Document encrypted",
+                    "message": "This document is encrypted and requires the encryption password for external sharing.",
+                    "encrypted": True
+                }
+            )
+        
+        # Serve file for download with proper headers
+        return Response(
+            content=file_data,
+            media_type=document.mime_type or "application/octet-stream",
+            headers={
+                "Content-Disposition": f'inline; filename*=UTF-8\'\'{document.name}',
+                "Content-Length": str(len(file_data)),
+                "X-Share-Token": share_token,
+                "X-Document-Id": str(document.id)
+            }
+        )
+            
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to process document: {str(e)}"
+        )
+
+
+def detect_actual_encryption(document, file_data: bytes) -> bool:
+    """Detect if file is actually encrypted by checking content and metadata."""
+    if not file_data or len(file_data) < 8:
+        return False
+
+    # Check file signature first
+    header = file_data[:16]  # Increased header size for better detection
+
+    # Known unencrypted file signatures (FIXED BYTE STRINGS)
+    if (header.startswith(b'%PDF') or                    # PDF
+        header.startswith(b'PK\x03\x04') or             # ZIP/DOCX/XLSX/PPTX
+        header.startswith(b'\xff\xd8\xff') or           # JPEG
+        header.startswith(b'\x89PNG\r\n\x1a\n') or      # PNG
+        header.startswith(b'GIF87a') or                 # GIF87a
+        header.startswith(b'GIF89a') or                 # GIF89a
+        header.startswith(b'BM') or                     # BMP
+        header.startswith(b'RIFF')):                    # WEBP/WAV
+        return False
+
+    # Try to decode as text (for plain text files)
+    try:
+        header.decode('utf-8')
+        return False  # Likely plain text file
+    except UnicodeDecodeError:
+        pass
+
+    # If we have encryption metadata and the file doesn't match known signatures,
+    # check if it looks like encrypted data
+    if document.is_encrypted and document.ciphertext and document.salt:
+        # Calculate entropy to detect encrypted content
+        import math
+        sample_size = min(1024, len(file_data))
+        if sample_size > 0:
+            # Count byte frequencies
+            freq = [0] * 256
+            for byte in file_data[:sample_size]:
+                freq[byte] += 1
+
+            # Calculate entropy
+            entropy = 0.0
+            for count in freq:
+                if count > 0:
+                    probability = count / sample_size
+                    entropy -= probability * math.log2(probability)
+
+            # Encrypted data typically has entropy > 7.5
+            if entropy > 7.5:
+                print(f"🔐 High entropy detected ({entropy:.2f}), file appears encrypted")
+                return True
+
+    # If no clear indicators, assume not encrypted
+    return False
+
+
+def get_original_document_content(document, encryption_password: str = None, allow_encrypted_passthrough: bool = False) -> Optional[bytes]:
+    """Get original document content for sharing with decryption support."""
+    try:
+        # Check if file exists on disk
+        if not document.storage_path or not os.path.exists(document.storage_path):
+            print(f"Document file not found: {document.storage_path}")
+            return None
+            
+        # Read file from disk
+        with open(document.storage_path, "rb") as f:
+            file_data = f.read()
+            
+        # Check if document is actually encrypted
+        is_encrypted = detect_actual_encryption(document, file_data)
+        
+        if is_encrypted:
+            if allow_encrypted_passthrough:
+                print(f"Encrypted document {document.id} is being passed through without decryption.")
+                return file_data
+
+            if not encryption_password:
+                print(f"No encryption password provided for encrypted document {document.id}")
+                return None
+                
+            # Decrypt the document content
+            try:
+                print(f"Attempting to decrypt document {document.id} with provided password")
+                decrypted_content = decrypt_document_for_sharing(document, file_data, encryption_password)
+                if decrypted_content is None:
+                    print(f"Decryption returned None for document {document.id}")
+                    return None
+                print(f"Successfully decrypted document {document.id}, size: {len(decrypted_content)} bytes")
+                return decrypted_content
+            except Exception as e:
+                print(f"Decryption failed for document {document.id}: {e}")
+                return None
+        else:
+            # Document is not encrypted, return raw file data
+            print(f"Document {document.id} is not encrypted, returning raw data")
+            return file_data
+        
+    except Exception as e:
+        print(f"Error reading document content for document {document.id}: {e}")
+        return None
+
+
+def decrypt_document_for_sharing(document, encrypted_data: bytes, password: str) -> bytes:
+    """Decrypt document content for external sharing."""
+    # Extensive logging for final debugging
+    print("\n--- DECRYPTION DEBUG START ---")
+    try:
+        print(f"Attempting to decrypt document ID: {document.id}")
+        pw_preview = f'{password[0]}...{password[-1]}' if password and len(password) > 1 else '***'
+        print(f"Password length: {len(password) if password else 0}, Preview: {pw_preview}")
+        print(f"Document Salt (b64): {document.salt}")
+        print(f"Document IV (b64): {document.encryption_iv}")
+        print(f"Encrypted Data Length: {len(encrypted_data)} bytes")
+    except Exception as log_e:
+        print(f"Error during logging: {log_e}")
+    print("----------------------------")
+
+    if not CRYPTO_AVAILABLE:
+        raise ValueError("Cryptography library not available for decryption")
+        
+    import base64
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+    from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.backends import default_backend
+    
+    try:
+        # Check if document has zero-knowledge encryption metadata
+        if document.encrypted_dek and document.ciphertext:
+            # Zero-knowledge encryption model - decrypt using stored metadata
+            
+            # Get salt from document or use default
+            if hasattr(document, 'salt') and document.salt:
+                salt = base64.b64decode(document.salt)
+            else:
+                # Fallback salt for legacy documents
+                salt = b'default_salt_for_legacy_docs_16b'
+            
+            # Derive master key from password
+            kdf = PBKDF2HMAC(
+                algorithm=hashes.SHA256(),
+                length=32,
+                salt=salt,
+                iterations=500000,  # Match frontend iterations
+                backend=default_backend()
+            )
+            master_key = kdf.derive(password.encode())
+            
+            # Decrypt the DEK (Document Encryption Key)
+            encrypted_dek_data = base64.b64decode(document.encrypted_dek)
+            
+            # For AES-GCM, the format is: IV (12 bytes) + ciphertext + auth_tag (16 bytes)
+            if len(encrypted_dek_data) < 28:  # 12 + 16 minimum
+                raise ValueError("Invalid encrypted DEK format")
+                
+            dek_iv = encrypted_dek_data[:12]  # First 12 bytes are IV for GCM
+            dek_ciphertext = encrypted_dek_data[12:-16]  # Middle part is encrypted DEK
+            dek_tag = encrypted_dek_data[-16:]  # Last 16 bytes are auth tag
+            
+            # Decrypt DEK using AES-GCM
+            aesgcm = AESGCM(master_key)
+            dek = aesgcm.decrypt(dek_iv, dek_ciphertext + dek_tag, None)
+            
+            # Now decrypt the document content using the DEK
+            ciphertext_data = base64.b64decode(document.ciphertext)
+            
+            if len(ciphertext_data) < 28:  # 12 + 16 minimum
+                raise ValueError("Invalid document ciphertext format")
+                
+            doc_iv = ciphertext_data[:12]  # First 12 bytes are IV
+            doc_ciphertext = ciphertext_data[12:-16]  # Middle part is encrypted content
+            doc_tag = ciphertext_data[-16:]  # Last 16 bytes are auth tag
+            
+            # Decrypt document content using DEK
+            doc_aesgcm = AESGCM(dek)
+            decrypted_content = doc_aesgcm.decrypt(doc_iv, doc_ciphertext + doc_tag, None)
+            
+            return decrypted_content
+            
+        elif document.is_encrypted and hasattr(document, 'encryption_iv') and hasattr(document, 'encryption_auth_tag'):
+            # Legacy encryption model with separate IV and auth tag fields
+            
+            # Get encryption metadata
+            iv = base64.b64decode(document.encryption_iv)
+            auth_tag = base64.b64decode(document.encryption_auth_tag)
+            
+            # Use the file data as ciphertext
+            ciphertext = encrypted_data
+            
+            # Derive key from password (using document-specific salt if available)
+            salt = base64.b64decode(document.salt) if hasattr(document, 'salt') and document.salt else b'legacy_salt_16bytes'
+            kdf = PBKDF2HMAC(
+                algorithm=hashes.SHA256(),
+                length=32,
+                salt=salt,
+                iterations=500000,  # Match frontend iterations
+                backend=default_backend()
+            )
+            key = kdf.derive(password.encode())
+            
+            # Decrypt using AES-GCM
+            aesgcm = AESGCM(key)
+            decrypted_content = aesgcm.decrypt(iv, ciphertext, None)
+            
+            return decrypted_content
+            
+        else:
+            # Document is marked as encrypted but no encryption metadata found
+            raise ValueError("Document is marked as encrypted but no encryption metadata was found.")
+            
+    except Exception as e:
+        print(f"Decryption error: {e}")
+        raise ValueError(f"Failed to decrypt document: {str(e)}")
 
 
 @router.delete("/{share_id}")
@@ -962,457 +1464,7 @@ async def revoke_share(
     return {"message": "Share revoked successfully"}
 
 
-@router.post("/{share_token}/preview")
-async def preview_shared_document(
-    share_token: str,
-    access_request: ShareAccessRequest,
-    request: Request,
-    current_user: Optional[User] = Depends(get_current_user_optional),
-    db: Session = Depends(get_db)
-):
-    """Generate preview for a shared document with proper support for DOCX and other file types."""
 
-    # Find the share
-    share = db.query(DocumentShare).options(
-        joinedload(DocumentShare.document)
-    ).filter(DocumentShare.share_token == share_token).first()
-
-    if not share:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail={
-                "error": "Invalid share link",
-                "message": "The share link you are trying to access does not exist or has been removed."
-            }
-        )
-
-    # Check if preview is allowed
-    if not share.allow_preview:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail={
-                "error": "Preview not allowed",
-                "message": "Preview is not allowed for this share"
-            }
-        )
-
-    # Perform the same validations as access
-    if not share.is_active:
-        raise HTTPException(
-            status_code=status.HTTP_410_GONE,
-            detail={
-                "error": "Share link revoked",
-                "message": "This share link has been revoked and is no longer accessible."
-            }
-        )
-
-    if share.expires_at and share.expires_at < datetime.now(timezone.utc):
-        raise HTTPException(
-            status_code=status.HTTP_410_GONE,
-            detail={
-                "error": "Share link expired",
-                "message": "This share link has expired and is no longer accessible."
-            }
-        )
-
-    if share.max_access_count and share.access_count >= share.max_access_count:
-        raise HTTPException(
-            status_code=status.HTTP_410_GONE,
-            detail={
-                "error": "Access limit reached",
-                "message": "This share link has reached its maximum access limit."
-            }
-        )
-
-    # Check password if required
-    if share.require_password:
-        if not access_request.password:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail={
-                    "requirePassword": True,
-                    "error": "Password required",
-                    "message": "This shared document requires a password to access"
-                }
-            )
-
-        if not verify_password(access_request.password, share.password_hash):
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail={
-                    "requirePassword": True,
-                    "error": "Invalid password",
-                    "message": "The password you entered is incorrect"
-                }
-            )
-
-    # Check share type access requirements
-    if share.share_type == DocumentShareType.INTERNAL and not current_user:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail={
-                "requiresLogin": True,
-                "error": "Authentication required",
-                "message": "You need to be logged in to access this internal share."
-            }
-        )
-
-    document = share.document
-
-    # Log the share access for preview
-    try:
-        log_share_access(db, share, request, current_user.id if current_user else None)
-    except Exception as log_error:
-        print(f"WARNING: Failed to log share preview access: {log_error}")
-
-    # For images, return the raw image data with proper headers
-    if document.mime_type and document.mime_type.startswith('image/'):
-        return await preview_shared_image(document, share_token, access_request.password if access_request.password else "testpass123")
-
-    # For other file types, use PreviewService to generate appropriate previews
-    try:
-        from ...services.preview_service import PreviewService
-        preview_service = PreviewService()
-
-        # Try to get the document content for preview generation
-        document_content = None
-
-        # If document is encrypted, try to decrypt with encryption password from share creation
-        if document.is_encrypted or document.encrypted_dek:
-            # For shared encrypted documents, we need the encryption password
-            # This should come from the share creation process
-            encryption_password = access_request.password if access_request.password else "testpass123"
-
-            try:
-                document_content = await decrypt_document_content_for_share(document, encryption_password)
-            except Exception as decrypt_error:
-                print(f"WARNING: Could not decrypt document for preview: {decrypt_error}")
-                # Fall back to metadata preview for encrypted documents we can't decrypt
-                return await preview_service.generate_metadata_preview(document)
-
-        # For unencrypted documents, read directly from storage
-        elif document.storage_path and os.path.exists(document.storage_path):
-            try:
-                with open(document.storage_path, 'rb') as f:
-                    document_content = f.read()
-            except Exception as read_error:
-                print(f"WARNING: Could not read document file: {read_error}")
-                return await preview_service.generate_metadata_preview(document)
-
-        # If we have document content, generate appropriate preview
-        if document_content:
-            # Determine the best preview type based on file type
-            mime_type = document.mime_type.lower() if document.mime_type else ""
-            file_extension = document.name.lower().split('.')[-1] if '.' in document.name else ''
-
-            # DOCX files and other Office documents - extract text
-            if (mime_type in ['application/vnd.openxmlformats-officedocument.wordprocessingml.document'] or
-                'wordprocessingml' in mime_type or file_extension == 'docx'):
-
-                text_preview = await preview_service.extract_text_preview(
-                    document_content, document.mime_type, document.name
-                )
-
-                # Convert to HTML format for iframe display if we got text content
-                if text_preview.get('type') == 'text' and text_preview.get('preview'):
-                    preview_text = text_preview['preview']
-                    html_content = f"""
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="utf-8">
-    <title>Document Preview: {document.name}</title>
-    <style>
-        body {{
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            line-height: 1.6;
-            max-width: 800px;
-            margin: 0 auto;
-            padding: 20px;
-            background: white;
-            color: #333;
-        }}
-        .document-header {{
-            border-bottom: 2px solid #e1e5e9;
-            padding-bottom: 10px;
-            margin-bottom: 20px;
-        }}
-        .document-title {{
-            font-size: 24px;
-            font-weight: 600;
-            color: #2c3e50;
-            margin: 0;
-        }}
-        .document-info {{
-            font-size: 14px;
-            color: #7f8c8d;
-            margin-top: 5px;
-        }}
-        .content {{
-            white-space: pre-wrap;
-            word-wrap: break-word;
-            font-size: 16px;
-            line-height: 1.6;
-        }}
-        .truncated-notice {{
-            margin-top: 20px;
-            padding: 10px;
-            background: #f8f9fa;
-            border-left: 4px solid #007bff;
-            font-style: italic;
-            color: #6c757d;
-        }}
-    </style>
-</head>
-<body>
-    <div class="document-header">
-        <h1 class="document-title">{document.name}</h1>
-        <div class="document-info">
-            Document Preview • {text_preview.get('word_count', 0)} words
-            {' • Content may be truncated' if text_preview.get('is_truncated', False) else ''}
-        </div>
-    </div>
-    <div class="content">{preview_text.replace('<', '&lt;').replace('>', '&gt;').replace('&', '&amp;')}</div>
-    {f'<div class="truncated-notice">This is a preview showing the first portion of the document. Download the full document to see all content.</div>' if text_preview.get('is_truncated', False) else ''}
-</body>
-</html>"""
-
-                    from fastapi.responses import HTMLResponse
-                    return HTMLResponse(
-                        content=html_content,
-                        headers={
-                            "Content-Type": "text/html; charset=utf-8",
-                            "X-Content-Source": "docx-preview",
-                            "Cache-Control": "no-cache"
-                        }
-                    )
-                else:
-                    # If text extraction failed, return the error info as HTML
-                    message = text_preview.get('message', 'Document processing not available')
-                    suggestion = text_preview.get('suggestion', 'Download the file to view its contents')
-
-                    html_content = f"""
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="utf-8">
-    <title>Preview Not Available: {document.name}</title>
-    <style>
-        body {{
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            max-width: 600px;
-            margin: 50px auto;
-            padding: 20px;
-            text-align: center;
-            background: white;
-            color: #333;
-        }}
-        .icon {{
-            font-size: 48px;
-            margin-bottom: 20px;
-        }}
-        .title {{
-            font-size: 24px;
-            font-weight: 600;
-            color: #2c3e50;
-            margin-bottom: 10px;
-        }}
-        .message {{
-            font-size: 16px;
-            color: #6c757d;
-            margin-bottom: 20px;
-        }}
-        .suggestion {{
-            font-size: 14px;
-            color: #7f8c8d;
-            background: #f8f9fa;
-            padding: 15px;
-            border-radius: 5px;
-            border-left: 4px solid #17a2b8;
-        }}
-    </style>
-</head>
-<body>
-    <div class="icon">📄</div>
-    <div class="title">{document.name}</div>
-    <div class="message">{message}</div>
-    <div class="suggestion">{suggestion}</div>
-</body>
-</html>"""
-
-                    from fastapi.responses import HTMLResponse
-                    return HTMLResponse(
-                        content=html_content,
-                        headers={
-                            "Content-Type": "text/html; charset=utf-8",
-                            "X-Content-Source": "docx-preview-unavailable"
-                        }
-                    )
-
-            # PDF files - extract text
-            elif mime_type == 'application/pdf' or file_extension == 'pdf':
-                text_preview = await preview_service.extract_text_preview(
-                    document_content, document.mime_type, document.name
-                )
-
-                if text_preview.get('type') == 'text' and text_preview.get('preview'):
-                    preview_text = text_preview['preview']
-                    html_content = f"""
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="utf-8">
-    <title>PDF Preview: {document.name}</title>
-    <style>
-        body {{
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            line-height: 1.6;
-            max-width: 800px;
-            margin: 0 auto;
-            padding: 20px;
-            background: white;
-            color: #333;
-        }}
-        .document-header {{
-            border-bottom: 2px solid #e1e5e9;
-            padding-bottom: 10px;
-            margin-bottom: 20px;
-        }}
-        .document-title {{
-            font-size: 24px;
-            font-weight: 600;
-            color: #dc3545;
-            margin: 0;
-        }}
-        .document-info {{
-            font-size: 14px;
-            color: #7f8c8d;
-            margin-top: 5px;
-        }}
-        .content {{
-            white-space: pre-wrap;
-            word-wrap: break-word;
-            font-size: 16px;
-            line-height: 1.6;
-        }}
-    </style>
-</head>
-<body>
-    <div class="document-header">
-        <h1 class="document-title">📄 {document.name}</h1>
-        <div class="document-info">
-            PDF Preview • {text_preview.get('pages_processed', 0)} of {text_preview.get('total_pages', 0)} pages
-        </div>
-    </div>
-    <div class="content">{preview_text.replace('<', '&lt;').replace('>', '&gt;').replace('&', '&amp;')}</div>
-</body>
-</html>"""
-
-                    from fastapi.responses import HTMLResponse
-                    return HTMLResponse(content=html_content, headers={"Content-Type": "text/html; charset=utf-8"})
-
-            # Text files
-            elif mime_type.startswith('text/') or file_extension in ['txt', 'md', 'json', 'xml', 'csv']:
-                text_preview = await preview_service.extract_text_preview(
-                    document_content, document.mime_type, document.name
-                )
-
-                if text_preview.get('type') == 'text' and text_preview.get('preview'):
-                    preview_text = text_preview['preview']
-                    html_content = f"""
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="utf-8">
-    <title>Text Preview: {document.name}</title>
-    <style>
-        body {{
-            font-family: 'Courier New', monospace;
-            line-height: 1.4;
-            max-width: 900px;
-            margin: 0 auto;
-            padding: 20px;
-            background: white;
-            color: #333;
-        }}
-        .document-header {{
-            border-bottom: 2px solid #e1e5e9;
-            padding-bottom: 10px;
-            margin-bottom: 20px;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-        }}
-        .document-title {{
-            font-size: 24px;
-            font-weight: 600;
-            color: #2c3e50;
-            margin: 0;
-        }}
-        .content {{
-            white-space: pre-wrap;
-            word-wrap: break-word;
-            font-size: 14px;
-        }}
-    </style>
-</head>
-<body>
-    <div class="document-header">
-        <h1 class="document-title">📝 {document.name}</h1>
-    </div>
-    <div class="content">{preview_text.replace('<', '&lt;').replace('>', '&gt;').replace('&', '&amp;')}</div>
-</body>
-</html>"""
-
-                    from fastapi.responses import HTMLResponse
-                    return HTMLResponse(content=html_content, headers={"Content-Type": "text/html; charset=utf-8"})
-
-        # Fallback to metadata preview for unsupported or failed file types
-        return await preview_service.generate_metadata_preview(document)
-
-    except Exception as e:
-        print(f"ERROR: Preview generation failed: {e}")
-        # Return a user-friendly error message in HTML format
-        html_content = f"""
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="utf-8">
-    <title>Preview Error: {document.name}</title>
-    <style>
-        body {{
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            max-width: 600px;
-            margin: 50px auto;
-            padding: 20px;
-            text-align: center;
-            background: white;
-            color: #333;
-        }}
-        .icon {{
-            font-size: 48px;
-            margin-bottom: 20px;
-        }}
-        .title {{
-            font-size: 24px;
-            font-weight: 600;
-            color: #2c3e50;
-            margin-bottom: 10px;
-        }}
-        .message {{
-            font-size: 16px;
-            color: #6c757d;
-            margin-bottom: 20px;
-        }}
-    </style>
-</head>
-<body>
-    <div class="icon">⚠️</div>
-    <div class="title">{document.name}</div>
-    <div class="message">Preview generation encountered an error. Please download the file to view its contents.</div>
-</body>
-</html>"""
-
-        from fastapi.responses import HTMLResponse
-        return HTMLResponse(content=html_content, headers={"Content-Type": "text/html; charset=utf-8"})
 
 
 async def preview_shared_image(document, share_token: str, encryption_password: str):

@@ -231,6 +231,7 @@ export const DocumentUpload: React.FC<DocumentUploadProps> = ({
         tags: [],
         doc_metadata: {},
         is_sensitive: false,
+        salt: encryptionKey.salt, // Add the salt to the payload
         encryption_key_id: encryptionResult.encryptionMetadata.keyId,
         encryption_iv: encryptionResult.encryptionMetadata.iv,
         encryption_auth_tag: encryptionResult.encryptionMetadata.authTag,
@@ -269,10 +270,8 @@ export const DocumentUpload: React.FC<DocumentUploadProps> = ({
           console.log(`Scheduling backup for ${file.name}`);
 
           const backupId = await encryptedBackupService.scheduleBackup(
-            response.id,
-            file.name,
+            response, // Pass the full document object
             encryptionResult.encryptedFile,
-            encryptionResult.encryptionMetadata.keyId,
             {
               enableAutoBackup: true,
               verifyIntegrity: true,

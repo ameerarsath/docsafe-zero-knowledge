@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>External Share Streaming Fix Test</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .test-container {
+            background: white;
+            border-radius: 8px;
+            padding: 24px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        .test-result {
+            padding: 12px;
+            border-radius: 4px;
+            margin: 8px 0;
+        }
+        .success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .info {
+            background-color: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+        input, button {
+            padding: 8px 16px;
+            margin: 4px;
+            border-radius: 4px;
+            border: 1px solid #ddd;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        .pdf-viewer {
+            width: 100%;
+            height: 600px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            margin-top: 16px;
+        }
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <h1>External Share Streaming Fix Test</h1>
+
+    <div class="test-container">
+        <h2>Test Configuration</h2>
+        <div>
+            <label>Share Token: <input type="text" id="shareToken" placeholder="sh_your_token"></label><br>
+            <label>Password: <input type="password" id="password" placeholder="Password (if required)"></label><br>
+            <button onclick="testStreaming()">Test Streaming Endpoint</button>
+            <button onclick="testPDFPreview()">Test PDF Preview</button>
+            <button onclick="clearResults()">Clear Results</button>
+        </div>
+    </div>
+
+    <div class="test-container">
+        <h2>Test Results</h2>
+        <div id="results"></div>
+    </div>
+
+    <div class="test-container hidden" id="pdfContainer">
+        <h2>PDF Preview (Streaming)</h2>
+        <iframe id="pdfViewer" class="pdf-viewer" sandbox="allow-same-origin allow-scripts"></iframe>
+    </div>
+
+    <script>
+        const resultsDiv = document.getElementById('results');
+        const pdfContainer = document.getElementById('pdfContainer');
+        const pdfViewer = document.getElementById('pdfViewer');
+
+        function addResult(message, type = 'info') {
+            const div = document.createElement('div');
+            div.className = `test-result ${type}`;
+            div.textContent = message;
+            resultsDiv.appendChild(div);
+            console.log(message);
+        }
+
+        function clearResults() {
+            resultsDiv.innerHTML = '';
+            pdfContainer.classList.add('hidden');
+            pdfViewer.src = '';
+        }
+
+        async function testStreaming() {
+            clearResults();
+            const shareToken = document.getElementById('shareToken').value;
+            const password = document.getElementById('password').value;
+
+            if (!shareToken) {
+                addResult('Please enter a share token', 'error');
+                return;
+            }
+
+            const baseUrl = 'http://localhost:8000';
+            const streamUrl = `${baseUrl}/share/${shareToken}/stream${password ? `?password=${encodeURIComponent(password)}` : ''}`;
+
+            addResult(`Testing streaming endpoint: ${streamUrl}`, 'info');
+
+            try {
+                // Test CORS preflight
+                addResult('Testing OPTIONS preflight...', 'info');
+                const preflightResponse = await fetch(streamUrl, {
+                    method: 'OPTIONS',
+                    mode: 'cors'
+                });
+
+                if (preflightResponse.ok) {
+                    addResult('✅ OPTIONS preflight successful', 'success');
+                    const corsHeaders = [];
+                    preflightResponse.headers.forEach((value, key) => {
+                        if (key.startsWith('Access-Control')) {
+                            corsHeaders.push(`${key}: ${value}`);
+                        }
+                    });
+                    corsHeaders.forEach(header => addResult(`   ${header}`, 'info'));
+                } else {
+                    addResult(`❌ OPTIONS preflight failed: ${preflightResponse.status}`, 'error');
+                }
+
+                // Test actual streaming
+                addResult('Testing GET request...', 'info');
+                const response = await fetch(streamUrl, {
+                    method: 'GET',
+                    mode: 'cors',
+                    credentials: 'include'
+                });
+
+                addResult(`Response status: ${response.status}`, 'info');
+
+                if (response.ok) {
+                    addResult('✅ Streaming endpoint accessible', 'success');
+
+                    const contentType = response.headers.get('Content-Type');
+                    const contentLength = response.headers.get('Content-Length');
+                    const contentDisposition = response.headers.get('Content-Disposition');
+
+                    addResult(`Content-Type: ${contentType}`, 'info');
+                    addResult(`Content-Length: ${contentLength}`, 'info');
+                    addResult(`Content-Disposition: ${contentDisposition}`, 'info');
+
+                    // Check security headers
+                    const csp = response.headers.get('Content-Security-Policy');
+                    if (csp) {
+                        addResult(`CSP: ${csp.substring(0, 100)}...`, 'info');
+                    }
+
+                    // Determine file type
+                    if (contentType === 'application/pdf') {
+                        addResult('📄 PDF file detected - can be previewed directly', 'success');
+                        pdfViewer.src = streamUrl;
+                        pdfContainer.classList.remove('hidden');
+                    } else if (contentType.startsWith('image/')) {
+                        addResult('🖼️ Image file detected - can be previewed directly', 'success');
+                    } else if (contentType.startsWith('text/')) {
+                        addResult('📄 Text file detected - can be previewed directly', 'success');
+                    } else if (contentType.includes('officedocument') || contentType.includes('presentation')) {
+                        addResult('📄 Office document detected - download required', 'info');
+                    } else {
+                        addResult(`📄 Unknown file type: ${contentType}`, 'info');
+                    }
+
+                } else {
+                    const errorText = await response.text();
+                    addResult(`❌ Request failed: ${errorText}`, 'error');
+                }
+
+            } catch (error) {
+                addResult(`❌ Test failed: ${error.message}`, 'error');
+                console.error(error);
+            }
+        }
+
+        async function testPDFPreview() {
+            clearResults();
+            const shareToken = document.getElementById('shareToken').value;
+            const password = document.getElementById('password').value;
+
+            if (!shareToken) {
+                addResult('Please enter a share token', 'error');
+                return;
+            }
+
+            const baseUrl = 'http://localhost:8000';
+            const streamUrl = `${baseUrl}/share/${shareToken}/stream${password ? `?password=${encodeURIComponent(password)}` : ''}`;
+
+            addResult('Testing PDF preview with streaming...', 'info');
+
+            try {
+                // First check if it's a PDF
+                const response = await fetch(streamUrl, {
+                    method: 'HEAD',
+                    mode: 'cors',
+                    credentials: 'include'
+                });
+
+                if (response.ok) {
+                    const contentType = response.headers.get('Content-Type');
+
+                    if (contentType === 'application/pdf') {
+                        addResult('✅ PDF detected, loading preview...', 'success');
+                        pdfViewer.src = streamUrl;
+                        pdfContainer.classList.remove('hidden');
+
+                        // Listen for load events
+                        pdfViewer.onload = () => {
+                            addResult('✅ PDF loaded successfully in iframe', 'success');
+                        };
+
+                        pdfViewer.onerror = () => {
+                            addResult('❌ Failed to load PDF in iframe', 'error');
+                        };
+
+                    } else {
+                        addResult(`❌ Not a PDF file: ${contentType}`, 'error');
+                    }
+                } else {
+                    addResult(`❌ Failed to check file type: ${response.status}`, 'error');
+                }
+
+            } catch (error) {
+                addResult(`❌ Test failed: ${error.message}`, 'error');
+                console.error(error);
+            }
+        }
+
+        // Load URL parameters if provided
+        window.onload = function() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const token = urlParams.get('token');
+            const pass = urlParams.get('password');
+
+            if (token) {
+                document.getElementById('shareToken').value = token;
+            }
+            if (pass) {
+                document.getElementById('password').value = pass;
+            }
+
+            if (token) {
+                addResult('Share token loaded from URL parameters', 'info');
+            }
+        };
+    </script>
+</body>
+</html>

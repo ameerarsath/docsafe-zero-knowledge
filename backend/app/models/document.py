@@ -137,6 +137,7 @@ class Document(Base):
     encryption_iv = Column(String(255))  # Initialization vector for encryption (base64 encoded)
     encryption_auth_tag = Column(String(255))  # Authentication tag for GCM mode (base64 encoded)
     ciphertext = Column(Text, nullable=True)  # Encrypted document content (base64 encoded)
+    salt = Column(String(255), nullable=True)  # Salt for key derivation (base64 encoded)
     is_encrypted = Column(Boolean, default=True, nullable=False)
     
     # Hierarchy and relationships
@@ -477,6 +478,7 @@ class DocumentShare(Base):
     allow_comment = Column(Boolean, default=False, nullable=False)
     require_password = Column(Boolean, default=False, nullable=False)
     password_hash = Column(String(100))  # Hashed password for protected shares
+    encryption_password = Column(String(255))  # Encryption password for server-side decryption of external shares
     
     # Temporal controls
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)

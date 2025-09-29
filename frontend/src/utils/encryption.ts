@@ -391,123 +391,27 @@ export async function decrypt(input: DecryptionInput): Promise<ArrayBuffer> {
   }
 
   try {
-    // Key fingerprint for debugging
-    const keyFingerprint = await (async () => {
-      try {
-        const raw = await crypto.subtle.exportKey('raw', input.key);
-        const hash = await crypto.subtle.digest('SHA-256', raw);
-        return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, '0')).join('');
-      } catch { return 'EXPORT_FAILED'; }
-    })();
-
-    // Convert and validate base64
     const ciphertext = base64ToUint8Array(input.ciphertext);
     const authTag = base64ToUint8Array(input.authTag);
     const iv = base64ToUint8Array(input.iv);
 
-    console.log('🔍 DECRYPT_VALIDATION:', {
-      keyFingerprint: keyFingerprint.substring(0, 16) + '...',
-      lengths: {
-        ciphertextB64: input.ciphertext.length,
-        ciphertext: ciphertext.length,
-        authTag: authTag.length,
-        iv: iv.length
-      },
-      hexPreview: {
-        ciphertext16: Array.from(ciphertext.slice(0, 16)).map(b => b.toString(16).padStart(2, '0')).join(' '),
-        authTag: Array.from(authTag).map(b => b.toString(16).padStart(2, '0')).join(' '),
-        iv: Array.from(iv).map(b => b.toString(16).padStart(2, '0')).join(' ')
-      }
-    });
+    // Manually combine ciphertext and authTag for decryption, which is the expected format.
+    const combined = new Uint8Array(ciphertext.length + authTag.length);
+    combined.set(ciphertext);
+    combined.set(authTag, ciphertext.length);
 
-    // CRITICAL TRUNCATION DETECTION
-    if (ciphertext.length <= ENCRYPTION_CONFIG.AUTH_TAG_LENGTH) {
-      console.error('❌ TRUNCATION_DETECTED:', {
-        ciphertextLength: ciphertext.length,
-        authTagLength: ENCRYPTION_CONFIG.AUTH_TAG_LENGTH,
-        base64Sample: input.ciphertext.substring(0, 50)
-      });
-      throw new DecryptionError(`TRUNCATION_DETECTED: Ciphertext too short (${ciphertext.length}B) - backend database field size limit exceeded`);
-    }
-
-    if (iv.length !== 12) throw new DecryptionError(`IV_INVALID: Expected 12B, got ${iv.length}B`);
-    if (authTag.length !== 16) throw new DecryptionError(`AUTHTAG_INVALID: Expected 16B, got ${authTag.length}B`);
-
-    // Method 1: Ciphertext as-is (may already include authTag)
-    try {
-      console.log('🔧 METHOD_1: Trying ciphertext as-is');
-      const result = await window.crypto.subtle.decrypt(
-        { name: 'AES-GCM', iv, tagLength: 128 },
-        input.key,
-        ciphertext.buffer
-      );
-      console.log('✅ METHOD_1_SUCCESS:', result.byteLength, 'bytes');
-      return result;
-    } catch (m1Error) {
-      console.warn('❌ METHOD_1_FAILED:', (m1Error as Error).name);
-    }
-
-    // Method 2: Manual combination
-    try {
-      console.log('🔧 METHOD_2: Manual ciphertext+authTag concat');
-      const combined = new Uint8Array(ciphertext.length + authTag.length);
-      combined.set(ciphertext);
-      combined.set(authTag, ciphertext.length);
-
-      const result = await window.crypto.subtle.decrypt(
-        { name: 'AES-GCM', iv, tagLength: 128 },
-        input.key,
-        combined.buffer
-      );
-      console.log('✅ METHOD_2_SUCCESS:', result.byteLength, 'bytes');
-      return result;
-    } catch (m2Error) {
-      console.error('❌ BOTH_METHODS_FAILED:', (m2Error as Error).name);
-
-      // Store detailed error for debugging
-      (window as any).lastDecryptionError = {
-        error: m2Error,
-        errorName: (m2Error as Error).name,
-        errorMessage: (m2Error as Error).message,
-        ciphertextLength: ciphertext.length,
-        authTagLength: authTag.length,
-        ivLength: iv.length,
-        ciphertextFirst16Bytes: Array.from(ciphertext.slice(0, 16)).map(b => b.toString(16).padStart(2, '0')).join(' '),
-        ciphertextLast16Bytes: Array.from(ciphertext.slice(-16)).map(b => b.toString(16).padStart(2, '0')).join(' '),
-        authTagBytes: Array.from(authTag).map(b => b.toString(16).padStart(2, '0')).join(' '),
-        ivBytes: Array.from(iv).map(b => b.toString(16).padStart(2, '0')).join(' '),
-        methodDetails: "ciphertext + authTag combined",
-        webCryptoDetails: {
-          algorithmSupported: 'crypto' in window && 'subtle' in window.crypto,
-          keyType: input.key?.type,
-          keyUsages: input.key?.usages,
-          keyExtractable: input.key?.extractable
-        }
-      };
-
-      throw new DecryptionError(`DECRYPT_FAILED: All methods failed. Key mismatch or data corruption.`);
-    }
+    const result = await window.crypto.subtle.decrypt(
+      { name: 'AES-GCM', iv, tagLength: 128 },
+      input.key,
+      combined.buffer
+    );
+    return result;
 
   } catch (error) {
-    if (error instanceof DecryptionError) throw error;
-
-    // Categorize different types of decryption errors
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    const lowerMessage = errorMessage.toLowerCase();
-
-    if (lowerMessage.includes('operation error') || lowerMessage.includes('authentication')) {
-      throw new AuthenticationError(`Authentication failed: The data has been tampered with or the wrong key was used. ${errorMessage}`);
-    }
-
-    if (lowerMessage.includes('invalid length') || lowerMessage.includes('truncated') || lowerMessage.includes('corrupted')) {
-      throw new CorruptionError(`Data corruption detected: The encrypted data appears to be incomplete or corrupted. ${errorMessage}`);
-    }
-
-    if (lowerMessage.includes('format') || lowerMessage.includes('base64') || lowerMessage.includes('encoding')) {
-      throw new UnsupportedFormatError(`Format error: The data format is not supported or is malformed. ${errorMessage}`);
-    }
-
-    throw new DecryptionError(`Decryption failed: ${errorMessage}`);
+    console.error('❌ DECRYPTION_FAILED:', (error as Error).name, (error as Error).message);
+    // This error is critical. It means the key is wrong, the data is corrupted,
+    // or the IV/authTag is incorrect. It should always fail loudly.
+    throw new DecryptionError(`Decryption failed. Key may be incorrect or data is corrupted.`);
   }
 }
 

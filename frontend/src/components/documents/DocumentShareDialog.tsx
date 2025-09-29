@@ -70,7 +70,7 @@ export const DocumentShareDialog: React.FC<DocumentShareDialogProps> = ({
 }) => {
   const [state, setState] = useState<ShareDialogState>({
     settings: {
-      shareType: 'internal',
+      shareType: 'external',
       permissions: ['read'],
       expiresAt: '',
       shareName: '',
@@ -177,17 +177,18 @@ export const DocumentShareDialog: React.FC<DocumentShareDialogProps> = ({
     console.log('🚀 Starting share creation...');
 
     try {
-      // Check if document is encrypted
+      // Check if document is encrypted and external sharing is requested
       const isEncrypted = EncryptedShareService.requiresDecryption(document);
+      let encryptionPassword: string | null = null;
 
-      if (isEncrypted) {
-        console.log('🔐 Document is encrypted, validating encryption password...');
+      if (isEncrypted && state.settings.shareType === 'external') {
+        console.log('🔐 Document is encrypted and external sharing requested, getting encryption password...');
 
         // Prompt for encryption password before share creation
-        const encryptionPassword = prompt('Enter encryption password to share this document:');
+        encryptionPassword = prompt('Enter encryption password to enable external sharing of this encrypted document:');
 
         if (!encryptionPassword) {
-          updateState({ isCreating: false, error: 'Encryption password is required to share this document.' });
+          updateState({ isCreating: false, error: 'Encryption password is required for external sharing of encrypted documents.' });
           return;
         }
 
@@ -253,20 +254,21 @@ export const DocumentShareDialog: React.FC<DocumentShareDialogProps> = ({
         }
 
         // Store encryption password for share creation (separate from share password)
-        updateState({
-          settings: {
-            ...state.settings,
-            encryptionPassword: encryptionPassword
-          }
-        });
+        // Don't update state - use local variable to avoid async state issues
       }
 
       // Create share with validated encryption password
       console.log('📡 Calling ShareService.createShare...');
 
+      // Use local settings with encryption password to avoid async state issues
+      const shareSettings = {
+        ...state.settings,
+        encryptionPassword: (isEncrypted && state.settings.shareType === 'external') ? encryptionPassword : undefined
+      };
+
       const response = await ShareService.createShare({
         documentId: document.id,
-        settings: state.settings
+        settings: shareSettings
       });
 
       console.log('✅ Share created successfully:', response);
@@ -307,13 +309,14 @@ export const DocumentShareDialog: React.FC<DocumentShareDialogProps> = ({
         });
       }
 
-      // Reset form
+      // Reset form but keep default permissions
       updateSettings({
         shareName: '',
         expiresAt: '',
         requirePassword: false,
         sharePassword: '',
-        maxAccess: null
+        maxAccess: null,
+        permissions: ['read'] // Always keep at least read permission
       });
 
     } catch (error) {
@@ -562,10 +565,9 @@ export const DocumentShareDialog: React.FC<DocumentShareDialogProps> = ({
                   <div className="flex items-start space-x-3">
                     <Shield className="w-5 h-5 text-blue-600 mt-0.5" />
                     <div>
-                      <h4 className="text-sm font-medium text-blue-900 mb-1">Encrypted Document</h4>
+                      <h4 className="text-sm font-medium text-blue-900 mb-1">Encrypted Document - External Sharing Available</h4>
                       <p className="text-sm text-blue-700">
-                        This document is encrypted. When shared, recipients will need appropriate access permissions
-                        to view the content.
+                        This document is encrypted. For external sharing, you will be prompted to provide the encryption password to enable server-side decryption for recipients.
                       </p>
                     </div>
                   </div>
@@ -598,8 +600,10 @@ export const DocumentShareDialog: React.FC<DocumentShareDialogProps> = ({
                 <div className="space-y-2">
                   {['internal', 'external'].map(type => {
                     const info = getShareTypeInfo(type);
+                    const isEncrypted = EncryptedShareService.requiresDecryption(document);
+                    
                     return (
-                      <label key={type} className="flex items-center p-3 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50">
+                      <label key={type} className="flex items-center p-3 border rounded-lg border-gray-200 cursor-pointer hover:bg-gray-50">
                         <input
                           type="radio"
                           name="shareType"
@@ -613,7 +617,10 @@ export const DocumentShareDialog: React.FC<DocumentShareDialogProps> = ({
                         </div>
                         <div>
                           <div className="font-medium text-gray-900">{info.label}</div>
-                          <div className="text-sm text-gray-500">{info.description}</div>
+                          <div className="text-sm text-gray-500">
+                            {info.description}
+                            {isEncrypted && type === 'external' && ' (Requires encryption password)'}
+                          </div>
                         </div>
                       </label>
                     );

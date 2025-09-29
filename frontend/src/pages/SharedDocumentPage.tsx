@@ -5,7 +5,7 @@
  * Handles different share types (internal, external, public) and permissions
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   FileText,
@@ -22,7 +22,7 @@ import {
 } from 'lucide-react';
 import { DocumentPreview } from '../components/documents/DocumentPreview';
 import { SharedDocumentPreview } from '../components/documents/SharedDocumentPreview';
-import SecurePreviewOnly from '../components/documents/SecurePreviewOnly';
+// import SecurePreviewOnly from '../components/documents/SecurePreviewOnly';
 import { ShareService, ShareAccessResponse } from '../services/api/shares';
 import { EncryptedShareService, SharedDocumentAccess } from '../services/encryptedShareService';
 
@@ -62,6 +62,24 @@ export const SharedDocumentPage: React.FC = () => {
 
   const [password, setPassword] = useState('');
   const [showPreview, setShowPreview] = useState(false);
+
+  const { shareData } = state;
+
+  const documentMemo = useMemo(() => {
+    if (!shareData) return null;
+    return {
+      id: shareData.document.id,
+      name: shareData.document.name,
+      mime_type: shareData.document.mime_type,
+      file_size: shareData.document.file_size
+    };
+  }, [shareData]);
+
+  const permissionsMemo = useMemo(() => {
+    if (!shareData) return [];
+    return shareData.permissions;
+  }, [shareData]);
+
 
   /**
    * Update state helper
@@ -505,7 +523,7 @@ export const SharedDocumentPage: React.FC = () => {
   }
 
   // Document access granted - show document viewer
-  if (state.accessGranted && state.shareData) {
+  if (state.accessGranted && state.shareData && documentMemo && permissionsMemo) {
     const { document, permissions, shareInfo } = state.shareData;
     const shareTypeInfo = getShareTypeInfo(shareInfo.shareType);
     const expired = isExpired(shareInfo.expiresAt);
@@ -593,49 +611,20 @@ export const SharedDocumentPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Document Preview - Smart Component Selection */}
+        {/* Document Preview */}
         {showPreview && permissions.includes('read') && shareToken && (
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-8">
-            {permissions.includes('download') ? (
-              // Full preview with download capability
-              <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-                <SharedDocumentPreview
-                  shareToken={shareToken}
-                  document={{
-                    id: document.id,
-                    name: document.name,
-                    mime_type: document.mime_type,
-                    file_size: document.file_size
-                  }}
-                  isOpen={true}
-                  onClose={() => setShowPreview(false)}
-                  onDownload={() => handleDownload()}
-                  sharePassword={password}
-                  permissions={permissions}
-                />
-              </div>
-            ) : (
-              // Secure view-only preview (no download capability)
-              <SecurePreviewOnly
+            <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+              <SharedDocumentPreview
                 shareToken={shareToken}
-                document={{
-                  id: document.id,
-                  name: document.name,
-                  mime_type: document.mime_type,
-                  file_size: document.file_size
-                }}
+                document={documentMemo}
                 isOpen={true}
                 onClose={() => setShowPreview(false)}
+                onDownload={permissions.includes('download') ? () => handleDownload() : undefined}
                 sharePassword={password}
-                permissions={permissions}
-                securityConfig={{
-                  maxPreviewTime: 20 * 60 * 1000, // 20 minutes for view-only
-                  enableAntiBypass: true,
-                  enableWatermarking: true,
-                  auditLogging: true
-                }}
+                permissions={permissionsMemo}
               />
-            )}
+            </div>
           </div>
         )}
       </div>
