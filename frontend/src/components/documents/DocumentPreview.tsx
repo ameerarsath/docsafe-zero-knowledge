@@ -88,7 +88,12 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
   const [showShareDialog, setShowShareDialog] = useState(false);
   
   // Use encryption hook for decryption
-  const { decryptDownloadedFile, keys } = useEncryption();
+  const {
+    decryptDownloadedFile,
+    keys,
+    currentKey,
+    deriveUserKey
+  } = useEncryption();
 
 
   /**
@@ -425,8 +430,76 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
               setShowPasswordDialog(false);
               return;
             } else if (hasZeroKnowledgeEncryption) {
-              console.log('🔄 Zero-knowledge encrypted PDF - fallback to non-encrypted preview');
-              throw new Error('Zero-knowledge encryption not supported for PDF preview yet');
+              console.log('🔄 Decrypting PDF with zero-knowledge encryption...');
+
+              // Import new decryption helper
+              const { decryptDocumentZeroKnowledge } = await import('../../utils/documentDecryption');
+
+              // CRITICAL FIX: Use the ORIGINAL encryption key (not current/active key)
+              const encryptionKeyId = currentDocument.encryption_key_id;
+              console.log('🔑 PDF: Looking for encryption key:', encryptionKeyId);
+
+              if (!encryptionKeyId) {
+                updateState({
+                  isDecrypting: false,
+                  isGeneratingPreview: false,
+                  isLoading: false,
+                  error: '🔑 Document encryption metadata incomplete. The encryption key ID is missing.'
+                });
+                return;
+              }
+
+              const keyData = keys?.find(k => k.keyId === encryptionKeyId);
+
+              if (!keyData) {
+                console.error('❌ PDF: Encryption key not found:', encryptionKeyId);
+                updateState({
+                  isDecrypting: false,
+                  isGeneratingPreview: false,
+                  isLoading: false,
+                  error: `🔑 Encryption key "${encryptionKeyId}" not found. Please ensure you have access to the key used to encrypt this document.`
+                });
+                return;
+              }
+
+              const userSalt = keyData.salt;
+              console.log('✅ PDF: Found encryption key salt for decryption');
+
+              // Decrypt using new helper
+              const decryptionResult = await decryptDocumentZeroKnowledge({
+                encryptedBlob,
+                document: currentDocument,
+                encryptionPassword,
+                userSalt
+              });
+
+              console.log('✅ PDF decrypted successfully with zero-knowledge encryption');
+
+              const pluginOptions = {
+                metadata: {
+                  modifiedDate: currentDocument.updated_at ? new Date(currentDocument.updated_at).toLocaleDateString() : new Date().toLocaleDateString()
+                }
+              };
+              const previewResult = await getDocumentPreview(
+                decryptionResult.decryptedBlob,
+                currentDocument.name,
+                currentDocument.mime_type || 'application/pdf',
+                pluginOptions
+              );
+              updateState({
+                pluginResult: previewResult,
+                content: previewResult.format === 'html' ? previewResult.content : null
+              });
+
+              updateState({
+                isDecrypting: false,
+                needsPassword: false,
+                decryptedBlob: decryptionResult.decryptedBlob,
+                decryptedDocumentId: currentDocument.id
+              });
+
+              setShowPasswordDialog(false);
+              return;
             }
 
           } catch (decryptionError) {
@@ -484,7 +557,7 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
         // Try client-side decryption first to bypass server temp file issues
         if (hasLegacyEncryption) {
           try {
-            console.log('🔄 Attempting client-side decryption for non-PDF...');
+            console.log('🔄 Attempting client-side decryption for non-PDF (legacy)...');
 
             const encryptedData = await encryptedBlob.arrayBuffer();
             const decryptionMetadata = {
@@ -496,7 +569,7 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
             };
 
             const decryptedFile = await decryptDownloadedFile(encryptedData, decryptionMetadata, encryptionPassword);
-            console.log('✅ Client-side decryption successful for non-PDF');
+            console.log('✅ Client-side decryption successful for non-PDF (legacy)');
 
             // Use client-side plugin processing with document metadata
             const pluginOptions = {
@@ -534,6 +607,101 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
               updateState({
                 isDecrypting: false,
                 error: '🔑 Incorrect password. Please check your password and try again.'
+              });
+              return;
+            }
+          }
+        } else if (hasZeroKnowledgeEncryption) {
+          try {
+            console.log('🔄 Attempting client-side decryption for non-PDF (zero-knowledge)...');
+
+            // Import new decryption helper
+            const { decryptDocumentZeroKnowledge } = await import('../../utils/documentDecryption');
+
+            // CRITICAL FIX: Use the ORIGINAL encryption key (not current/active key)
+            // The document was encrypted with a specific key - we MUST use that same key's salt
+            const encryptionKeyId = currentDocument.encryption_key_id;
+            console.log('🔑 Looking for encryption key:', encryptionKeyId);
+
+            if (!encryptionKeyId) {
+              console.error('❌ Document missing encryption_key_id - cannot decrypt');
+              updateState({
+                isDecrypting: false,
+                error: '🔑 Document encryption metadata incomplete. The encryption key ID is missing. This document may have been uploaded incorrectly.'
+              });
+              return;
+            }
+
+            // Find the specific encryption key used to encrypt this document
+            const keyData = keys?.find(k => k.keyId === encryptionKeyId);
+
+            if (!keyData) {
+              console.error('❌ Encryption key not found:', encryptionKeyId);
+              console.log('📋 Available keys:', keys?.map(k => ({ id: k.keyId, isActive: k.isActive })));
+
+              updateState({
+                isDecrypting: false,
+                error: `🔑 Encryption key not found. This document was encrypted with key "${encryptionKeyId}" which is not available in your account. You may need to restore this key or contact your administrator.`
+              });
+              return;
+            }
+
+            const userSalt = keyData.salt;
+            console.log('✅ Found encryption key salt for decryption');
+
+            // Decrypt using new helper
+            const decryptionResult = await decryptDocumentZeroKnowledge({
+              encryptedBlob,
+              document: currentDocument,
+              encryptionPassword,
+              userSalt
+            });
+
+            console.log('✅ Client-side decryption successful for non-PDF (zero-knowledge)');
+
+            // Use client-side plugin processing with document metadata
+            const pluginOptions = {
+              metadata: {
+                modifiedDate: currentDocument.updated_at ? new Date(currentDocument.updated_at).toLocaleDateString() : new Date().toLocaleDateString()
+              }
+            };
+            const previewResult = await getDocumentPreview(
+              decryptionResult.decryptedBlob,
+              currentDocument.name,
+              currentDocument.mime_type || 'application/octet-stream',
+              pluginOptions
+            );
+
+            // Process plugin result similar to generatePluginPreview
+            updateState({
+              pluginResult: previewResult,
+              content: previewResult.format === 'html' ? previewResult.content : null,
+              isGeneratingPreview: false,
+              isLoading: false,
+              isDecrypting: false,
+              needsPassword: false,
+              decryptedBlob: decryptionResult.decryptedBlob,
+              decryptedDocumentId: currentDocument.id,
+              error: null
+            });
+
+            setShowPasswordDialog(false);
+            return;
+
+          } catch (clientDecryptError) {
+            console.warn('⚠️ Client-side zero-knowledge decryption failed, attempting server fallback:', clientDecryptError);
+
+            // Check if this is a password/key error that should stop the flow
+            const errorMessage = clientDecryptError.message?.toLowerCase() || '';
+            if (errorMessage.includes('wrong password') ||
+                errorMessage.includes('authentication failed') ||
+                errorMessage.includes('invalid password') ||
+                errorMessage.includes('failed to decrypt dek') ||
+                errorMessage.includes('incorrect password')) {
+              // Don't attempt fallback for password/key errors - show immediately
+              updateState({
+                isDecrypting: false,
+                error: '🔑 Decryption failed. Please check:\n• Your password is correct\n• You have access to the encryption key used for this document\n• The document hasn\'t been corrupted'
               });
               return;
             }
@@ -600,6 +768,18 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
 
         } catch (previewError) {
           console.error('❌ Both client-side and server-side processing failed:', previewError);
+
+          // Handle 401 authentication errors specifically
+          if (previewError.response?.status === 401 || previewError.code === 'ERR_BAD_REQUEST') {
+            updateState({
+              isDecrypting: false,
+              isGeneratingPreview: false,
+              isLoading: false,
+              error: '🔐 Authentication failed. Your session may have expired. Please refresh the page and try again.'
+            });
+            return;
+          }
+
           // Continue to general client-side processing below
         }
       }
