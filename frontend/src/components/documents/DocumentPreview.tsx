@@ -439,17 +439,80 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
               const encryptionKeyId = currentDocument.encryption_key_id;
               console.log('🔑 PDF: Looking for encryption key:', encryptionKeyId);
 
+              let keyData: any = null;
+              let userSalt: string | undefined;
+
               if (!encryptionKeyId) {
-                updateState({
-                  isDecrypting: false,
-                  isGeneratingPreview: false,
-                  isLoading: false,
-                  error: '🔑 Document encryption metadata incomplete. The encryption key ID is missing.'
-                });
-                return;
+                // FALLBACK: For legacy PDFs without encryption_key_id, try all available keys
+                console.warn('⚠️ PDF: Document missing encryption_key_id - attempting fallback');
+
+                if (!keys || keys.length === 0) {
+                  updateState({
+                    isDecrypting: false,
+                    isGeneratingPreview: false,
+                    isLoading: false,
+                    error: '🔑 No encryption keys available.'
+                  });
+                  return;
+                }
+
+                // Try all available keys
+                const keysToTry = [currentKey, keys.find(k => k.isActive), ...keys].filter(Boolean);
+                let decryptionSuccess = false;
+
+                for (const tryKey of keysToTry) {
+                  try {
+                    const { decryptDocumentZeroKnowledge } = await import('../../utils/documentDecryption');
+                    const decryptionResult = await decryptDocumentZeroKnowledge({
+                      encryptedBlob,
+                      document: currentDocument,
+                      encryptionPassword,
+                      userSalt: tryKey.salt
+                    });
+
+                    console.log(`✅ PDF decrypted successfully with key: ${tryKey.keyId}`);
+
+                    const pluginOptions = {
+                      metadata: {
+                        modifiedDate: currentDocument.updated_at ? new Date(currentDocument.updated_at).toLocaleDateString() : new Date().toLocaleDateString()
+                      }
+                    };
+                    const previewResult = await getDocumentPreview(
+                      decryptionResult.decryptedBlob,
+                      currentDocument.name,
+                      currentDocument.mime_type || 'application/pdf',
+                      pluginOptions
+                    );
+
+                    updateState({
+                      pluginResult: previewResult,
+                      content: previewResult.format === 'html' ? previewResult.content : null,
+                      isDecrypting: false,
+                      needsPassword: false,
+                      decryptedBlob: decryptionResult.decryptedBlob,
+                      decryptedDocumentId: currentDocument.id
+                    });
+
+                    setShowPasswordDialog(false);
+                    decryptionSuccess = true;
+                    return;
+                  } catch (tryError) {
+                    console.warn(`❌ PDF: Key ${tryKey.keyId} failed`);
+                  }
+                }
+
+                if (!decryptionSuccess) {
+                  updateState({
+                    isDecrypting: false,
+                    isGeneratingPreview: false,
+                    isLoading: false,
+                    error: `🔑 Unable to decrypt PDF with any available key.`
+                  });
+                  return;
+                }
               }
 
-              const keyData = keys?.find(k => k.keyId === encryptionKeyId);
+              keyData = keys?.find(k => k.keyId === encryptionKeyId);
 
               if (!keyData) {
                 console.error('❌ PDF: Encryption key not found:', encryptionKeyId);
@@ -462,7 +525,7 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
                 return;
               }
 
-              const userSalt = keyData.salt;
+              userSalt = keyData.salt;
               console.log('✅ PDF: Found encryption key salt for decryption');
 
               // Decrypt using new helper
@@ -623,17 +686,90 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
             const encryptionKeyId = currentDocument.encryption_key_id;
             console.log('🔑 Looking for encryption key:', encryptionKeyId);
 
+            let keyData: any = null;
+            let userSalt: string | undefined;
+
             if (!encryptionKeyId) {
-              console.error('❌ Document missing encryption_key_id - cannot decrypt');
+              // FALLBACK: For legacy documents without encryption_key_id, try all available keys
+              console.warn('⚠️ Document missing encryption_key_id - attempting fallback with all keys');
+
+              if (!keys || keys.length === 0) {
+                updateState({
+                  isDecrypting: false,
+                  error: '🔑 No encryption keys available. Please ensure you have at least one encryption key configured.'
+                });
+                return;
+              }
+
+              // Try keys in order: current/active first, then others
+              const keysToTry = [
+                currentKey,
+                keys.find(k => k.isActive),
+                ...keys.filter(k => k.keyId !== currentKey?.keyId && !k.isActive)
+              ].filter(Boolean);
+
+              console.log(`🔄 Attempting decryption with ${keysToTry.length} available keys...`);
+
+              for (const tryKey of keysToTry) {
+                try {
+                  console.log(`🔑 Trying key: ${tryKey.keyId}`);
+                  const { decryptDocumentZeroKnowledge } = await import('../../utils/documentDecryption');
+
+                  const decryptionResult = await decryptDocumentZeroKnowledge({
+                    encryptedBlob,
+                    document: currentDocument,
+                    encryptionPassword,
+                    userSalt: tryKey.salt
+                  });
+
+                  console.log(`✅ Successfully decrypted with key: ${tryKey.keyId}`);
+                  keyData = tryKey;
+                  userSalt = tryKey.salt;
+
+                  // Success! Process the result and return
+                  const pluginOptions = {
+                    metadata: {
+                      modifiedDate: currentDocument.updated_at ? new Date(currentDocument.updated_at).toLocaleDateString() : new Date().toLocaleDateString()
+                    }
+                  };
+                  const previewResult = await getDocumentPreview(
+                    decryptionResult.decryptedBlob,
+                    currentDocument.name,
+                    currentDocument.mime_type || 'application/octet-stream',
+                    pluginOptions
+                  );
+
+                  updateState({
+                    pluginResult: previewResult,
+                    content: previewResult.format === 'html' ? previewResult.content : null,
+                    isGeneratingPreview: false,
+                    isLoading: false,
+                    isDecrypting: false,
+                    needsPassword: false,
+                    decryptedBlob: decryptionResult.decryptedBlob,
+                    decryptedDocumentId: currentDocument.id,
+                    error: null
+                  });
+
+                  setShowPasswordDialog(false);
+                  return; // Successfully decrypted!
+
+                } catch (tryError) {
+                  console.warn(`❌ Key ${tryKey.keyId} failed:`, tryError.message);
+                  // Continue to next key
+                }
+              }
+
+              // All keys failed
               updateState({
                 isDecrypting: false,
-                error: '🔑 Document encryption metadata incomplete. The encryption key ID is missing. This document may have been uploaded incorrectly.'
+                error: `🔑 Unable to decrypt document with any available key. Tried ${keysToTry.length} keys. Please verify:\n• Your password is correct\n• You have the encryption key used for this document\n• The document hasn't been corrupted`
               });
               return;
             }
 
             // Find the specific encryption key used to encrypt this document
-            const keyData = keys?.find(k => k.keyId === encryptionKeyId);
+            keyData = keys?.find(k => k.keyId === encryptionKeyId);
 
             if (!keyData) {
               console.error('❌ Encryption key not found:', encryptionKeyId);
@@ -646,7 +782,7 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
               return;
             }
 
-            const userSalt = keyData.salt;
+            userSalt = keyData.salt;
             console.log('✅ Found encryption key salt for decryption');
 
             // Decrypt using new helper
