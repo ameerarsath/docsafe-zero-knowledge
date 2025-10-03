@@ -28,6 +28,7 @@ export interface DecryptionParams {
   document: Document;
   encryptionPassword: string;
   userSalt?: string; // User's encryption key salt (if not in document)
+  iterations?: number; // PBKDF2 iterations (CRITICAL: must match encryption!)
 }
 
 export interface DecryptionResult {
@@ -279,7 +280,7 @@ async function decryptDocumentWithDEK(
 export async function decryptDocumentZeroKnowledge(
   params: DecryptionParams
 ): Promise<DecryptionResult> {
-  const { encryptedBlob, document, encryptionPassword, userSalt } = params;
+  const { encryptedBlob, document, encryptionPassword, userSalt, iterations } = params;
 
   console.log('🚀 Starting zero-knowledge document decryption...');
   console.log(`📄 Document: ${document.name} (ID: ${document.id})`);
@@ -309,6 +310,11 @@ export async function decryptDocumentZeroKnowledge(
       );
     }
 
+    // Use provided iterations or default to 100000
+    // CRITICAL: This must match the iterations used during encryption!
+    const kekIterations = iterations || 100000;
+    console.log(`🔑 Using ${kekIterations} PBKDF2 iterations for KEK derivation`);
+
     console.log('✅ All required metadata present');
 
     // Step 1: Unwrap DEK
@@ -316,7 +322,8 @@ export async function decryptDocumentZeroKnowledge(
     const dek = await unwrapDEK(
       document.encrypted_dek,
       encryptionPassword,
-      salt
+      salt,
+      kekIterations  // CRITICAL FIX: Pass iterations!
     );
 
     // Step 2: Read encrypted file

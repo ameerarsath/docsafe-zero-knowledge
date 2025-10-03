@@ -467,7 +467,8 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
                       encryptedBlob,
                       document: currentDocument,
                       encryptionPassword,
-                      userSalt: tryKey.salt
+                      userSalt: tryKey.salt,
+                      iterations: tryKey.iterations  // CRITICAL FIX: Use key's iterations!
                     });
 
                     console.log(`✅ PDF decrypted successfully with key: ${tryKey.keyId}`);
@@ -533,7 +534,8 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
                 encryptedBlob,
                 document: currentDocument,
                 encryptionPassword,
-                userSalt
+                userSalt,
+                iterations: keyData.iterations  // CRITICAL FIX: Pass iterations from encryption key!
               });
 
               console.log('✅ PDF decrypted successfully with zero-knowledge encryption');
@@ -727,7 +729,8 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
                     encryptedBlob,
                     document: currentDocument,
                     encryptionPassword,
-                    userSalt: tryKey.salt
+                    userSalt: tryKey.salt,
+                    iterations: tryKey.iterations  // CRITICAL FIX: Use key's iterations!
                   });
 
                   console.log(`✅ Successfully decrypted with key: ${tryKey.keyId}`);
@@ -817,7 +820,8 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
               encryptedBlob,
               document: currentDocument,
               encryptionPassword,
-              userSalt
+              userSalt,
+              iterations: keyData.iterations  // CRITICAL FIX: Pass iterations from encryption key!
             });
 
             console.log('✅ Client-side decryption successful for non-PDF (zero-knowledge)');
