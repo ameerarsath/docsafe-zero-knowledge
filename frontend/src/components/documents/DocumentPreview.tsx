@@ -713,6 +713,14 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
               for (const tryKey of keysToTry) {
                 try {
                   console.log(`🔑 Trying key: ${tryKey.keyId}`);
+                  console.log(`🔍 Key Details:`, {
+                    keyId: tryKey.keyId,
+                    iterations: tryKey.iterations,
+                    saltLength: tryKey.salt?.length,
+                    saltPreview: tryKey.salt?.substring(0, 20) + '...',
+                    isActive: tryKey.isActive
+                  });
+
                   const { decryptDocumentZeroKnowledge } = await import('../../utils/documentDecryption');
 
                   const decryptionResult = await decryptDocumentZeroKnowledge({
@@ -784,6 +792,25 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
 
             userSalt = keyData.salt;
             console.log('✅ Found encryption key salt for decryption');
+
+            // DEBUG: Log decryption parameters for comparison
+            console.log('🔍 ========== DECRYPTION PARAMETERS (DEBUG) ==========');
+            console.log('🔍 Document Info:', {
+              id: currentDocument.id,
+              name: currentDocument.name,
+              encryption_key_id: currentDocument.encryption_key_id,
+              has_encrypted_dek: !!currentDocument.encrypted_dek,
+              encrypted_dek_length: currentDocument.encrypted_dek?.length
+            });
+            console.log('🔍 Using Encryption Key:', {
+              keyId: keyData.keyId,
+              algorithm: keyData.algorithm,
+              iterations: keyData.iterations,
+              saltLength: keyData.salt?.length,
+              saltPreview: keyData.salt?.substring(0, 20) + '...',
+              isActive: keyData.isActive
+            });
+            console.log('🔍 Password length:', encryptionPassword.length);
 
             // Decrypt using new helper
             const decryptionResult = await decryptDocumentZeroKnowledge({

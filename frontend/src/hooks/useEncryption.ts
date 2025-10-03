@@ -29,6 +29,16 @@ import {
   uint8ArrayToBase64
 } from '../utils/encryption';
 
+// Helper function to convert ArrayBuffer to base64
+function arrayBufferToBase64(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  for (let i = 0; i < bytes.byteLength; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
+}
+
 // Types
 export interface EncryptionKey {
   keyId: string;
@@ -54,6 +64,7 @@ export interface FileEncryptionResult {
   encryptedFile: File;
   encryptionMetadata: {
     keyId: string;
+    dek: string; // Encrypted Document Encryption Key (base64 JSON)
     iv: string;
     authTag: string;
     algorithm: string;
@@ -405,10 +416,10 @@ export function useEncryption(options?: { loadKeysOnMount?: boolean }): UseEncry
   }, [user, deriveUserKey]);
 
   /**
-   * Encrypt file for upload
+   * Encrypt file for upload (Zero-Knowledge with DEK-per-document)
    */
   const encryptFileForUpload = useCallback(async (
-    file: File, 
+    file: File,
     password: string,
     onProgress?: (progress: number) => void,
     keyOverride?: EncryptionKey
@@ -419,49 +430,109 @@ export function useEncryption(options?: { loadKeysOnMount?: boolean }): UseEncry
     }
 
     try {
-      // Starting file encryption for upload
+      console.log('[ENCRYPT] Starting zero-knowledge encryption for file:', file.name);
+      console.log('[ENCRYPT] ========== ENCRYPTION PARAMETERS (DEBUG) ==========');
+      console.log('[ENCRYPT] Encryption Key Details:', {
+        keyId: keyToUse.keyId,
+        algorithm: keyToUse.algorithm,
+        iterations: keyToUse.iterations,
+        saltLength: keyToUse.salt?.length,
+        saltPreview: keyToUse.salt?.substring(0, 20) + '...',
+        isActive: keyToUse.isActive
+      });
+      console.log('[ENCRYPT] Password length:', password.length);
 
-      const derivedKey = await deriveUserKey(password, keyToUse);
-      // Derived encryption key successfully
-      
-      const encryptionResult = await encryptFile(file, derivedKey, onProgress);
-      // File encrypted successfully
-      
-      const ciphertextBytes = base64ToUint8Array(encryptionResult.ciphertext);
-      const authTagBytes = base64ToUint8Array(encryptionResult.authTag);
-      
-      // Creating encrypted blob
-      
-      const encryptedBlob = new Blob([ciphertextBytes as any, authTagBytes as any]);
+      // Step 1: Generate a unique DEK (Document Encryption Key) for this document
+      const dek = crypto.getRandomValues(new Uint8Array(32)); // 256-bit DEK
+      const dekCryptoKey = await crypto.subtle.importKey(
+        'raw',
+        dek,
+        'AES-GCM',
+        false,
+        ['encrypt']
+      );
+
+      // Step 2: Encrypt the file with the DEK
+      const fileBuffer = await file.arrayBuffer();
+      const iv = crypto.getRandomValues(new Uint8Array(12)); // 96-bit IV for AES-GCM
+
+      const encryptedContent = await crypto.subtle.encrypt(
+        {
+          name: 'AES-GCM',
+          iv: iv
+        },
+        dekCryptoKey,
+        fileBuffer
+      );
+
+      const encryptedArray = new Uint8Array(encryptedContent);
+
+      // Step 3: Extract auth tag from the encrypted data (last 16 bytes for AES-GCM)
+      const authTagLength = 16;
+      const ciphertext = encryptedArray.slice(0, encryptedArray.length - authTagLength);
+      const authTag = encryptedArray.slice(encryptedArray.length - authTagLength);
+
+      // Step 4: Encrypt the DEK with the user's master key (derived from password)
+      const masterKey = await deriveUserKey(password, keyToUse);
+      const dekIv = crypto.getRandomValues(new Uint8Array(12)); // New IV for DEK encryption
+
+      const encryptedDek = await crypto.subtle.encrypt(
+        {
+          name: 'AES-GCM',
+          iv: dekIv
+        },
+        masterKey,
+        dek
+      );
+
+      const encryptedDekArray = new Uint8Array(encryptedDek);
+
+      // Step 5: Extract auth tag for encrypted DEK
+      const dekCiphertext = encryptedDekArray.slice(0, encryptedDekArray.length - authTagLength);
+      const dekAuthTag = encryptedDekArray.slice(encryptedDekArray.length - authTagLength);
+
+      // Step 6: Create encrypted file (ciphertext + auth tag for file content)
+      const encryptedBlob = new Blob([ciphertext, authTag]);
       const encryptedFile = new File([encryptedBlob], `${file.name}.enc`, {
         type: 'application/octet-stream'
       });
 
-      // Final encrypted file created
-
-      const metadata = {
-        keyId: keyToUse.keyId,
-        iv: encryptionResult.iv,
-        authTag: encryptionResult.authTag,
-        algorithm: encryptionResult.algorithm,
-        originalSize: encryptionResult.originalSize,
-        encryptedSize: encryptionResult.encryptedSize
+      // Step 7: Prepare encrypted DEK metadata as JSON
+      const encryptedDekJson = {
+        ciphertext: arrayBufferToBase64(dekCiphertext.buffer),
+        iv: arrayBufferToBase64(dekIv.buffer),
+        authTag: arrayBufferToBase64(dekAuthTag.buffer),
+        algorithm: 'AES-256-GCM'
       };
 
-      // Encryption metadata prepared
+      // Step 8: Prepare metadata for backend
+      const metadata = {
+        keyId: keyToUse.keyId,
+        dek: btoa(JSON.stringify(encryptedDekJson)), // Encrypted DEK as base64 JSON string
+        iv: arrayBufferToBase64(iv.buffer), // IV for file encryption
+        authTag: arrayBufferToBase64(authTag.buffer), // Auth tag for file encryption
+        algorithm: 'AES-256-GCM',
+        originalSize: file.size,
+        encryptedSize: encryptedFile.size
+      };
+
+      console.log('[ENCRYPT] Zero-knowledge encryption completed successfully');
+      console.log('[ENCRYPT] Original size:', file.size);
+      console.log('[ENCRYPT] Encrypted size:', encryptedFile.size);
+      console.log('[ENCRYPT] Encrypted DEK length:', encryptedDekJson.ciphertext.length);
 
       return {
         encryptedFile,
         encryptionMetadata: metadata
       };
     } catch (error) {
-      // File encryption failed
+      console.error('[ENCRYPT] File encryption failed:', error);
       throw new EncryptionError(
         `File encryption failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
         'FILE_ENCRYPTION_FAILED'
       );
     }
-  }, [deriveUserKey]);
+  }, [state.currentKey, deriveUserKey]);
 
 
   /**
