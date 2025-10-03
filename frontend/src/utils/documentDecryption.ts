@@ -205,10 +205,20 @@ async function decryptDocumentWithDEK(
     let authTagBytes: Uint8Array;
 
     if (authTag) {
-      // Auth tag provided separately
+      // Auth tag provided separately in metadata
       console.log('📋 Using separate auth tag from metadata');
       authTagBytes = base64ToUint8Array(authTag);
-      ciphertext = encryptedArray;
+
+      // CRITICAL FIX: The encrypted file still has the auth tag appended!
+      // We need to strip it off before using metadata auth tag
+      const authTagLength = authTagBytes.length;  // Should be 16 bytes
+      if (encryptedArray.length > authTagLength) {
+        console.log(`🔧 Stripping ${authTagLength}-byte auth tag from encrypted data`);
+        ciphertext = encryptedArray.slice(0, encryptedArray.length - authTagLength);
+      } else {
+        console.warn('⚠️ Encrypted data too small to contain embedded auth tag, using as-is');
+        ciphertext = encryptedArray;
+      }
     } else {
       // Auth tag appended to ciphertext (last 16 bytes for AES-GCM)
       const authTagLength = 16;
