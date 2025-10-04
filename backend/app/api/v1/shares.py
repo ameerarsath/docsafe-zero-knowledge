@@ -981,6 +981,7 @@ async def preview_shared_document(
 
                             headers = {
                                 "Content-Length": str(len(decrypted_data)),
+                                "Content-Disposition": f'inline; filename="{document.name}"',
                                 "X-Document-Name": document.name,
                                 "X-Share-Token": share_token,
                                 "Cache-Control": "no-cache, no-store, must-revalidate",
@@ -1021,6 +1022,7 @@ async def preview_shared_document(
                 # Build headers - only include encryption metadata if available
                 headers = {
                     "Content-Length": str(len(encrypted_file_data)),
+                    "Content-Disposition": f'inline; filename="{document.name}"',
                     "X-Document-Name": document.name,
                     "X-Share-Token": share_token,
                     "Cache-Control": "no-cache, no-store, must-revalidate",
@@ -1077,6 +1079,7 @@ async def preview_shared_document(
 
             headers = {
                 "Content-Length": str(len(file_data)),
+                "Content-Disposition": f'inline; filename="{document.name}"',
                 "X-Document-Name": document.name,
                 "X-Share-Token": share_token,
                 "Cache-Control": "no-cache, no-store, must-revalidate",
