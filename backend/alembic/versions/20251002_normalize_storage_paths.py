@@ -36,7 +36,7 @@ def upgrade() -> None:
     """)
 
     # Log the update
-    print("✅ Normalized storage paths to POSIX format (forward slashes)")
+    print("[OK] Normalized storage paths to POSIX format (forward slashes)")
 
 
 def downgrade() -> None:
