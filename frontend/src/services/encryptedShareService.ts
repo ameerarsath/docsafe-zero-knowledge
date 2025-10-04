@@ -281,9 +281,31 @@ export class EncryptedShareService {
 
   /**
    * Check if a document requires decryption for sharing
+   * Checks for BOTH legacy encryption (encryption_key_id + encryption_iv)
+   * AND zero-knowledge encryption (encrypted_dek)
    */
   static requiresDecryption(document: Document): boolean {
-    return !!(document.encryption_key_id && document.encryption_iv);
+    // Legacy encryption check
+    const hasLegacyEncryption = !!(document.encryption_key_id && document.encryption_iv);
+
+    // Zero-knowledge encryption check
+    const hasZeroKnowledgeEncryption = !!(document.encrypted_dek);
+
+    // Document is encrypted if it has either type of encryption
+    const isEncrypted = hasLegacyEncryption || hasZeroKnowledgeEncryption;
+
+    console.log('🔍 DIAGNOSTIC - requiresDecryption check:', {
+      documentId: document.id,
+      documentName: document.name,
+      hasLegacyEncryption,
+      hasZeroKnowledgeEncryption,
+      isEncrypted,
+      encryption_key_id: document.encryption_key_id,
+      encryption_iv: document.encryption_iv ? 'present' : 'missing',
+      encrypted_dek: document.encrypted_dek ? 'present' : 'missing'
+    });
+
+    return isEncrypted;
   }
 
   /**

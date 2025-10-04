@@ -224,20 +224,51 @@ export const DocumentUpload: React.FC<DocumentUploadProps> = ({
         .join('');
 
       // Prepare upload metadata as JSON (matches DocumentUpload schema)
+      // Send BOTH camelCase and snake_case for backend compatibility
       const uploadMetadata = {
         name: file.name,
         parent_id: selectedFolder || null,
+        parentId: selectedFolder || null,
         description: '',
         tags: [],
         doc_metadata: {},
+        docMetadata: {},
         is_sensitive: false,
-        salt: encryptionKey.salt, // Add the salt to the payload
+        isSensitive: false,
+
+        // Zero-knowledge encryption fields (both formats)
+        salt: encryptionKey.salt,
+        dek: encryptionResult.encryptionMetadata.dek, // Base64 JSON format (from useEncryption)
+        encrypted_dek: encryptionResult.encryptionMetadata.dek, // Direct format
+        encryptedDek: encryptionResult.encryptionMetadata.dek,
+
         encryption_key_id: encryptionResult.encryptionMetadata.keyId,
+        encryptionKeyId: encryptionResult.encryptionMetadata.keyId,
+
         encryption_iv: encryptionResult.encryptionMetadata.iv,
+        encryptionIv: encryptionResult.encryptionMetadata.iv,
+
         encryption_auth_tag: encryptionResult.encryptionMetadata.authTag,
-        file_size: file.size, // Original file size (for database storage)
+        encryptionAuthTag: encryptionResult.encryptionMetadata.authTag,
+
+        encryption_algorithm: encryptionResult.encryptionMetadata.algorithm || "AES-256-GCM",
+        encryptionAlgorithm: encryptionResult.encryptionMetadata.algorithm || "AES-256-GCM",
+
+        // File metadata (both formats)
+        original_filename: file.name,
+        originalFilename: file.name,
+
+        original_size: file.size,
+        originalSize: file.size,
+
+        file_size: file.size,
+        fileSize: file.size,
+
         file_hash: fileHash,
-        mime_type: file.type
+        fileHash: fileHash,
+
+        mime_type: file.type,
+        mimeType: file.type
       };
 
       // Prepare form data (backend expects upload_data as JSON string)

@@ -44,7 +44,8 @@ export class ClientSideDocumentProcessor implements PreviewPlugin {
     'text/plain',
     'text/csv',
     'text/markdown',
-    'text/html',
+    // NOTE: HTML files removed - they need iframe rendering with full JS/form support
+    // HTML files will be handled by universalFilePreview.tsx with sandbox-free iframe
     'application/json',
     'application/xml',
     'text/xml',
@@ -57,10 +58,17 @@ export class ClientSideDocumentProcessor implements PreviewPlugin {
 
   supportedExtensions = [
     '.docx', '.doc', '.xlsx', '.xls', '.pptx', '.ppt',
-    '.txt', '.csv', '.md', '.html', '.json', '.xml', '.rtf'
+    '.txt', '.csv', '.md', '.json', '.xml', '.rtf'
+    // NOTE: .html removed - needs iframe rendering, not embedded HTML
   ];
 
   canPreview(mimeType: string, fileName: string): boolean {
+    // Explicitly exclude HTML files - they need iframe rendering with full functionality
+    if (mimeType === 'text/html' || fileName.toLowerCase().endsWith('.html') || fileName.toLowerCase().endsWith('.htm')) {
+      console.log(`🔍 ClientSideProcessor canPreview: ${fileName} (${mimeType}) -> false (HTML needs iframe)`);
+      return false;
+    }
+
     const extension = fileName.toLowerCase().split('.').pop();
     const isSupported = this.supportedMimeTypes.includes(mimeType) ||
                        (extension && this.supportedExtensions.includes(`.${extension}`));

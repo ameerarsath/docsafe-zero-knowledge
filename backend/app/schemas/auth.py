@@ -5,7 +5,7 @@ This module defines Pydantic models for authentication-related
 request/response objects and data validation.
 """
 
-from pydantic import BaseModel, EmailStr, validator, Field
+from pydantic import BaseModel, EmailStr, field_validator, Field
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 
@@ -16,14 +16,16 @@ class LoginRequest(BaseModel):
     username: str = Field(..., min_length=1, max_length=50, description="Username")
     password: str = Field(..., min_length=1, description="Password")
     
-    @validator('username')
+    @field_validator('username')
+    @classmethod
     def validate_username(cls, v):
         """Validate username format."""
         if not v or v.isspace():
             raise ValueError('Username cannot be empty or whitespace')
         return v.strip()
-    
-    @validator('password')
+
+    @field_validator('password')
+    @classmethod
     def validate_password(cls, v):
         """Validate password is not empty."""
         if not v:
@@ -81,7 +83,8 @@ class MFAVerificationRequest(BaseModel):
     temp_token: str = Field(..., description="Temporary token from initial login")
     mfa_code: str = Field(..., min_length=6, max_length=6, description="6-digit TOTP code")
     
-    @validator('mfa_code')
+    @field_validator('mfa_code')
+    @classmethod
     def validate_mfa_code(cls, v):
         """Validate MFA code format."""
         if not v.isdigit():
@@ -110,10 +113,11 @@ class PasswordChangeRequest(BaseModel):
     new_password: str = Field(..., min_length=10, description="New password")
     confirm_password: str = Field(..., description="Password confirmation")
     
-    @validator('confirm_password')
-    def validate_passwords_match(cls, v, values):
+    @field_validator('confirm_password')
+    @classmethod
+    def validate_passwords_match(cls, v, info):
         """Validate that passwords match."""
-        if 'new_password' in values and v != values['new_password']:
+        if isinstance(info.data, dict) and 'new_password' in info.data and v != info.data['new_password']:
             raise ValueError('Passwords do not match')
         return v
 
@@ -129,7 +133,8 @@ class UserCreate(BaseModel):
     department: Optional[str] = Field(None, max_length=100, description="Department")
     must_change_password: bool = Field(default=True, description="Force password change on first login")
     
-    @validator('role')
+    @field_validator('role')
+    @classmethod
     def validate_role(cls, v):
         """Validate role is allowed."""
         allowed_roles = {'super_admin', 'admin', 'manager', 'user', 'viewer'}
@@ -153,7 +158,8 @@ class ZeroKnowledgeRegistrationRequest(BaseModel):
     encryption_method: str = Field(default="PBKDF2-SHA256", description="Key derivation method")
     key_derivation_iterations: int = Field(default=500000, ge=100000, description="PBKDF2 iterations")
     
-    @validator('encryption_salt')
+    @field_validator('encryption_salt')
+    @classmethod
     def validate_salt(cls, v):
         """Validate salt format and length."""
         import base64
@@ -164,8 +170,9 @@ class ZeroKnowledgeRegistrationRequest(BaseModel):
             return v
         except Exception:
             raise ValueError('Salt must be valid base64 encoded 32 bytes')
-    
-    @validator('encryption_method')
+
+    @field_validator('encryption_method')
+    @classmethod
     def validate_encryption_method(cls, v):
         """Validate encryption method."""
         allowed_methods = {'PBKDF2-SHA256'}

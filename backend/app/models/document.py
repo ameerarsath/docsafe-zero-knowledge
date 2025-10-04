@@ -136,8 +136,9 @@ class Document(Base):
     encrypted_dek = Column(Text, nullable=True)  # Document Encryption Key encrypted with user's master key
     encryption_iv = Column(String(255))  # Initialization vector for encryption (base64 encoded)
     encryption_auth_tag = Column(String(255))  # Authentication tag for GCM mode (base64 encoded)
-    ciphertext = Column(Text, nullable=True)  # Encrypted document content (base64 encoded)
-    salt = Column(String(255), nullable=True)  # Salt for key derivation (base64 encoded)
+    # Note: Database uses encryption_key and encryption_salt instead of ciphertext and salt
+    encryption_key = Column(LargeBinary, nullable=True)  # Encrypted document content (binary)
+    encryption_salt = Column(LargeBinary, nullable=True)  # Salt for key derivation (binary)
     is_encrypted = Column(Boolean, default=True, nullable=False)
     
     # Hierarchy and relationships
@@ -402,7 +403,9 @@ class Document(Base):
             "encrypted_dek": self.encrypted_dek,
             "encryption_iv": self.encryption_iv,
             "encryption_auth_tag": self.encryption_auth_tag,
-            "ciphertext": self.ciphertext,
+            # Convert binary fields to base64 for JSON serialization
+            "encryption_key": base64.b64encode(self.encryption_key).decode('utf-8') if self.encryption_key else None,
+            "encryption_salt": base64.b64encode(self.encryption_salt).decode('utf-8') if self.encryption_salt else None,
         }
         
         if include_children and self.is_folder():

@@ -205,10 +205,26 @@ export function parseDEKInfo(dekInfoString: string): DEKInfo {
       throw new Error('DEK info string is empty or invalid');
     }
     
-    // Parse JSON with error handling
+    // Parse JSON with base64 decoding support
     let dekInfo: any;
     try {
-      dekInfo = JSON.parse(dekInfoString);
+      let jsonString = dekInfoString;
+
+      // Check if input is base64 encoded
+      // Base64 strings start with 'eyJ' (base64 for '{"') or match pure base64 pattern
+      if (/^[A-Za-z0-9+/]+=*$/.test(dekInfoString)) {
+        console.log('🔍 DEK info appears to be base64 encoded, decoding first...');
+        try {
+          jsonString = atob(dekInfoString);
+          console.log('✅ Base64 decoded successfully:', jsonString.substring(0, 100) + '...');
+        } catch (decodeError) {
+          console.warn('⚠️ Base64 decode failed, attempting direct JSON parse');
+          // If decode fails, try parsing as-is (might already be JSON)
+          jsonString = dekInfoString;
+        }
+      }
+
+      dekInfo = JSON.parse(jsonString);
     } catch (jsonError) {
       throw new Error(`Invalid JSON format: ${jsonError instanceof Error ? jsonError.message : 'Unknown JSON error'}`);
     }

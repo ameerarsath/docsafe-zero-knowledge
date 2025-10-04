@@ -10,7 +10,7 @@ This module defines Pydantic schemas for admin operations including:
 
 from datetime import datetime
 from typing import List, Optional, Dict, Any, Union
-from pydantic import BaseModel, EmailStr, Field, validator
+from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
 
 
 # User Management Schemas
@@ -23,14 +23,16 @@ class UserCreate(BaseModel):
     is_active: bool = Field(True, description="Whether user is active")
     is_verified: bool = Field(False, description="Whether user email is verified")
     
-    @validator('password')
+    @field_validator('password')
+    @classmethod
     def validate_password(cls, v):
         """Validate password complexity."""
         if len(v) < 8:
             raise ValueError('Password must be at least 8 characters long')
         return v
 
-    @validator('encryption_password')
+    @field_validator('encryption_password')
+    @classmethod
     def validate_encryption_password(cls, v):
         """Validate encryption password complexity if provided."""
         if v is not None and len(v) < 8:
@@ -45,7 +47,8 @@ class UserUpdate(BaseModel):
     is_active: Optional[bool] = Field(None, description="Whether user is active")
     is_verified: Optional[bool] = Field(None, description="Whether user email is verified")
     
-    @validator('password')
+    @field_validator('password')
+    @classmethod
     def validate_password(cls, v):
         """Validate password complexity if provided."""
         if v is not None and len(v) < 8:
@@ -86,7 +89,8 @@ class PasswordResetRequest(BaseModel):
     new_password: str = Field(..., min_length=8, description="New password")
     force_change_on_login: bool = Field(False, description="Force password change on next login")
     
-    @validator('new_password')
+    @field_validator('new_password')
+    @classmethod
     def validate_password(cls, v):
         """Validate password complexity."""
         if len(v) < 8:

@@ -36,7 +36,8 @@ export class UniversalFormattedPreviewPlugin implements PreviewPlugin {
     'text/csv',
     'application/json',
     'text/markdown',
-    'text/html',
+    // NOTE: HTML files removed - they need iframe rendering with full JS/form support
+    // HTML files will be handled by universalFilePreview.tsx with sandbox-free iframe
     // Images
     'image/jpeg',
     'image/png',
@@ -47,11 +48,17 @@ export class UniversalFormattedPreviewPlugin implements PreviewPlugin {
   ];
 
   supportedExtensions = [
-    '.docx', '.doc', '.xlsx', '.xls', '.txt', '.csv', '.json', '.md', '.html',
+    '.docx', '.doc', '.xlsx', '.xls', '.txt', '.csv', '.json', '.md',
+    // NOTE: .html removed - needs iframe rendering, not embedded HTML
     '.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.svg'
   ];
 
   canPreview(mimeType: string, fileName: string): boolean {
+    // Explicitly exclude HTML files - they need iframe rendering with full functionality
+    if (mimeType === 'text/html' || fileName.toLowerCase().endsWith('.html') || fileName.toLowerCase().endsWith('.htm')) {
+      return false;
+    }
+
     const extension = fileName.toLowerCase().split('.').pop();
     return this.supportedMimeTypes.includes(mimeType) ||
            (extension && this.supportedExtensions.includes(`.${extension}`));

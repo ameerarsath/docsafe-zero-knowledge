@@ -30,6 +30,7 @@ import { documentsApi } from '../../services/api/documents';
 import { useEncryption } from '../../hooks/useEncryption';
 import { DocumentShareDialog } from './DocumentShareDialog';
 import { getDocumentPreview } from '../../services/documentPreview';
+import { createUniversalFilePreview } from '../../utils/universalFilePreview';
 import '../../styles/document-preview.css';
 import '../../styles/docx-preview.css';
 
@@ -264,7 +265,10 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
         try {
           const errorResponse = await response.json();
           if (errorResponse.detail) {
-            errorMessage = errorResponse.detail;
+            // Ensure errorMessage is always a string, not an object
+            errorMessage = typeof errorResponse.detail === 'string'
+              ? errorResponse.detail
+              : JSON.stringify(errorResponse.detail);
           }
           if (errorResponse.error_type) {
             errorType = errorResponse.error_type;
@@ -1038,7 +1042,9 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
       let errorMessage = 'Failed to load document preview';
 
       if (error instanceof Error) {
-        const message = error.message.toLowerCase();
+        // CRITICAL FIX: Ensure error message is a string, not [object Object]
+        errorMessage = error.message || error.toString() || 'Unknown error occurred';
+        const message = errorMessage.toLowerCase();
 
         // Check for specific error types and provide appropriate messages
         if (message.includes('missing from disk') || message.includes('not found on storage') || message.includes('file not found')) {
@@ -1053,8 +1059,13 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
           errorMessage = `📋 File Changed: The document "${currentDocument.name}" was modified during preview. Please refresh and try again.`;
         } else {
           // Use the original error message if it's already user-friendly
-          errorMessage = error.message;
+          errorMessage = error.message || error.toString();
         }
+      } else if (typeof error === 'object' && error !== null) {
+        // CRITICAL FIX: Handle non-Error objects (prevents [object Object] display)
+        errorMessage = (error as any).message || JSON.stringify(error) || 'Unknown error occurred';
+      } else if (typeof error === 'string') {
+        errorMessage = error;
       }
 
       updateState({
@@ -1182,7 +1193,8 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
    * Render preview content based on file type and plugin results
    */
   const renderPreviewContent = useCallback(() => {
-    // CRITICAL: If we have plugin result, render it IMMEDIATELY and skip ALL other checks
+    // CRITICAL #1: If we have plugin result, render it FIRST - this ensures plugins like
+    // AdvancedPowerPointPreviewPlugin can show their slide viewer instead of download fallback
     if (state.pluginResult) {
       console.log('🎯 Plugin result exists, rendering plugin content IMMEDIATELY');
       console.log('Loading states at render time:', {
@@ -1258,6 +1270,18 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
             );
         }
       } else if (state.pluginResult.type === 'error') {
+        // CRITICAL FALLBACK: If plugin failed but we have decrypted blob, use universal handler
+        if (state.decryptedBlob && state.decryptedDocumentId === currentDocument?.id) {
+          console.log('⚠️ Plugin error but decrypted blob available, falling back to UNIVERSAL handler');
+          return createUniversalFilePreview(
+            state.decryptedBlob,
+            currentDocument.mime_type || 'application/octet-stream',
+            currentDocument.name,
+            state.zoom
+          );
+        }
+
+        // No decrypted blob available, show error
         return (
           <div className="flex items-center justify-center min-h-64 p-6">
             <div className="text-center max-w-2xl">
@@ -1273,6 +1297,48 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
                   <div dangerouslySetInnerHTML={{ __html: state.pluginResult.content }} />
                 )}
               </div>
+            </div>
+          </div>
+        );
+      }
+    }
+
+    // CRITICAL #2: If we have decrypted blob but NO plugin result, use UNIVERSAL file handler as fallback
+    // This handles cases where the plugin system didn't produce a result
+    if (state.decryptedBlob && state.decryptedDocumentId === currentDocument?.id) {
+      console.log('🎯 Decrypted blob available (no plugin result), using UNIVERSAL file handler as fallback');
+      console.log('🔍 Blob details:', {
+        size: state.decryptedBlob.size,
+        type: state.decryptedBlob.type,
+        fileName: currentDocument.name,
+        mimeType: currentDocument.mime_type
+      });
+
+      try {
+        return createUniversalFilePreview(
+          state.decryptedBlob,
+          currentDocument.mime_type || 'application/octet-stream',
+          currentDocument.name,
+          state.zoom
+        );
+      } catch (previewError) {
+        console.error('❌ Universal file preview failed:', previewError);
+        // Even if universal preview fails, still better than showing error
+        const blobUrl = URL.createObjectURL(state.decryptedBlob);
+        return (
+          <div className="flex-1 flex items-center justify-center p-6">
+            <div className="text-center max-w-md">
+              <File className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+              <h3 className="text-xl font-semibold text-gray-900 mb-2">Download File</h3>
+              <p className="text-gray-600 mb-4">{currentDocument.name}</p>
+              <a
+                href={blobUrl}
+                download={currentDocument.name}
+                className="inline-flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                <Download className="w-5 h-5" />
+                Download {currentDocument.name}
+              </a>
             </div>
           </div>
         );
@@ -1684,7 +1750,7 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
         className={`bg-white rounded-lg shadow-xl w-full flex flex-col transition-all duration-300 ${
           state.isFullscreen
             ? 'max-w-full max-h-full h-full m-0 rounded-none'
-            : 'max-w-6xl max-h-[90vh]'
+            : 'max-w-6xl h-[90vh]'
         } ${className}`}
         style={state.isFullscreen ? { width: '100vw', height: '100vh' } : {}}
       >

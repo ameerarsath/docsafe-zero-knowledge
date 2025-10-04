@@ -317,7 +317,44 @@ export class DocumentsApiService {
   }
 
   /**
+   * Fetch encrypted document blob for client-side decryption (Zero-Knowledge)
+   * Returns raw encrypted bytes with encryption metadata in headers
+   */
+  async fetchEncryptedBlob(documentId: number): Promise<Blob> {
+    const response = await fetch(
+      `${import.meta.env.VITE_API_URL || 'http://localhost:8002'}/api/v1/documents/${documentId}/download?encrypted=true`,
+      {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${TokenManager.getAccessToken()}`,
+        },
+      }
+    );
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({
+        code: 'unknown',
+        detail: `Failed to fetch encrypted document: ${response.status}`
+      }));
+
+      // Provide specific error messages
+      if (response.status === 401) {
+        throw new Error('Authentication required. Please log in again.');
+      } else if (response.status === 404) {
+        throw new Error(errorData.detail || 'Document not found or file missing from storage.');
+      } else if (response.status === 403) {
+        throw new Error('Access denied. You do not have permission to access this document.');
+      }
+
+      throw new Error(errorData.detail || errorData.message || `Failed to fetch document: ${response.status}`);
+    }
+
+    return response.blob();
+  }
+
+  /**
    * Fetch document blob for preview (does not trigger download)
+   * @deprecated Use fetchEncryptedBlob for zero-knowledge documents
    */
   async fetchDocumentBlob(documentId: number, password?: string): Promise<Blob> {
     const params = password ? `?password=${encodeURIComponent(password)}` : '';

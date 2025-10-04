@@ -7,7 +7,7 @@ including TOTP setup, verification, backup codes, and status checking.
 
 from datetime import datetime
 from typing import List, Optional
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 
 
 class MFASetupRequest(BaseModel):
@@ -45,7 +45,8 @@ class MFAVerifyRequest(BaseModel):
         description="TOTP code or backup code"
     )
     
-    @validator('code')
+    @field_validator('code')
+    @classmethod
     def validate_code_format(cls, v):
         """Validate MFA code format."""
         if not v.isalnum():

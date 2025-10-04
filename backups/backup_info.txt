@@ -1,0 +1,55 @@
+========================================
+SecureVault Database Backup Information
+========================================
+Backup Date: October 2, 2025 17:36:02
+Database: securevault
+PostgreSQL Version: 15.13
+
+========================================
+Database Tables
+========================================
+                      List of relations
+ Schema |          Name           | Type  |      Owner       
+--------+-------------------------+-------+------------------
+ public | alembic_version         | table | securevault_user
+ public | crypto_randomness_tests | table | securevault_user
+ public | document_access_logs    | table | securevault_user
+ public | document_permissions    | table | securevault_user
+ public | document_shares         | table | securevault_user
+ public | document_versions       | table | securevault_user
+ public | documents               | table | securevault_user
+ public | encryption_audit_logs   | table | securevault_user
+ public | ip_blocklist            | table | securevault_user
+ public | key_escrow              | table | securevault_user
+ public | key_rotation_logs       | table | securevault_user
+ public | master_keys             | table | securevault_user
+ public | mfa_audit_logs          | table | securevault_user
+ public | mfa_configuration       | table | securevault_user
+ public | mfa_failed_attempts     | table | securevault_user
+ public | mfa_used_codes          | table | securevault_user
+ public | permissions             | table | securevault_user
+ public | resource_permissions    | table | securevault_user
+ public | role_hierarchy          | table | securevault_user
+ public | role_permissions        | table | securevault_user
+ public | roles                   | table | securevault_user
+ public | security_alerts         | table | securevault_user
+ public | security_events         | table | securevault_user
+ public | security_metrics        | table | securevault_user
+ public | suspicious_patterns     | table | securevault_user
+ public | threat_responses        | table | securevault_user
+ public | token_families          | table | securevault_user
+ public | user_encryption_keys    | table | securevault_user
+ public | user_roles              | table | securevault_user
+ public | users                   | table | securevault_user
+(30 rows)
+
+
+========================================
+Table Row Counts
+========================================
+ERROR:  relation "external_shares" does not exist
+LINE 1: ...UNION ALL SELECT 'external_shares', COUNT(*) FROM external_s...
+                                                             ^
+ERROR:  relation "audit_logs" does not exist
+LINE 1: ...keys UNION ALL SELECT 'audit_logs', COUNT(*) FROM audit_logs...
+                                                             ^

@@ -11,7 +11,7 @@ This module defines Pydantic schemas for security operations including:
 
 from datetime import datetime
 from typing import List, Optional, Dict, Any, Union
-from pydantic import BaseModel, Field, validator, IPvAnyAddress
+from pydantic import BaseModel, Field, field_validator, model_validator, IPvAnyAddress
 from enum import Enum
 
 from ..models.security import ThreatLevel, EventStatus, ResponseAction
@@ -43,7 +43,8 @@ class IPBlockRequest(BaseModel):
     expires_at: Optional[datetime] = Field(None, description="Block expiration time")
     is_permanent: bool = Field(False, description="Whether block is permanent")
     
-    @validator('ip_address')
+    @field_validator('ip_address')
+    @classmethod
     def validate_ip_address(cls, v):
         """Validate IP address format."""
         try:

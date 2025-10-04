@@ -100,11 +100,9 @@ export const SharedDocumentPreview: React.FC<SharedDocumentPreviewProps> = ({
 
     try {
       console.log('📄 Fetching shared document from preview endpoint...');
-      const apiUrl = import.meta.env.VITE_API_URL;
-      if (!apiUrl) {
-        updateState({ error: 'API URL is not configured. Please check your environment variables.', isLoading: false });
-        return;
-      }
+      // Use environment variable with fallback to localhost for development
+      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8002';
+      console.log('🔗 Using API URL:', apiUrl);
 
       const previewUrl = `${apiUrl}/api/v1/shares/${shareToken}/preview${sharePassword ? `?password=${encodeURIComponent(sharePassword)}` : ''}`;
       const response = await fetch(previewUrl);

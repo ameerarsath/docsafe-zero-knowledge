@@ -915,7 +915,7 @@ async def preview_shared_document(
             file_data = f.read()
 
         # Check for inconsistent encryption state
-        has_inconsistent_state = document.is_encrypted and not document.ciphertext
+        has_inconsistent_state = document.is_encrypted and not document.encryption_key
 
         if has_inconsistent_state:
             print(f"⚠️  Document {document.id} has inconsistent encryption state:")
@@ -929,8 +929,8 @@ async def preview_shared_document(
 
         print(f"🔍 Document {document.id} encryption status:")
         print(f"   database is_encrypted: {document.is_encrypted}")
-        print(f"   has ciphertext: {bool(document.ciphertext)}")
-        print(f"   has salt: {bool(document.salt)}")
+        print(f"   has encryption_key: {bool(document.encryption_key)}")
+        print(f"   has encryption_salt: {bool(document.encryption_salt)}")
         print(f"   inconsistent state: {has_inconsistent_state}")
         print(f"   actual is_encrypted: {is_encrypted}")
         print(f"   mime_type: {document.mime_type}")
@@ -952,11 +952,11 @@ async def preview_shared_document(
                 # Handle different encryption scenarios
                 encrypted_data = None
 
-                if document.ciphertext:
+                if document.encryption_key:
                     # Normal case: encrypted data in database
                     import base64
-                    encrypted_data = base64.b64decode(document.ciphertext)
-                    print(f"📦 Using ciphertext from database, length: {len(encrypted_data)} bytes")
+                    encrypted_data = base64.b64decode(document.encryption_key)
+                    print(f"📦 Using encryption_key from database, length: {len(encrypted_data)} bytes")
                 elif has_inconsistent_state:
                     # Special case: file on disk is encrypted but no ciphertext in database
                     encrypted_data = file_data
@@ -1006,32 +1006,38 @@ async def preview_shared_document(
             # If decryption failed or no password available, provide encrypted data with metadata
             import base64
             try:
-                if document.ciphertext:
-                    encrypted_file_data = base64.b64decode(document.ciphertext)
+                if document.encryption_key:
+                    encrypted_file_data = base64.b64decode(document.encryption_key)
                 elif has_inconsistent_state:
                     # File is already encrypted on disk
                     encrypted_file_data = file_data
                 else:
                     print(f"❌ No encrypted data available for document {document.id}")
-                    # For documents marked as encrypted but no ciphertext found,
+                    # For documents marked as encrypted but no encryption_key found,
                     # treat the file data as encrypted (this handles the inconsistent state)
                     encrypted_file_data = file_data
                     print(f"📦 Using file data as encrypted content for document {document.id}")
 
+                # Build headers - only include encryption metadata if available
                 headers = {
                     "Content-Length": str(len(encrypted_file_data)),
                     "X-Document-Name": document.name,
                     "X-Share-Token": share_token,
                     "Cache-Control": "no-cache, no-store, must-revalidate",
                     "X-Requires-Decryption": "true",
-                    "X-Encryption-Salt": document.salt,
-                    "X-Encryption-IV": document.encryption_iv,
                     "X-Encryption-Algorithm": document.encryption_algorithm or "aes-256-gcm",
                     "X-Encryption-Iterations": "500000",  # Match frontend iterations
                     "X-Content-Format": "encrypted"
                 }
 
+                # Only add encryption metadata headers if they exist
+                if document.encryption_salt:
+                    headers["X-Encryption-Salt"] = document.encryption_salt
+                if document.encryption_iv:
+                    headers["X-Encryption-IV"] = document.encryption_iv
+
                 print(f"📦 Serving encrypted content for document {document.id} with decryption metadata")
+                print(f"🔍 Headers: salt={bool(document.encryption_salt)}, iv={bool(document.encryption_iv)}")
                 return Response(
                     content=encrypted_file_data,
                     media_type="application/octet-stream",
@@ -1244,7 +1250,7 @@ def detect_actual_encryption(document, file_data: bytes) -> bool:
 
     # If we have encryption metadata and the file doesn't match known signatures,
     # check if it looks like encrypted data
-    if document.is_encrypted and document.ciphertext and document.salt:
+    if document.is_encrypted and document.encryption_key and document.encryption_salt:
         # Calculate entropy to detect encrypted content
         import math
         sample_size = min(1024, len(file_data))
@@ -1324,7 +1330,7 @@ def decrypt_document_for_sharing(document, encrypted_data: bytes, password: str)
         print(f"Attempting to decrypt document ID: {document.id}")
         pw_preview = f'{password[0]}...{password[-1]}' if password and len(password) > 1 else '***'
         print(f"Password length: {len(password) if password else 0}, Preview: {pw_preview}")
-        print(f"Document Salt (b64): {document.salt}")
+        print(f"Document Salt (b64): {document.encryption_salt}")
         print(f"Document IV (b64): {document.encryption_iv}")
         print(f"Encrypted Data Length: {len(encrypted_data)} bytes")
     except Exception as log_e:
@@ -1342,12 +1348,12 @@ def decrypt_document_for_sharing(document, encrypted_data: bytes, password: str)
     
     try:
         # Check if document has zero-knowledge encryption metadata
-        if document.encrypted_dek and document.ciphertext:
+        if document.encrypted_dek and document.encryption_key:
             # Zero-knowledge encryption model - decrypt using stored metadata
             
             # Get salt from document or use default
-            if hasattr(document, 'salt') and document.salt:
-                salt = base64.b64decode(document.salt)
+            if hasattr(document, 'encryption_salt') and document.encryption_salt:
+                salt = base64.b64decode(document.encryption_salt)
             else:
                 # Fallback salt for legacy documents
                 salt = b'default_salt_for_legacy_docs_16b'
@@ -1378,7 +1384,7 @@ def decrypt_document_for_sharing(document, encrypted_data: bytes, password: str)
             dek = aesgcm.decrypt(dek_iv, dek_ciphertext + dek_tag, None)
             
             # Now decrypt the document content using the DEK
-            ciphertext_data = base64.b64decode(document.ciphertext)
+            ciphertext_data = base64.b64decode(document.encryption_key)
             
             if len(ciphertext_data) < 28:  # 12 + 16 minimum
                 raise ValueError("Invalid document ciphertext format")
@@ -1404,7 +1410,7 @@ def decrypt_document_for_sharing(document, encrypted_data: bytes, password: str)
             ciphertext = encrypted_data
             
             # Derive key from password (using document-specific salt if available)
-            salt = base64.b64decode(document.salt) if hasattr(document, 'salt') and document.salt else b'legacy_salt_16bytes'
+            salt = base64.b64decode(document.encryption_salt) if hasattr(document, 'encryption_salt') and document.encryption_salt else b'legacy_salt_16bytes'
             kdf = PBKDF2HMAC(
                 algorithm=hashes.SHA256(),
                 length=32,
@@ -1562,7 +1568,7 @@ async def decrypt_document_content_for_share(document, encryption_password: str)
             if file_content.startswith(b'\x89PNG') or file_content.startswith(b'\xff\xd8\xff'):
                 # PNG or JPEG file - return as-is
                 return file_content
-            elif document.ciphertext:
+            elif document.encryption_key:
                 # File is encrypted, return informative error
                 raise ValueError("Document is encrypted and requires client-side decryption")
             else:

@@ -9,7 +9,7 @@ This module defines request/response schemas for:
 - Encryption audit and health checks
 """
 
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 
@@ -56,7 +56,8 @@ class EncryptionKeyCreate(BaseModel):
     
     replace_existing: bool = Field(False, description="Replace existing active key")
 
-    @validator('iterations')
+    @field_validator('iterations')
+    @classmethod
     def validate_iterations(cls, v):
         if v < 100000:
             raise ValueError('Iterations must be at least 100,000')
@@ -112,7 +113,8 @@ class KeyDerivationRequest(BaseModel):
     salt: str = Field(..., description="Base64 encoded salt")
     iterations: int = Field(..., ge=100000, description="PBKDF2 iterations")
 
-    @validator('iterations')
+    @field_validator('iterations')
+    @classmethod
     def validate_iterations(cls, v):
         if v < 100000:
             raise ValueError('Iterations must be at least 100,000')
@@ -174,7 +176,8 @@ class MasterKeyCreate(BaseModel):
     protection_parameters: Optional[Dict[str, Any]] = Field(None, description="Protection parameters")
     expires_at: Optional[datetime] = Field(None, description="Expiration timestamp")
 
-    @validator('purpose')
+    @field_validator('purpose')
+    @classmethod
     def validate_purpose(cls, v):
         allowed_purposes = ['escrow', 'backup', 'system', 'recovery']
         if v not in allowed_purposes:
@@ -205,7 +208,8 @@ class KeyEscrowCreate(BaseModel):
     escrow_method: str = Field(..., description="Escrow method")
     recovery_hint: Optional[str] = Field(None, max_length=500, description="Recovery hint")
 
-    @validator('escrow_method')
+    @field_validator('escrow_method')
+    @classmethod
     def validate_escrow_method(cls, v):
         allowed_methods = ['admin_escrow', 'split_key', 'hsm']
         if v not in allowed_methods:

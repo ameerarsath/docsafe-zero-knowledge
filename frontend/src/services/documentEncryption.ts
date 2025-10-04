@@ -512,9 +512,12 @@ export class DocumentEncryptionService {
       
       console.log(`🔍 Auth tag extraction analysis:`, {
         originalFileSize,
+        originalSize: (document as any).original_size,
         totalEncryptedSize,
         calculatedAuthTagLength,
-        documentName: document.name
+        documentName: document.name,
+        documentId: document.id,
+        encryptedDekLength: document.encrypted_dek?.length
       });
       
       // Determine correct ciphertext and auth tag split

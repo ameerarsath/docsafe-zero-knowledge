@@ -44,12 +44,22 @@ export class AdvancedPowerPointPreviewPlugin implements PreviewPlugin {
   name = 'AdvancedPowerPointPreview';
   priority = 95; // Highest priority for advanced PowerPoint plugin
 
+  // Required by PreviewPlugin interface - directly on plugin
   supportedMimeTypes = [
     'application/vnd.ms-powerpoint',
     'application/vnd.openxmlformats-officedocument.presentationml.presentation'
   ];
-
   supportedExtensions = ['.ppt', '.pptx'];
+
+  metadata = {
+    name: this.name,
+    version: '1.0.0',
+    supportedMimeTypes: this.supportedMimeTypes,
+    supportedExtensions: this.supportedExtensions,
+    description: 'Advanced PowerPoint preview with slide navigation, text extraction, and image display',
+    author: 'DocSafe',
+    priority: this.priority
+  };
 
   canPreview(mimeType: string, fileName: string): boolean {
     const extension = fileName.toLowerCase().split('.').pop();

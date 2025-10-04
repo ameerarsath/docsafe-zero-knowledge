@@ -51,6 +51,7 @@ import SecurityDashboardTest from './components/security/SecurityDashboardTest';
 
 // Shared Document Page
 import SharedDocumentPage from './pages/SharedDocumentPage';
+import { PublicSharePreview } from './pages/PublicSharePreview';
 
 // Styles
 import './App.css';
@@ -76,7 +77,10 @@ function App() {
 
             {/* Shared document access (public) */}
             <Route path="/share/:shareToken" element={<SharedDocumentPage />} />
-            
+
+            {/* External share preview (public - no auth required) */}
+            <Route path="/external-share/:shareToken" element={<PublicSharePreview />} />
+
             {/* Protected routes */}
             <Route path="/dashboard" element={<ModernDashboardPage />} />
             <Route path="/documents" element={<DocumentsPage />} />

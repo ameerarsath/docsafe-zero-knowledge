@@ -23,6 +23,51 @@ from datetime import datetime, timezone
 
 router = APIRouter(tags=["External Shares"])
 
+@router.get("/{share_token}/metadata")
+async def get_external_share_metadata(
+    share_token: str,
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    """Get metadata for external share without accessing the file."""
+
+    # Load share with document
+    share = db.query(DocumentShare).options(
+        joinedload(DocumentShare.document)
+    ).filter(DocumentShare.share_token == share_token).first()
+
+    if not share:
+        raise HTTPException(status_code=404, detail="Share not found")
+
+    # Validate share
+    if not share.is_active:
+        raise HTTPException(status_code=410, detail="Share has been revoked")
+
+    if share.expires_at and share.expires_at < datetime.now(timezone.utc):
+        raise HTTPException(status_code=410, detail="Share has expired")
+
+    if share.max_access_count and share.access_count >= share.max_access_count:
+        raise HTTPException(status_code=410, detail="Share access limit reached")
+
+    # Return metadata
+    document = share.document
+    return {
+        "share_token": share.share_token,
+        "document_name": document.name,
+        "document_id": document.id,
+        "mime_type": document.mime_type,
+        "file_size": document.file_size,
+        "share_type": share.share_type,
+        "require_password": share.require_password,
+        "is_encrypted": document.is_encrypted,
+        "allow_download": share.allow_download,
+        "allow_preview": share.allow_preview,
+        "created_at": share.created_at.isoformat() if share.created_at else None,
+        "expires_at": share.expires_at.isoformat() if share.expires_at else None,
+        "access_count": share.access_count,
+        "max_access_count": share.max_access_count
+    }
+
 @router.get("/{share_token}/stream")
 async def stream_external_share(
     share_token: str,
@@ -115,9 +160,9 @@ async def stream_external_share(
 
                     # Determine encrypted data source
                     encrypted_data = None
-                    if document.ciphertext:
+                    if document.encryption_key:
                         import base64
-                        encrypted_data = base64.b64decode(document.ciphertext)
+                        encrypted_data = base64.b64decode(document.encryption_key)
                     else:
                         # File is encrypted on disk
                         encrypted_data = file_data
@@ -354,9 +399,9 @@ async def serve_external_share(
 
                     # Determine encrypted data source
                     encrypted_data = None
-                    if document.ciphertext:
+                    if document.encryption_key:
                         import base64
-                        encrypted_data = base64.b64decode(document.ciphertext)
+                        encrypted_data = base64.b64decode(document.encryption_key)
                     else:
                         # File is encrypted on disk
                         encrypted_data = file_data

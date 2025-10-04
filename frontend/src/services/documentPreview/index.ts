@@ -35,6 +35,9 @@ import { UniversalDocumentProcessor } from './plugins/universalDocumentProcessor
 // Import our new client-side processor
 import { ClientSideDocumentProcessor } from './plugins/clientSideDocumentProcessor';
 
+// Import modern office plugin with client-side parsing
+import { ModernOfficePlugin } from './plugins/modernOfficePlugin';
+
 // Import fallback plugin
 import { UniversalFallbackPlugin } from './plugins/fallbackPlugin';
 
@@ -57,6 +60,7 @@ export function initializePreviewPlugins(): void {
       new RobustDocxPlugin(),              // Priority: 600 - Robust DOCX preview with multiple fallbacks (HIGHEST PRIORITY for DOCX)
       new UniversalFormattedPreviewPlugin(), // Priority: 590 - Universal formatted preview with cross-file support
       new CleanDocxPreviewPlugin(),        // Priority: 500 - Clean DOCX preview without debug metadata (FALLBACK for DOCX)
+      new ModernOfficePlugin(),            // Priority: 400 - Modern office files with client-side parsing (Excel, Word, PowerPoint) - NO DOWNLOAD!
       new ClientSideDocumentProcessor(),   // Priority: 350 - Pure client-side document processor (MEDIUM PRIORITY - bypasses all server issues)
       new UniversalDocumentProcessor(),    // Priority: 300 - Universal document processor with robust text extraction (backup for client-side)
       new RobustOfficePlugin(),            // Priority: 150 - Robust Office documents with server-side processing (backup for Office docs)

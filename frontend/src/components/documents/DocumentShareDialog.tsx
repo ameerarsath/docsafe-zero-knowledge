@@ -266,6 +266,19 @@ export const DocumentShareDialog: React.FC<DocumentShareDialogProps> = ({
         encryptionPassword: (isEncrypted && state.settings.shareType === 'external') ? encryptionPassword : undefined
       };
 
+      // CRITICAL DEBUG: Log what we're actually sending
+      console.log('🔍 DIAGNOSTIC - Share creation parameters:', {
+        documentId: document.id,
+        documentName: document.name,
+        isEncrypted: isEncrypted,
+        shareType: state.settings.shareType,
+        hasEncryptionPassword: !!encryptionPassword,
+        encryptionPasswordLength: encryptionPassword?.length || 0,
+        conditionCheck: isEncrypted && state.settings.shareType === 'external',
+        finalEncryptionPassword: shareSettings.encryptionPassword,
+        allSettings: shareSettings
+      });
+
       const response = await ShareService.createShare({
         documentId: document.id,
         settings: shareSettings

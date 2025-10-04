@@ -1,6 +1,8 @@
 """
 Document management API endpoints for SecureVault.
 
+Updated: Fixed salt field issue in DocumentUpload schema. Added enhanced error logging.
+
 This module provides REST API endpoints for:
 - Document and folder CRUD operations
 - File upload and download with encryption
@@ -11,14 +13,16 @@ This module provides REST API endpoints for:
 """
 
 import os
+import sys
 import hashlib
 import base64
+import traceback
 from typing import List, Optional, Dict, Any
 from datetime import datetime, timedelta
 from pydantic import BaseModel
 from fastapi import (
-    APIRouter, Depends, HTTPException, status, Query, UploadFile, 
-    File, Form, BackgroundTasks
+    APIRouter, Depends, HTTPException, status, Query, UploadFile,
+    File, Form, BackgroundTasks, Request
 )
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session, joinedload
@@ -702,7 +706,7 @@ async def upload_file(
         is_zero_knowledge = 'encrypted_dek' in upload_metadata_dict
         print(f"[UPLOAD] Upload type detected: {'Zero-Knowledge' if is_zero_knowledge else 'Legacy'}")
         
-        upload_metadata = DocumentUpload.parse_obj(upload_metadata_dict)
+        upload_metadata = DocumentUpload.model_validate(upload_metadata_dict)
         print(f"SUCCESS: Upload metadata validated successfully")
         
         if is_zero_knowledge:
@@ -736,21 +740,24 @@ async def upload_file(
     # The encrypted file hash would be different and is not needed for validation
     
     try:
-        # --- Step 6: Generate storage path ---
+        # --- Step 6: Generate storage path (POSIX format for cross-platform compatibility) ---
+        from pathlib import Path
+
         hash_input = f"{upload_metadata.name}{upload_metadata.file_size}{current_user.id}".encode('utf-8')
         document_uuid = hashlib.sha256(hash_input).hexdigest()
-        storage_path = os.path.join(
-            settings.ENCRYPTED_FILES_PATH,
-            str(current_user.id),
-            document_uuid[:2],
-            f"{document_uuid}.enc"
-        )
-        
-        os.makedirs(os.path.dirname(storage_path), exist_ok=True)
+
+        # Use Path for cross-platform compatibility
+        storage_dir = Path(settings.ENCRYPTED_FILES_PATH) / str(current_user.id) / document_uuid[:2]
+        storage_dir.mkdir(parents=True, exist_ok=True)
+
+        storage_path = storage_dir / f"{document_uuid}.enc"
 
         # --- Step 7: Save file safely ---
         with open(storage_path, "wb") as f:
             f.write(content)
+
+        # Convert to POSIX path (forward slashes) for database storage
+        storage_path_str = storage_path.as_posix()
         
         # Create document record
         print(f"[DB] Creating document record with encryption metadata...")
@@ -762,6 +769,9 @@ async def upload_file(
             # Zero-knowledge encryption (DEK-per-document architecture)
             print(f"[CRYPTO] Zero-knowledge upload detected")
 
+            # Convert base64-encoded salt to bytes for LargeBinary storage
+            salt_bytes = base64.b64decode(upload_metadata.salt) if upload_metadata.salt else None
+
             # For zero-knowledge uploads, encryption_iv is already base64 string, store as-is
             document = Document(
                 name=upload_metadata.name,        # original name for DB/display
@@ -771,21 +781,22 @@ async def upload_file(
                 mime_type=upload_metadata.mime_type,
                 file_size=upload_metadata.original_size or upload_metadata.file_size,
                 file_hash_sha256=upload_metadata.file_hash,
-                storage_path=storage_path,
+                storage_path=storage_path_str,  # POSIX path with forward slashes
                 parent_id=upload_metadata.parent_id,
                 owner_id=current_user.id,
                 created_by=current_user.id,
                 # Zero-knowledge specific fields
-                salt=upload_metadata.salt, # Save the salt for future decryption
+                encryption_salt=salt_bytes,  # Store as bytes (converted from base64 string)
                 encrypted_dek=upload_metadata.encrypted_dek,
                 encryption_iv=upload_metadata.encryption_iv,  # Keep as base64 string
+                encryption_auth_tag=upload_metadata.encryption_auth_tag,  # Add auth tag
                 encryption_algorithm=upload_metadata.encryption_algorithm or "AES-256-GCM",
                 tags=upload_metadata.tags,
                 doc_metadata=upload_metadata.doc_metadata,
                 is_sensitive=upload_metadata.is_sensitive,
                 is_encrypted=True
             )
-            print(f"[CRYPTO] Zero-knowledge document created: encrypted_dek_length={len(upload_metadata.encrypted_dek) if upload_metadata.encrypted_dek else 0}")
+            print(f"[CRYPTO] Zero-knowledge document created: encrypted_dek_length={len(upload_metadata.encrypted_dek) if upload_metadata.encrypted_dek else 0}, salt_bytes_length={len(salt_bytes) if salt_bytes else 0}")
         else:
             # Legacy encryption format
             print(f"[CRYPTO] Legacy encryption upload detected")
@@ -811,11 +822,11 @@ async def upload_file(
                 mime_type=upload_metadata.mime_type,
                 file_size=upload_metadata.file_size,
                 file_hash_sha256=upload_metadata.file_hash,
-                storage_path=storage_path,
+                storage_path=storage_path_str,  # POSIX path with forward slashes
                 parent_id=upload_metadata.parent_id,
                 owner_id=current_user.id,
                 created_by=current_user.id,
-                salt=encryption_key.salt, # Save the salt from the key for future decryption
+                encryption_salt=encryption_key.salt, # Save the salt from the key for future decryption
                 encryption_key_id=upload_metadata.encryption_key_id,
                 encryption_iv=upload_metadata.encryption_iv,  # Keep as base64 string
                 encryption_auth_tag=upload_metadata.encryption_auth_tag,  # Keep as base64 string
@@ -824,40 +835,133 @@ async def upload_file(
                 is_sensitive=upload_metadata.is_sensitive,
                 is_encrypted=True
             )
-        
-        print(f"[DB] Document created with: name={document.name}, encryption_key_id={document.encryption_key_id}, is_encrypted={document.is_encrypted}")
-        
-        db.add(document)
-        db.commit()
-        db.refresh(document)
-        
+
+        print(f"[DB] Document object created, adding to database")
+        sys.stdout.flush()
+
+        # Database operations with error handling - Enhanced
+        try:
+            print(f"[DB] Adding document to session")
+            sys.stdout.flush()
+            db.add(document)
+
+            print(f"[DB] Committing transaction")
+            sys.stdout.flush()
+            db.commit()
+
+            print(f"[DB] Refreshing document to get ID")
+            sys.stdout.flush()
+            db.refresh(document)
+
+            print(f"[DB] Document committed and refreshed, ID: {document.id}")
+            sys.stdout.flush()
+
+        except Exception as db_error:
+            print(f"[ERROR] Database operation failed: {db_error}")
+            print(f"[ERROR] Traceback: {traceback.format_exc()}")
+            print(f"[ERROR] Document details: name={upload_metadata.name}, size={upload_metadata.file_size}")
+            sys.stdout.flush()
+            db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to save document to database: {str(db_error)}"
+            )
+
         # Create access log
-        access_log = DocumentAccessLog(
-            document_id=document.id,
-            user_id=current_user.id,
-            action="write",  # Upload is a write operation
-            access_method="api",
-            success=True,
-            details={"file_size": upload_metadata.file_size, "mime_type": upload_metadata.mime_type, "operation": "upload"}
-        )
-        db.add(access_log)
-        db.commit()
-        
-        # Return with permission flags
-        doc_dict = document.to_dict()
-        doc_dict["can_read"] = True
-        doc_dict["can_write"] = True  
-        doc_dict["can_delete"] = True
-        doc_dict["can_share"] = True
-        
-        return DocumentSchema(**doc_dict)
+        try:
+            print(f"[ACCESS_LOG] Creating access log for document {document.id}")
+            access_log = DocumentAccessLog(
+                document_id=document.id,
+                user_id=current_user.id,
+                action="write",  # Upload is a write operation
+                access_method="api",
+                success=True,
+                details={"file_size": upload_metadata.file_size, "mime_type": upload_metadata.mime_type, "operation": "upload"}
+            )
+            db.add(access_log)
+            db.commit()
+            print(f"[ACCESS_LOG] Access log created successfully")
+            sys.stdout.flush()
+        except Exception as log_error:
+            print(f"[ERROR] Failed to create access log: {log_error}")
+            print(f"[ERROR] Traceback: {traceback.format_exc()}")
+            sys.stdout.flush()
+            # Continue even if access log fails
+
+        # Prepare response dictionary
+        try:
+            print(f"[RESPONSE] Converting document to dict")
+            doc_dict = document.to_dict()
+            print(f"[RESPONSE] Document dict created successfully, keys: {list(doc_dict.keys())}")
+            sys.stdout.flush()
+        except Exception as dict_error:
+            print(f"[ERROR] Failed to convert document to dict: {dict_error}")
+            print(f"[ERROR] Traceback: {traceback.format_exc()}")
+            sys.stdout.flush()
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to prepare document response: {str(dict_error)}"
+            )
+
+        # Add permission flags
+        try:
+            print(f"[RESPONSE] Adding permission flags")
+            doc_dict["can_read"] = True
+            doc_dict["can_write"] = True
+            doc_dict["can_delete"] = True
+            doc_dict["can_share"] = True
+            print(f"[RESPONSE] Permission flags added")
+            sys.stdout.flush()
+        except Exception as perm_error:
+            print(f"[ERROR] Failed to add permission flags: {perm_error}")
+            sys.stdout.flush()
+
+        # Validate required fields for DocumentSchema
+        required_fields = ['id', 'name', 'document_type', 'mime_type', 'file_size', 'created_at', 'updated_at']
+        missing_fields = []
+        for field in required_fields:
+            if field not in doc_dict or doc_dict[field] is None:
+                missing_fields.append(field)
+
+        if missing_fields:
+            print(f"[ERROR] Missing required fields for DocumentSchema: {missing_fields}")
+            print(f"[ERROR] Document dict keys: {list(doc_dict.keys())}")
+            for field in missing_fields:
+                print(f"[ERROR] Field '{field}' value: {doc_dict.get(field, 'NOT FOUND')}")
+            sys.stdout.flush()
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Document data is incomplete. Missing fields: {', '.join(missing_fields)}"
+            )
+
+        # Serialize to DocumentSchema
+        try:
+            print(f"[RESPONSE] Serializing to DocumentSchema")
+            response_schema = DocumentSchema(**doc_dict)
+            print(f"[RESPONSE] DocumentSchema created successfully")
+            sys.stdout.flush()
+            return response_schema
+        except Exception as schema_error:
+            print(f"[ERROR] DocumentSchema serialization failed: {schema_error}")
+            print(f"[ERROR] Document dict sample: {dict(list(doc_dict.items())[:10])}")
+            print(f"[ERROR] Traceback: {traceback.format_exc()}")
+            sys.stdout.flush()
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to serialize document response: {str(schema_error)}"
+            )
         
     except Exception as e:
         db.rollback()
         # Clean up file if it was created
         if 'storage_path' in locals() and os.path.exists(storage_path):
             os.remove(storage_path)
-        
+
+        # Log the full error for debugging
+        import traceback
+        print(f"[ERROR] Document upload failed: {str(e)}")
+        print(f"[ERROR] Full traceback: {traceback.format_exc()}")
+
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to upload file: {str(e)}"
@@ -867,8 +971,10 @@ async def upload_file(
 @router.get("/{document_id}/download")
 async def download_file(
     document_id: int,
+    encrypted: bool = Query(False, description="Return encrypted bytes for client-side decryption"),
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    request: Request = None
 ):
     """Download an encrypted file."""
     document = db.query(Document).filter(Document.id == document_id).first()
@@ -899,13 +1005,32 @@ async def download_file(
             detail="Document file path is not configured. The file may have been moved or deleted from the system."
         )
 
-    if not os.path.exists(document.storage_path):
-        # Log the missing file for admin investigation
-        print(f"ERROR MISSING FILE: Document '{document.name}' (ID: {document.id}) file not found at path: {document.storage_path}")
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Document file is missing from disk storage. The file '{document.name}' may have been moved, deleted, or the storage location is no longer accessible."
-        )
+    # Normalize storage path and check file existence
+    from pathlib import Path
+    storage_path = Path(document.storage_path)
+
+    if not storage_path.exists():
+        # Try with platform-specific separators as fallback (for old Windows paths)
+        storage_path_alt = Path(str(document.storage_path).replace('\\', os.sep).replace('/', os.sep))
+        if storage_path_alt.exists():
+            # Update database with correct POSIX path
+            document.storage_path = storage_path_alt.as_posix()
+            db.commit()
+            storage_path = storage_path_alt
+            print(f"INFO: Normalized storage path from '{document.storage_path}' to POSIX format")
+        else:
+            # File truly missing
+            print(f"ERROR MISSING FILE: Document '{document.name}' (ID: {document.id}) file not found at path: {document.storage_path}")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={
+                    "code": "file_missing",
+                    "detail": f"Document file is missing from disk storage",
+                    "file_path": str(document.storage_path),
+                    "document_id": document_id,
+                    "document_name": document.name
+                }
+            )
 
     # VALIDATION: Check and correct file size consistency
     try:
@@ -947,14 +1072,40 @@ async def download_file(
     document.accessed_at = datetime.now()
     db.commit()
 
-    # Read file content directly to avoid Content-Length issues
+    # Read file content
     try:
-        with open(document.storage_path, 'rb') as file:
+        with open(storage_path, 'rb') as file:
             file_content = file.read()
 
         print(f"SUCCESS: File read successfully, content size: {len(file_content)} bytes")
 
-        # Return file content using basic Response (no Content-Length header)
+        # Log access
+        access_log = DocumentAccessLog(
+            document_id=document.id,
+            user_id=current_user.id,
+            action="download",
+            access_method="api",
+            success=True,
+            ip_address=request.client.host if request and hasattr(request, 'client') else None
+        )
+        db.add(access_log)
+        db.commit()
+
+        # Return encrypted bytes if requested (for client-side decryption)
+        if encrypted:
+            from fastapi.responses import Response
+            return Response(
+                content=file_content,
+                media_type="application/octet-stream",
+                headers={
+                    "Content-Disposition": f"attachment; filename*=UTF-8''{document.name}.enc",
+                    "X-Encrypted": "true",
+                    "X-Encryption-Algorithm": document.encryption_algorithm or "AES-256-GCM",
+                    "X-Document-ID": str(document.id)
+                }
+            )
+
+        # Otherwise return file (for unencrypted or server-decrypt mode)
         from fastapi.responses import Response
         return Response(
             content=file_content,
@@ -1097,16 +1248,15 @@ async def get_document_encryption_data(
         )
 
     # Validate required encryption fields
-    if not document.ciphertext:
-        # If ciphertext is missing, try to read from file and populate it
+    if not document.encryption_key:
+        # If encryption_key is missing, try to read from file and populate it
         if document.storage_path and os.path.exists(document.storage_path):
             try:
-                import base64
                 with open(document.storage_path, 'rb') as file:
                     file_content = file.read()
-                    document.ciphertext = base64.b64encode(file_content).decode('utf-8')
+                    document.encryption_key = file_content
                     db.commit()
-                    print(f"MIGRATION: Populated ciphertext for document {document.id} from file")
+                    print(f"MIGRATION: Populated encryption_key for document {document.id} from file")
             except Exception as e:
                 print(f"ERROR: Failed to read file content for document {document.id}: {e}")
                 raise HTTPException(
@@ -1116,7 +1266,7 @@ async def get_document_encryption_data(
         else:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Document ciphertext not found and file is missing"
+                detail="Document encryption_key not found and file is missing"
             )
 
     if not document.encryption_iv or not document.encryption_auth_tag:
@@ -1147,7 +1297,7 @@ async def get_document_encryption_data(
 
     # DEBUG: Log encryption data being returned
     print(f"DEBUG ENCRYPTION DATA - Document {document.id}:")
-    print(f"  ciphertext type: {type(document.ciphertext)}, length: {len(document.ciphertext) if document.ciphertext else 0}")
+    print(f"  encryption_key type: {type(document.encryption_key)}, length: {len(document.encryption_key) if document.encryption_key else 0}")
     print(f"  encryption_iv type: {type(document.encryption_iv)}, length: {len(document.encryption_iv) if document.encryption_iv else 0}")
     print(f"  encryption_auth_tag type: {type(document.encryption_auth_tag)}, length: {len(document.encryption_auth_tag) if document.encryption_auth_tag else 0}")
     print(f"  encryption_algorithm: {document.encryption_algorithm}")
@@ -1167,7 +1317,7 @@ async def get_document_encryption_data(
         "name": document.name,
         "mime_type": document.mime_type,
         "file_size": document.file_size,
-        "ciphertext": document.ciphertext,
+        "encryption_key": base64.b64encode(document.encryption_key).decode('utf-8') if document.encryption_key else None,
         "encryption_iv": encryption_iv_b64,
         "encryption_auth_tag": encryption_auth_tag_b64,
         "encryption_algorithm": document.encryption_algorithm,

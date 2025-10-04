@@ -5,7 +5,7 @@ This module defines request/response schemas for the RBAC API endpoints
 including validation rules and serialization formats.
 """
 
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from typing import List, Optional, Set, Dict, Any
 from datetime import datetime
 from enum import Enum
@@ -54,20 +54,21 @@ class PermissionBase(BaseModel):
     action: str = Field(..., description="Action this permission allows")
     requires_resource_ownership: bool = Field(False, description="Whether permission requires owning the resource")
 
-    @validator('name')
+    @field_validator('name')
+    @classmethod
     def validate_permission_name(cls, v):
         """Validate permission name format."""
         if ':' not in v:
             raise ValueError("Permission name must follow format 'resource:action'")
-        
+
         parts = v.split(':')
         if len(parts) != 2:
             raise ValueError("Permission name must follow format 'resource:action'")
-        
+
         resource, action = parts
         if not resource or not action:
             raise ValueError("Both resource and action must be non-empty")
-        
+
         return v.lower()
 
 
@@ -102,7 +103,8 @@ class RoleBase(BaseModel):
     description: Optional[str] = Field(None, description="Role description")
     hierarchy_level: Optional[int] = Field(None, ge=1, le=5, description="Role hierarchy level (1-5)")
 
-    @validator('name')
+    @field_validator('name')
+    @classmethod
     def validate_role_name(cls, v):
         """Validate role name format."""
         if not v.replace('_', '').isalnum():

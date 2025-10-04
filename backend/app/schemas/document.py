@@ -9,7 +9,7 @@ This module defines request/response schemas for document operations including:
 - Version tracking
 """
 
-from pydantic import BaseModel, Field, validator, root_validator
+from pydantic import BaseModel, Field, field_validator, model_validator, ConfigDict
 from typing import List, Optional, Dict, Any, Union
 from datetime import datetime
 from enum import Enum
@@ -57,7 +57,7 @@ class DocumentBase(BaseModel):
     doc_metadata: Dict[str, Any] = Field(default_factory=dict, description="Additional metadata")
     is_sensitive: bool = Field(False, description="Whether document contains sensitive data")
 
-    @validator('name')
+    @field_validator('name')
     def validate_name(cls, v):
         """Validate document name."""
         if not v.strip():
@@ -70,7 +70,7 @@ class DocumentBase(BaseModel):
         
         return v.strip()
 
-    @validator('tags')
+    @field_validator('tags')
     def validate_tags(cls, v):
         """Validate tags list."""
         if len(v) > 20:
@@ -90,7 +90,7 @@ class DocumentCreate(DocumentBase):
     document_type: DocumentType = Field(DocumentType.DOCUMENT, description="Type of document")
     share_type: DocumentShareType = Field(DocumentShareType.PRIVATE, description="Sharing level")
     
-    @root_validator(skip_on_failure=True)
+    @model_validator(mode='before')
     def validate_document_create(cls, values):
         """Validate document creation data."""
         doc_type = values.get('document_type')
@@ -114,7 +114,7 @@ class DocumentUpdate(BaseModel):
     is_sensitive: Optional[bool] = None
     share_type: Optional[DocumentShareType] = None
 
-    @validator('name')
+    @field_validator('name')
     def validate_name(cls, v):
         """Validate document name."""
         if v is not None:
@@ -129,42 +129,96 @@ class DocumentUpdate(BaseModel):
 
 
 class DocumentUpload(BaseModel):
-    """Schema for file upload metadata."""
+    """Schema for file upload metadata with camelCase/snake_case normalization."""
+    model_config = ConfigDict(populate_by_name=True)  # Pydantic v2: allow field aliases
+
     name: str = Field(..., description="Original filename")
-    parent_id: Optional[int] = Field(None, description="Parent folder ID")
+    parent_id: Optional[int] = Field(None, description="Parent folder ID", alias="parentId")
     description: Optional[str] = Field(None, description="File description")
     tags: List[str] = Field(default_factory=list, description="File tags")
-    doc_metadata: Dict[str, Any] = Field(default_factory=dict, description="Additional metadata")
-    is_sensitive: bool = Field(False, description="Whether file contains sensitive data")
-    
+    doc_metadata: Dict[str, Any] = Field(default_factory=dict, description="Additional metadata", alias="docMetadata")
+    is_sensitive: bool = Field(False, description="Whether file contains sensitive data", alias="isSensitive")
+
     # Legacy encryption information (for backward compatibility)
-    encryption_key_id: Optional[str] = Field(None, description="Encryption key identifier")
-    encryption_iv: Optional[str] = Field(None, description="Base64 encoded initialization vector")
-    encryption_auth_tag: Optional[str] = Field(None, description="Base64 encoded authentication tag")
-    
+    encryption_key_id: Optional[str] = Field(None, description="Encryption key identifier", alias="encryptionKeyId")
+    encryption_iv: Optional[str] = Field(None, description="Base64 encoded initialization vector", alias="encryptionIv")
+    encryption_auth_tag: Optional[str] = Field(None, description="Base64 encoded authentication tag", alias="encryptionAuthTag")
+
     # Zero-Knowledge encryption information (DEK-per-document architecture)
-    encrypted_dek: Optional[str] = Field(None, description="Encrypted Document Encryption Key (JSON)")
-    encryption_algorithm: Optional[str] = Field(None, description="Encryption algorithm used")
-    original_filename: Optional[str] = Field(None, description="Original filename for zero-knowledge uploads")
-    mime_type: str = Field(..., description="MIME type of the file")
-    original_size: Optional[int] = Field(None, description="Original file size for zero-knowledge uploads")
-    
-    # File validation
-    file_size: int = Field(..., gt=0, description="File size in bytes")
-    file_hash: Optional[str] = Field(None, description="SHA256 hash of original file")
-    
-    @root_validator(skip_on_failure=True)
-    def validate_encryption_method(cls, values):
-        """Validate that either legacy or zero-knowledge encryption is provided."""
-        has_legacy = all(values.get(field) for field in ['encryption_key_id', 'encryption_iv', 'encryption_auth_tag'])
-        has_zero_knowledge = values.get('encrypted_dek') is not None
-        
+    encrypted_dek: Optional[str] = Field(None, description="Encrypted Document Encryption Key", alias="encryptedDek")
+    dek: Optional[str] = Field(None, description="Encrypted DEK (base64 JSON format, alternate field)")
+    encryption_algorithm: Optional[str] = Field(None, description="Encryption algorithm used", alias="encryptionAlgorithm")
+    salt: Optional[str] = Field(None, description="Salt for key derivation (base64)")
+
+    # File metadata
+    original_filename: Optional[str] = Field(None, description="Original filename", alias="originalFilename")
+    mime_type: str = Field(..., description="MIME type of the file", alias="mimeType")
+    original_size: Optional[int] = Field(None, description="Original file size", alias="originalSize")
+    file_size: int = Field(..., gt=0, description="File size in bytes", alias="fileSize")
+    file_hash: Optional[str] = Field(None, description="SHA256 hash of original file", alias="fileHash")
+
+    @model_validator(mode='after')
+    def normalize_dek_fields(self) -> 'DocumentUpload':
+        """Normalize DEK metadata from multiple formats (base64 JSON or direct)."""
+        # If 'dek' field exists (base64 JSON from useEncryption hook), decode and extract fields
+        if self.dek and not self.encrypted_dek:
+            try:
+                import base64, json
+                dek_json_str = base64.b64decode(self.dek).decode('utf-8')
+                dek_json = json.loads(dek_json_str)
+
+                # Extract DEK ciphertext as the encrypted_dek value
+                self.encrypted_dek = dek_json.get('ciphertext')
+
+                # Use DEK IV/authTag if main fields not provided
+                if not self.encryption_iv:
+                    self.encryption_iv = dek_json.get('iv')
+                if not self.encryption_auth_tag:
+                    self.encryption_auth_tag = dek_json.get('authTag')
+                if not self.encryption_algorithm:
+                    self.encryption_algorithm = dek_json.get('algorithm', 'AES-256-GCM')
+
+            except Exception as e:
+                # If decode fails, treat 'dek' as encrypted_dek directly
+                print(f"Warning: DEK field normalization failed: {e}. Using dek field as encrypted_dek.")
+                if not self.encrypted_dek:
+                    self.encrypted_dek = self.dek
+
+        return self
+
+    @model_validator(mode='after')
+    def validate_encryption_metadata(self) -> 'DocumentUpload':
+        """Validate encryption metadata completeness with detailed error messages."""
+        has_legacy = all([self.encryption_key_id, self.encryption_iv, self.encryption_auth_tag])
+        has_zero_knowledge = bool(self.encrypted_dek)
+
         if not (has_legacy or has_zero_knowledge):
-            raise ValueError("Either legacy encryption fields or zero-knowledge encrypted_dek must be provided")
-        
-        return values
-    
-    @validator('file_size')
+            missing_fields = {
+                "zero_knowledge_fields": {
+                    "encrypted_dek": self.encrypted_dek is not None,
+                    "dek": self.dek is not None,
+                    "salt": self.salt is not None,
+                    "encryption_iv": self.encryption_iv is not None
+                },
+                "legacy_fields": {
+                    "encryption_key_id": self.encryption_key_id is not None,
+                    "encryption_iv": self.encryption_iv is not None,
+                    "encryption_auth_tag": self.encryption_auth_tag is not None
+                }
+            }
+            raise ValueError(
+                f"Missing encryption metadata. Either zero-knowledge (encrypted_dek/dek + salt) or "
+                f"legacy (encryption_key_id + encryption_iv + encryption_auth_tag) fields required. "
+                f"Received fields: {missing_fields}"
+            )
+
+        # Validate zero-knowledge requirements
+        if has_zero_knowledge and not self.salt:
+            raise ValueError("Salt is required for zero-knowledge encryption. Include 'salt' field in upload metadata.")
+
+        return self
+
+    @field_validator('file_size')
     def validate_file_size(cls, v):
         """Validate file size limits."""
         max_size = 500 * 1024 * 1024  # 500MB limit
@@ -181,64 +235,67 @@ class Document(DocumentBase):
     mime_type: Optional[str] = None
     file_size: Optional[int] = None
     file_extension: Optional[str] = None
-    
+
     # Path and hierarchy
     path: Optional[str] = None
     depth_level: int = 0
-    
+
     # Ownership and permissions
     owner_id: int
     created_by: int
     updated_by: Optional[int] = None
-    
+
     # Status and sharing
     status: DocumentStatus
     share_type: DocumentShareType
     is_shared: bool = False
     is_encrypted: bool = True
-    
+
     # Encryption information (optional for compatibility)
     encryption_algorithm: Optional[str] = None
     encryption_key_id: Optional[str] = None
     encryption_iv: Optional[str] = None
     encryption_auth_tag: Optional[str] = None
-    
+    encrypted_dek: Optional[str] = None  # Document Encryption Key (DEK) encrypted with user's master key
+    encryption_key: Optional[str] = None  # Legacy: Encrypted document content (base64 encoded)
+    encryption_salt: Optional[str] = None  # Salt for key derivation (base64 encoded)
+
     # Timestamps
     created_at: datetime
     updated_at: datetime
     accessed_at: Optional[datetime] = None
-    
+
     # Version information
     version_number: int = 1
     is_latest_version: bool = True
-    
+
     # Statistics
     child_count: int = 0
     total_size: int = 0
-    
+
     # Computed fields
     full_path: Optional[str] = None
     can_read: bool = True
     can_write: bool = False
     can_delete: bool = False
     can_share: bool = False
-    
+
     # Enhanced search fields
     author_name: Optional[str] = None
     author_email: Optional[str] = None
     file_category: Optional[str] = None
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
-    @validator('uuid', pre=True)
+    @field_validator('uuid', mode='before')
     def validate_uuid(cls, v):
         """Ensure UUID is string format."""
         if isinstance(v, uuid.UUID):
             return str(v)
         return v
 
-    @root_validator(skip_on_failure=True)
+    @model_validator(mode='before')
     def compute_full_path(cls, values):
         """Compute full path from path and name."""
         path = values.get('path', '')
@@ -267,7 +324,7 @@ class DocumentTree(BaseModel):
     children: List['DocumentTree'] = Field(default_factory=list, description="Child documents")
     
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 # Permission schemas
@@ -304,7 +361,7 @@ class DocumentPermission(DocumentPermissionBase):
     revoked_by: Optional[int] = None
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 class BulkPermissionUpdate(BaseModel):
@@ -336,7 +393,7 @@ class DocumentShareBase(BaseModel):
 class DocumentShareCreate(DocumentShareBase):
     """Schema for creating document shares."""
     
-    @root_validator(skip_on_failure=True)
+    @model_validator(mode='before')
     def validate_password_requirement(cls, values):
         """Validate password requirement."""
         require_password = values.get('require_password', False)
@@ -381,9 +438,9 @@ class DocumentShare(DocumentShareBase):
     last_accessed_ip: Optional[str] = None
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
-    @validator('uuid', pre=True)
+    @field_validator('uuid', mode='before')
     def validate_uuid(cls, v):
         """Ensure UUID is string format."""
         if isinstance(v, uuid.UUID):
@@ -406,7 +463,7 @@ class DocumentVersion(BaseModel):
     is_current: bool = False
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 class DocumentVersionCreate(BaseModel):
@@ -432,7 +489,7 @@ class DocumentAccessLog(BaseModel):
     error_message: Optional[str] = None
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 # Search and filter schemas
@@ -459,7 +516,7 @@ class DocumentFilter(BaseModel):
     size_range: Optional[str] = Field(None, description="Smart size range (small, medium, large, huge)")
     date_range: Optional[str] = Field(None, description="Smart date range (today, week, month, year)")
     
-    @validator('size_range')
+    @field_validator('size_range')
     def validate_size_range(cls, v):
         """Validate size range options."""
         if v is not None:
@@ -468,7 +525,7 @@ class DocumentFilter(BaseModel):
                 raise ValueError(f"Size range must be one of: {allowed_ranges}")
         return v
     
-    @validator('date_range')
+    @field_validator('date_range')
     def validate_date_range(cls, v):
         """Validate date range options."""
         if v is not None:
@@ -477,7 +534,7 @@ class DocumentFilter(BaseModel):
                 raise ValueError(f"Date range must be one of: {allowed_ranges}")
         return v
     
-    @validator('file_category')
+    @field_validator('file_category')
     def validate_file_category(cls, v):
         """Validate file category options."""
         if v is not None:
@@ -496,7 +553,7 @@ class DocumentSearch(BaseModel):
     page: int = Field(1, ge=1, description="Page number")
     size: int = Field(20, ge=1, le=100, description="Page size")
 
-    @validator('sort_by')
+    @field_validator('sort_by')
     def validate_sort_by(cls, v):
         """Validate sort field."""
         allowed_fields = [
@@ -507,7 +564,7 @@ class DocumentSearch(BaseModel):
             raise ValueError(f"Sort field must be one of: {allowed_fields}")
         return v
 
-    @validator('sort_order')
+    @field_validator('sort_order')
     def validate_sort_order(cls, v):
         """Validate sort order."""
         if v.lower() not in ['asc', 'desc']:
@@ -522,7 +579,7 @@ class BulkDocumentOperation(BaseModel):
     operation: str = Field(..., description="Operation to perform")
     parameters: Dict[str, Any] = Field(default_factory=dict, description="Operation parameters")
 
-    @validator('operation')
+    @field_validator('operation')
     def validate_operation(cls, v):
         """Validate operation type."""
         allowed_operations = ['move', 'copy', 'delete', 'archive', 'restore', 'update_tags']
@@ -544,7 +601,7 @@ class DocumentMoveRequest(BaseModel):
     target_parent_id: Optional[int] = Field(None, description="Target parent folder ID")
     conflict_resolution: str = Field("rename", description="How to handle name conflicts")
 
-    @validator('conflict_resolution')
+    @field_validator('conflict_resolution')
     def validate_conflict_resolution(cls, v):
         """Validate conflict resolution strategy."""
         allowed_strategies = ['rename', 'overwrite', 'skip', 'error']
@@ -602,7 +659,7 @@ class BulkFolderCreateRequest(BaseModel):
     folders: List[FolderCreationItem] = Field(..., min_items=1, description="Folders to create")
     conflict_resolution: str = Field("skip", description="How to handle existing folders")
     
-    @validator('conflict_resolution')
+    @field_validator('conflict_resolution')
     def validate_conflict_resolution(cls, v):
         """Validate conflict resolution strategy."""
         allowed_strategies = ['skip', 'rename', 'error']
@@ -610,7 +667,8 @@ class BulkFolderCreateRequest(BaseModel):
             raise ValueError(f"Conflict resolution must be one of: {allowed_strategies}")
         return v
     
-    @validator('folders')
+    @field_validator('folders')
+    @classmethod
     def validate_folders_structure(cls, v):
         """Validate folder structure and paths."""
         paths = set()
@@ -655,7 +713,7 @@ class BatchFileUploadRequest(BaseModel):
     conflict_resolution: str = Field("rename", description="How to handle name conflicts")
     create_folders: bool = Field(True, description="Whether to create missing folders")
     
-    @validator('conflict_resolution')
+    @field_validator('conflict_resolution')
     def validate_conflict_resolution(cls, v):
         """Validate conflict resolution strategy."""
         allowed_strategies = ['rename', 'overwrite', 'skip', 'error']

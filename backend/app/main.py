@@ -222,18 +222,26 @@ async def general_exception_handler(request: Request, exc: Exception):
     # Always return a safe error message to prevent Unicode issues
     error_detail = "Internal server error"
 
+    # Log the actual error for debugging (remove sensitive info in production)
+    import traceback
+    import sys
+    print(f"\n[ERROR {datetime.now()}] {type(exc).__name__}: {str(exc)}", file=sys.stderr)
+    print(f"URL: {request.method} {request.url}", file=sys.stderr)
+    traceback.print_exc(file=sys.stderr)
+    print("-" * 80, file=sys.stderr)
+
     response = JSONResponse(
         status_code=500,
         content={"detail": error_detail}
     )
-    
+
     # Add CORS headers manually for error responses
     origin = request.headers.get("origin")
     if origin in settings.CORS_ORIGINS:
         response.headers["Access-Control-Allow-Origin"] = origin
         response.headers["Access-Control-Allow-Credentials"] = "true"
         response.headers["Access-Control-Expose-Headers"] = "*"
-    
+
     return response
 
 # Include API router

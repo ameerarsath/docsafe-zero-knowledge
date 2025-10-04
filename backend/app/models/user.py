@@ -62,7 +62,6 @@ class User(Base):
     
     # Additional profile fields
     full_name = Column(String(100), nullable=True)
-    department = Column(String(100), nullable=True)
     
     # MFA relationships (defined here to avoid circular imports)
     # mfa_used_codes = relationship("MFAUsedCode", back_populates="user", cascade="all, delete-orphan")

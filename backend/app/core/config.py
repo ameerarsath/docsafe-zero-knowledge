@@ -114,7 +114,7 @@ class Settings(BaseSettings):
     ENCRYPTION_KEY_DERIVATION: str = Field(default="PBKDF2", description="Key derivation function")
     PBKDF2_ITERATIONS: int = 100000
     SALT_LENGTH: int = 16
-    ENCRYPTED_FILES_PATH: str = "/app/encrypted-files"
+    ENCRYPTED_FILES_PATH: str = "./data/encrypted-files"
     
     # Rate Limiting Settings
     LOGIN_RATE_LIMIT_ATTEMPTS: int = 3
