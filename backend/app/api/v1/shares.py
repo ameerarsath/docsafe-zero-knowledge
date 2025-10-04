@@ -1031,9 +1031,11 @@ async def preview_shared_document(
                 }
 
                 # Only add encryption metadata headers if they exist
+                # CRITICAL FIX: encryption_salt is LargeBinary (bytes), must base64 encode for HTTP headers
                 if document.encryption_salt:
-                    headers["X-Encryption-Salt"] = document.encryption_salt
+                    headers["X-Encryption-Salt"] = base64.b64encode(document.encryption_salt).decode('utf-8')
                 if document.encryption_iv:
+                    # encryption_iv is already a string (base64 encoded), use directly
                     headers["X-Encryption-IV"] = document.encryption_iv
 
                 print(f"📦 Serving encrypted content for document {document.id} with decryption metadata")
