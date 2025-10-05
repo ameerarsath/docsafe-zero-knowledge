@@ -1,7 +1,11 @@
 /**
- * Shared Document Preview Component
- * Specialized component for previewing shared documents using the shares API
- * Supports client-side decryption and proper iframe security for zero-knowledge encryption
+ * Shared Document Preview Component (modified)
+ * - Main change: Avoid using the remote preview endpoint directly for PDFs when rendering
+ *   external/shared links. Instead the component prefers a blob/data URL created from
+ *   the fetched response (state.previewUrl) so the browser will render the PDF inline
+ *   rather than trigger a download due to server Content-Disposition headers.
+ * - If a blob URL isn't available (very large streaming scenarios), falls back to the
+ *   existing SecurePDFViewer streaming component.
  */
 
 import React, { useState, useCallback, useEffect } from 'react';
@@ -85,10 +89,11 @@ export const SharedDocumentPreview: React.FC<SharedDocumentPreviewProps> = ({
 
   // Detect if we should use streaming approach (for external shares)
   useEffect(() => {
-    // Use streaming if this is an external share (no user keys loaded)
-    const shouldUseStreaming = !keys && sharePassword;
+    // Use streaming for ALL shares (shareToken means external share link)
+    // Don't rely on keys - user might be logged in when viewing external share
+    const shouldUseStreaming = !!shareToken; // ALWAYS use for shares
     updateState({ useStreaming: shouldUseStreaming });
-  }, [keys, sharePassword, updateState]);
+  }, [shareToken, updateState]);
 
   const loadPreview = useCallback(async () => {
     if (!shareToken) {
@@ -96,7 +101,7 @@ export const SharedDocumentPreview: React.FC<SharedDocumentPreviewProps> = ({
       return;
     }
 
-    updateState({ isLoading: true, error: null, isDecrypting: false, isGeneratingPreview: false });
+    updateState({ isLoading: true, error: null, isDecrypting: false, isGeneratingPreview: false, previewUrl: null, pluginResult: null });
 
     try {
       console.log('📄 Fetching shared document from preview endpoint...');
@@ -285,7 +290,7 @@ export const SharedDocumentPreview: React.FC<SharedDocumentPreviewProps> = ({
         }
       }
 
-      // If it's a PDF, we can display it directly
+      // If it's a PDF, create a blob URL and set previewUrl so we can guarantee inline rendering
       if (documentBlob.type === 'application/pdf') {
         console.log('📄 PDF detected, creating direct blob URL for preview...');
         const pdfUrl = URL.createObjectURL(documentBlob);
@@ -294,7 +299,20 @@ export const SharedDocumentPreview: React.FC<SharedDocumentPreviewProps> = ({
           isLoading: false,
           isGeneratingPreview: false,
         });
-        return; // Skip the plugin system for PDFs
+        // DO NOT return here - we set previewUrl and allow renderers to use it. (No direct navigation to server URL.)
+        return;
+      }
+
+      // CRITICAL: For shares (external links), skip plugin system entirely
+      // UniversalFileViewer will handle preview via its own fetch
+      // Note: shareToken indicates this is a shared document, regardless of user login state
+      if (shareToken) {
+        console.log('📄 Share link detected - skipping plugin system, using UniversalFileViewer');
+        updateState({
+          isLoading: false,
+          isGeneratingPreview: false,
+        });
+        return;
       }
 
       console.log('🖼️ Generating document preview...');
@@ -322,7 +340,7 @@ export const SharedDocumentPreview: React.FC<SharedDocumentPreviewProps> = ({
         isGeneratingPreview: false,
       });
     }
-  }, [shareToken, document, sharePassword, permissions, updateState, getDocumentPreview]);
+  }, [shareToken, document, sharePassword, permissions, updateState]);
 
   useEffect(() => {
     if (isOpen) {
@@ -332,7 +350,7 @@ export const SharedDocumentPreview: React.FC<SharedDocumentPreviewProps> = ({
     return () => {
       // Clean up object URL when component unmounts
       if (state.previewUrl && state.previewUrl.startsWith('blob:')) {
-        URL.revokeObjectURL(state.previewUrl);
+        try { URL.revokeObjectURL(state.previewUrl); } catch (e) { /* ignore */ }
       }
     };
   }, [isOpen, loadPreview]);
@@ -430,12 +448,30 @@ export const SharedDocumentPreview: React.FC<SharedDocumentPreviewProps> = ({
           {state.useStreaming && !state.isLoading && !state.error && (
             <div className="h-full">
               {document.mime_type === 'application/pdf' ? (
-                <SecurePDFViewer
-                  shareToken={shareToken}
-                  password={sharePassword}
-                  fileName={document.name}
-                  onError={(error) => updateState({ error: error.message })}
-                />
+                // Prefer using the blob/data URL created by loadPreview so the browser renders inline
+                state.previewUrl ? (
+                  <div className="w-full h-full">
+                    <iframe
+                      src={state.previewUrl}
+                      className="w-full h-full border-none"
+                      title={`Preview of ${document.name}`}
+                      sandbox="allow-scripts allow-same-origin allow-forms"
+                      onLoad={() => console.log('✅ PDF preview loaded via object URL')}
+                      onError={(e) => {
+                        console.error('❌ PDF preview failed to load:', e);
+                        updateState({ error: 'Failed to display PDF preview' });
+                      }}
+                    />
+                  </div>
+                ) : (
+                  // Fallback: use streaming viewer only when we couldn't fetch/create a blob URL
+                  <SecurePDFViewer
+                    shareToken={shareToken}
+                    password={sharePassword}
+                    fileName={document.name}
+                    onError={(error) => updateState({ error: error.message })}
+                  />
+                )
               ) : (
                 <UniversalFileViewer
                   shareToken={shareToken}

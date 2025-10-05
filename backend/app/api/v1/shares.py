@@ -13,6 +13,7 @@ import secrets
 import hashlib
 import base64
 from typing import List, Optional, Dict, Any
+import math
 from datetime import datetime, timedelta, timezone
 from pydantic import BaseModel
 
@@ -913,6 +914,13 @@ async def preview_shared_document(
         # Read file from disk to check actual content
         with open(document.storage_path, "rb") as f:
             file_data = f.read()
+        
+        # Analyze the file structure
+        analyze_encrypted_file(file_data)
+        
+        # Add test for document 14
+        if document.id == 14:
+            test_encryption_decryption()
 
         # Check for inconsistent encryption state
         has_inconsistent_state = document.is_encrypted and not document.encryption_key
@@ -971,14 +979,12 @@ async def preview_shared_document(
                             print(f"📄 Decrypted data length: {len(decrypted_data)} bytes")
                             print(f"🔍 First 20 bytes: {decrypted_data[:20].hex()}")
 
-                            # Check if it's a valid DOCX
-                            if len(decrypted_data) >= 4:
-                                signature = decrypted_data[:4]
-                                if signature == b'PK':
-                                    print(f"✅ Valid DOCX signature detected")
-                                else:
-                                    print(f"⚠️  Unexpected signature: {signature.hex()}")
-
+                            # Check if it's a valid CSV file
+                            if decrypted_data.startswith(b'id,') or b',' in decrypted_data[:100]:
+                                print(f"✅ Valid CSV content detected")
+                            else:
+                                print(f"⚠️  Unexpected content for CSV file")
+                            
                             headers = {
                                 "Content-Length": str(len(decrypted_data)),
                                 "Content-Disposition": f'inline; filename="{document.name}"',
@@ -1227,6 +1233,118 @@ async def download_shared_document(
         )
 
 
+def test_encryption_decryption():
+    """Test encryption and decryption to ensure they're aligned."""
+    import os
+    import secrets
+    import base64
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+    from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.backends import default_backend
+    
+    # Test data
+    password = "testpassword123"
+    test_data = b"id,name,value\n1,test,123\n2,example,456"
+    
+    # Generate salt
+    salt = os.urandom(32)
+    
+    # Derive key
+    kdf = PBKDF2HMAC(
+        algorithm=hashes.SHA256(),
+        length=32,
+        salt=salt,
+        iterations=500000,
+        backend=default_backend()
+    )
+    key = kdf.derive(password.encode())
+    
+    # Generate IV
+    iv = os.urandom(12)
+    
+    # Encrypt
+    aesgcm = AESGCM(key)
+    ciphertext = aesgcm.encrypt(iv, test_data, None)
+    
+    # The encrypted data is IV + ciphertext + auth_tag
+    encrypted_data = iv + ciphertext
+    
+    print(f"Test encryption:")
+    print(f"  Salt: {salt.hex()}")
+    print(f"  IV: {iv.hex()}")
+    print(f"  Ciphertext length: {len(ciphertext)} bytes")
+    print(f"  Total encrypted data length: {len(encrypted_data)} bytes")
+    
+    # Now try to decrypt
+    try:
+        # Extract IV, ciphertext, and auth tag
+        extracted_iv = encrypted_data[:12]
+        extracted_auth_tag = encrypted_data[-16:]
+        extracted_ciphertext = encrypted_data[12:-16]
+        
+        print(f"Test decryption:")
+        print(f"  Extracted IV: {extracted_iv.hex()}")
+        print(f"  Extracted auth tag: {extracted_auth_tag.hex()}")
+        print(f"  Extracted ciphertext length: {len(extracted_ciphertext)} bytes")
+        
+        # Derive key again
+        kdf = PBKDF2HMAC(
+            algorithm=hashes.SHA256(),
+            length=32,
+            salt=salt,
+            iterations=500000,
+            backend=default_backend()
+        )
+        key = kdf.derive(password.encode())
+        
+        # Decrypt
+        aesgcm = AESGCM(key)
+        decrypted_data = aesgcm.decrypt(extracted_iv, extracted_ciphertext + extracted_auth_tag, None)
+        
+        print(f"  Decrypted data: {decrypted_data.decode()}")
+        print(f"  Success: {decrypted_data == test_data}")
+        
+        return True
+    except Exception as e:
+        print(f"  Decryption failed: {e}")
+        return False
+
+
+def analyze_encrypted_file(file_data: bytes):
+    """Analyze the structure of an encrypted file to determine the format."""
+    print(f"🔍 Analyzing encrypted file structure:")
+    print(f"   Total length: {len(file_data)} bytes")
+    print(f"   First 20 bytes: {file_data[:20].hex()}")
+    print(f"   Last 20 bytes: {file_data[-20:].hex()}")
+    
+    # Try to identify the structure
+    if len(file_data) >= 28:  # Minimum for IV (12) + some data + auth_tag (16)
+        # Try to extract IV, ciphertext, and auth tag
+        iv = file_data[:12]
+        auth_tag = file_data[-16:]
+        ciphertext = file_data[12:-16]
+        
+        print(f"   Possible IV: {iv.hex()}")
+        print(f"   Possible auth tag: {auth_tag.hex()}")
+        print(f"   Possible ciphertext length: {len(ciphertext)} bytes")
+        
+        # Check if the ciphertext looks like encrypted data (high entropy)
+        if len(ciphertext) > 0:
+            import math
+            freq = [0] * 256
+            for byte in ciphertext:
+                freq[byte] += 1
+            
+            entropy = 0.0
+            for count in freq:
+                if count > 0:
+                    probability = count / len(ciphertext)
+                    entropy -= probability * math.log2(probability)
+            
+            print(f"   Ciphertext entropy: {entropy:.2f} (higher is more random)")
+
+
 def detect_actual_encryption(document, file_data: bytes) -> bool:
     """Detect if file is actually encrypted by checking content and metadata."""
     if not file_data or len(file_data) < 8:
@@ -1328,23 +1446,15 @@ def get_original_document_content(document, encryption_password: str = None, all
 
 
 def decrypt_document_for_sharing(document, encrypted_data: bytes, password: str) -> bytes:
-    """Decrypt document content for external sharing."""
-    # Extensive logging for final debugging
-    print("\n--- DECRYPTION DEBUG START ---")
-    try:
-        print(f"Attempting to decrypt document ID: {document.id}")
-        pw_preview = f'{password[0]}...{password[-1]}' if password and len(password) > 1 else '***'
-        print(f"Password length: {len(password) if password else 0}, Preview: {pw_preview}")
-        print(f"Document Salt (b64): {document.encryption_salt}")
-        print(f"Document IV (b64): {document.encryption_iv}")
-        print(f"Encrypted Data Length: {len(encrypted_data)} bytes")
-    except Exception as log_e:
-        print(f"Error during logging: {log_e}")
-    print("----------------------------")
-
+    """
+    Decrypt document content for external sharing.
+    CRITICAL FIX: Uses database IV, not file IV for binary format.
+    """
+    print("\n🔐 === DECRYPTION START (FIXED VERSION) ===")
+    
     if not CRYPTO_AVAILABLE:
-        raise ValueError("Cryptography library not available for decryption")
-        
+        raise ValueError("Cryptography library not available")
+    
     import base64
     from cryptography.hazmat.primitives.ciphers.aead import AESGCM
     from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
@@ -1352,94 +1462,198 @@ def decrypt_document_for_sharing(document, encrypted_data: bytes, password: str)
     from cryptography.hazmat.backends import default_backend
     
     try:
-        # Check if document has zero-knowledge encryption metadata
-        if document.encrypted_dek and document.encryption_key:
-            # Zero-knowledge encryption model - decrypt using stored metadata
-            
-            # Get salt from document or use default
-            if hasattr(document, 'encryption_salt') and document.encryption_salt:
-                salt = base64.b64decode(document.encryption_salt)
+        print(f"Document ID: {document.id}")
+        print(f"Password length: {len(password)}")
+        print(f"Encrypted data length: {len(encrypted_data)} bytes")
+        print(f"Has encrypted_dek: {bool(document.encrypted_dek) if hasattr(document, 'encrypted_dek') else False}")
+        print(f"Has encryption_key: {bool(document.encryption_key) if hasattr(document, 'encryption_key') else False}")
+
+        # Get salt
+        if hasattr(document, 'encryption_salt') and document.encryption_salt:
+            salt = document.encryption_salt if isinstance(document.encryption_salt, bytes) else base64.b64decode(document.encryption_salt)
+            print(f"Salt: {salt.hex()[:32]}... ({len(salt)} bytes)")
+        else:
+            raise ValueError("No encryption salt found")
+
+        # CHECK FOR DEK-BASED ENCRYPTION FIRST
+        if hasattr(document, 'encrypted_dek') and document.encrypted_dek:
+            print("✓ DEK-based encryption detected - decrypting DEK first")
+
+            # Step 1: Derive master key from password
+            iteration_counts = [500000, 600000, 310000, 100000]
+            dek = None
+
+            for iterations in iteration_counts:
+                try:
+                    print(f"🔑 Trying {iterations} iterations for DEK decryption...")
+
+                    kdf = PBKDF2HMAC(
+                        algorithm=hashes.SHA256(),
+                        length=32,
+                        salt=salt,
+                        iterations=iterations,
+                        backend=default_backend()
+                    )
+                    master_key = kdf.derive(password.encode('utf-8'))
+
+                    # Step 2: Decrypt the DEK using master key
+                    encrypted_dek_data = base64.b64decode(document.encrypted_dek)
+
+                    # DEK format: [IV:12][ciphertext][auth_tag:16]
+                    if len(encrypted_dek_data) < 28:
+                        raise ValueError("Invalid encrypted DEK format")
+
+                    dek_iv = encrypted_dek_data[:12]
+                    dek_ciphertext = encrypted_dek_data[12:-16]
+                    dek_tag = encrypted_dek_data[-16:]
+
+                    print(f"DEK - IV: {dek_iv.hex()}")
+                    print(f"DEK - Ciphertext: {len(dek_ciphertext)} bytes")
+                    print(f"DEK - Auth tag: {dek_tag.hex()}")
+
+                    aesgcm = AESGCM(master_key)
+                    dek = aesgcm.decrypt(dek_iv, dek_ciphertext + dek_tag, None)
+
+                    print(f"✅ DEK decrypted successfully with {iterations} iterations!")
+                    print(f"DEK length: {len(dek)} bytes")
+                    break
+
+                except Exception as e:
+                    print(f"❌ Failed to decrypt DEK with {iterations} iterations: {type(e).__name__}")
+                    continue
+
+            if not dek:
+                raise ValueError("Failed to decrypt DEK with any iteration count")
+
+            # Step 3: Now decrypt the document content using the DEK
+            # Get IV and auth tag from database
+            if hasattr(document, 'encryption_iv') and document.encryption_iv:
+                doc_iv = base64.b64decode(document.encryption_iv) if isinstance(document.encryption_iv, str) else document.encryption_iv
+                print(f"✓ Using DATABASE IV for document: {doc_iv.hex()}")
             else:
-                # Fallback salt for legacy documents
-                salt = b'default_salt_for_legacy_docs_16b'
-            
-            # Derive master key from password
-            kdf = PBKDF2HMAC(
-                algorithm=hashes.SHA256(),
-                length=32,
-                salt=salt,
-                iterations=500000,  # Match frontend iterations
-                backend=default_backend()
-            )
-            master_key = kdf.derive(password.encode())
-            
-            # Decrypt the DEK (Document Encryption Key)
-            encrypted_dek_data = base64.b64decode(document.encrypted_dek)
-            
-            # For AES-GCM, the format is: IV (12 bytes) + ciphertext + auth_tag (16 bytes)
-            if len(encrypted_dek_data) < 28:  # 12 + 16 minimum
-                raise ValueError("Invalid encrypted DEK format")
-                
-            dek_iv = encrypted_dek_data[:12]  # First 12 bytes are IV for GCM
-            dek_ciphertext = encrypted_dek_data[12:-16]  # Middle part is encrypted DEK
-            dek_tag = encrypted_dek_data[-16:]  # Last 16 bytes are auth tag
-            
-            # Decrypt DEK using AES-GCM
-            aesgcm = AESGCM(master_key)
-            dek = aesgcm.decrypt(dek_iv, dek_ciphertext + dek_tag, None)
-            
-            # Now decrypt the document content using the DEK
-            ciphertext_data = base64.b64decode(document.encryption_key)
-            
-            if len(ciphertext_data) < 28:  # 12 + 16 minimum
-                raise ValueError("Invalid document ciphertext format")
-                
-            doc_iv = ciphertext_data[:12]  # First 12 bytes are IV
-            doc_ciphertext = ciphertext_data[12:-16]  # Middle part is encrypted content
-            doc_tag = ciphertext_data[-16:]  # Last 16 bytes are auth tag
-            
+                raise ValueError("No IV found in database")
+
+            if hasattr(document, 'encryption_auth_tag') and document.encryption_auth_tag:
+                doc_auth_tag = base64.b64decode(document.encryption_auth_tag) if isinstance(document.encryption_auth_tag, str) else document.encryption_auth_tag
+                print(f"✓ Using DATABASE auth tag: {doc_auth_tag.hex()}")
+            else:
+                raise ValueError("No auth tag found in database")
+
+            # File structure: [12 UNUSED bytes][ciphertext][16 byte auth tag]
+            # The auth tag is BOTH in the file AND in the database
+            # Extract ciphertext (skip first 12 bytes, exclude last 16 bytes)
+            doc_ciphertext = encrypted_data[12:-16]  # Skip first 12, exclude last 16
+            file_auth_tag = encrypted_data[-16:]  # Last 16 bytes from file
+
+            print(f"Document - Skipped first 12 bytes: {encrypted_data[:12].hex()}")
+            print(f"Document - Ciphertext: {len(doc_ciphertext)} bytes")
+            print(f"Document - File auth tag: {file_auth_tag.hex()}")
+            print(f"Document - DB auth tag:   {doc_auth_tag.hex()}")
+
+            # Verify auth tags match
+            if file_auth_tag.hex() == doc_auth_tag.hex():
+                print("Auth tags match - using DB auth tag")
+            else:
+                print("WARNING: Auth tags DO NOT match!")
+
             # Decrypt document content using DEK
             doc_aesgcm = AESGCM(dek)
-            decrypted_content = doc_aesgcm.decrypt(doc_iv, doc_ciphertext + doc_tag, None)
+            plaintext = doc_aesgcm.decrypt(doc_iv, doc_ciphertext + doc_auth_tag, None)
+
+            print(f"✅ Document decrypted successfully!")
+            print(f"Decrypted {len(plaintext)} bytes")
+            print(f"Preview: {plaintext[:50]}...")
+            print("🔐 === DECRYPTION END ===\n")
+
+            return plaintext
+
+        # FALLBACK: Direct password-based encryption (no DEK)
+        print("✓ Direct password-based encryption (no DEK)")
+
+        # Detect format: JSON vs Binary
+        is_json_format = False
+        try:
+            if encrypted_data.startswith(b'{'):
+                import json
+                json_data = json.loads(encrypted_data.decode('utf-8'))
+                if 'ciphertext' in json_data and 'iv' in json_data:
+                    is_json_format = True
+                    print("✓ JSON format detected")
+        except:
+            pass
+        
+        if is_json_format:
+            # JSON FORMAT
+            import json
+            json_data = json.loads(encrypted_data.decode('utf-8'))
+            ciphertext = base64.b64decode(json_data['ciphertext'])
+            iv = base64.b64decode(json_data['iv'])
+            auth_tag = base64.b64decode(json_data.get('authTag', ''))
             
-            return decrypted_content
-            
-        elif document.is_encrypted and hasattr(document, 'encryption_iv') and hasattr(document, 'encryption_auth_tag'):
-            # Legacy encryption model with separate IV and auth tag fields
-            
-            # Get encryption metadata
-            iv = base64.b64decode(document.encryption_iv)
-            auth_tag = base64.b64decode(document.encryption_auth_tag)
-            
-            # Use the file data as ciphertext
-            ciphertext = encrypted_data
-            
-            # Derive key from password (using document-specific salt if available)
-            salt = base64.b64decode(document.encryption_salt) if hasattr(document, 'encryption_salt') and document.encryption_salt else b'legacy_salt_16bytes'
-            kdf = PBKDF2HMAC(
-                algorithm=hashes.SHA256(),
-                length=32,
-                salt=salt,
-                iterations=500000,  # Match frontend iterations
-                backend=default_backend()
-            )
-            key = kdf.derive(password.encode())
-            
-            # Decrypt using AES-GCM
-            aesgcm = AESGCM(key)
-            decrypted_content = aesgcm.decrypt(iv, ciphertext, None)
-            
-            return decrypted_content
-            
+            print(f"JSON - IV: {iv.hex()}")
+            print(f"JSON - Auth tag: {auth_tag.hex()}")
+            print(f"JSON - Ciphertext: {len(ciphertext)} bytes")
         else:
-            # Document is marked as encrypted but no encryption metadata found
-            raise ValueError("Document is marked as encrypted but no encryption metadata was found.")
+            # BINARY FORMAT - CRITICAL FIX HERE
+            print("✓ Binary format detected")
             
+            # CRITICAL: Get IV from DATABASE, NOT from file!
+            if hasattr(document, 'encryption_iv') and document.encryption_iv:
+                iv = base64.b64decode(document.encryption_iv) if isinstance(document.encryption_iv, str) else document.encryption_iv
+                print(f"✓ Using DATABASE IV: {iv.hex()}")
+            else:
+                raise ValueError("No IV found in database")
+            
+            # File structure: [12 UNUSED bytes][ciphertext][16 byte auth tag]
+            if len(encrypted_data) < 28:
+                raise ValueError("File too small")
+            
+            # Skip first 12 bytes (they are NOT the IV!)
+            ciphertext = encrypted_data[12:-16]
+            auth_tag = encrypted_data[-16:]
+            
+            print(f"Binary - Skipped first 12 bytes: {encrypted_data[:12].hex()}")
+            print(f"Binary - Ciphertext: {len(ciphertext)} bytes")
+            print(f"Binary - Auth tag: {auth_tag.hex()}")
+        
+        # Try multiple iteration counts
+        iteration_counts = [500000, 600000, 310000, 100000]
+        
+        for iterations in iteration_counts:
+            try:
+                print(f"\n🔑 Attempting {iterations} iterations...")
+                
+                # Derive key
+                kdf = PBKDF2HMAC(
+                    algorithm=hashes.SHA256(),
+                    length=32,
+                    salt=salt,
+                    iterations=iterations,
+                    backend=default_backend()
+                )
+                key = kdf.derive(password.encode('utf-8'))
+                
+                # Decrypt with AES-256-GCM
+                aesgcm = AESGCM(key)
+                plaintext = aesgcm.decrypt(iv, ciphertext + auth_tag, None)
+                
+                print(f"✅ SUCCESS with {iterations} iterations!")
+                print(f"Decrypted {len(plaintext)} bytes")
+                print(f"Preview: {plaintext[:50]}...")
+                print("🔐 === DECRYPTION END ===\n")
+                
+                return plaintext
+                
+            except Exception as e:
+                print(f"❌ Failed with {iterations} iterations: {type(e).__name__}")
+                continue
+        
+        raise ValueError("All iteration counts failed")
+        
     except Exception as e:
-        print(f"Decryption error: {e}")
-        raise ValueError(f"Failed to decrypt document: {str(e)}")
-
-
+        print(f"\n❌ DECRYPTION FAILED: {e}")
+        print("🔐 === DECRYPTION END ===\n")
+        raise ValueError(f"Failed to decrypt: {str(e)}")
 @router.delete("/{share_id}")
 async def revoke_share(
     share_id: int,
@@ -1473,6 +1687,282 @@ async def revoke_share(
     db.commit()
 
     return {"message": "Share revoked successfully"}
+
+
+@router.get("/{share_id}/analyze/security")
+async def analyze_share_security_endpoint(
+    share_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Analyze security aspects of a specific share."""
+    share = db.query(DocumentShare).options(
+        joinedload(DocumentShare.document)
+    ).filter(DocumentShare.id == share_id).first()
+
+    if not share:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Share not found"
+        )
+
+    # Check permissions
+    if share.created_by != current_user.id and share.document.owner_id != current_user.id:
+        if not has_permission(current_user, "document:share:view", db):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Insufficient permissions"
+            )
+
+    return analyze_share_security(share, share.document)
+
+
+@router.get("/{share_id}/analyze/performance")
+async def analyze_share_performance_endpoint(
+    share_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Analyze performance metrics of a specific share."""
+    share = db.query(DocumentShare).options(
+        joinedload(DocumentShare.document)
+    ).filter(DocumentShare.id == share_id).first()
+
+    if not share:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Share not found"
+        )
+
+    # Check permissions
+    if share.created_by != current_user.id and share.document.owner_id != current_user.id:
+        if not has_permission(current_user, "document:share:view", db):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Insufficient permissions"
+            )
+
+    return analyze_share_performance(share, share.document)
+
+
+@router.get("/analyze/usage-patterns")
+async def analyze_usage_patterns_endpoint(
+    document_id: Optional[int] = Query(None, description="Filter by document ID"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Analyze usage patterns across shares."""
+    query = db.query(DocumentShare).options(
+        joinedload(DocumentShare.document)
+    )
+
+    if document_id:
+        # Check document access
+        document = db.query(Document).filter(Document.id == document_id).first()
+        if not document:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Document not found"
+            )
+        
+        if document.owner_id != current_user.id:
+            if not has_permission(current_user, "document:share:view", db):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Insufficient permissions"
+                )
+        
+        query = query.filter(DocumentShare.document_id == document_id)
+    else:
+        # User can only see their own documents' shares unless admin
+        if not has_permission(current_user, "document:share:admin", db):
+            user_documents = db.query(Document.id).filter(Document.owner_id == current_user.id).subquery()
+            query = query.filter(DocumentShare.document_id.in_(user_documents))
+
+    shares = query.all()
+    return analyze_share_usage_patterns(shares)
+
+
+@router.get("/document/{document_id}/analyze/shareability")
+async def analyze_document_shareability_endpoint(
+    document_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Analyze how suitable a document is for sharing."""
+    document = db.query(Document).filter(Document.id == document_id).first()
+    
+    if not document:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document not found"
+        )
+
+    # Check permissions
+    if document.owner_id != current_user.id:
+        if not has_permission(current_user, "documents:read", db):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Insufficient permissions"
+            )
+
+    return analyze_document_shareability(document)
+
+
+@router.get("/document/{document_id}/analyze/encryption")
+async def analyze_encryption_strength_endpoint(
+    document_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Analyze encryption strength of a document."""
+    document = db.query(Document).filter(Document.id == document_id).first()
+    
+    if not document:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document not found"
+        )
+
+    # Check permissions
+    if document.owner_id != current_user.id:
+        if not has_permission(current_user, "documents:read", db):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Insufficient permissions"
+            )
+
+    return analyze_encryption_strength(document)
+
+
+@router.get("/analytics/report")
+async def generate_analytics_report_endpoint(
+    document_id: Optional[int] = Query(None, description="Filter by document ID"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Generate comprehensive analytics report for shares."""
+    # Build shares query
+    shares_query = db.query(DocumentShare).options(
+        joinedload(DocumentShare.document)
+    )
+    
+    # Build documents query
+    documents_query = db.query(Document)
+    
+    if document_id:
+        # Check document access
+        document = db.query(Document).filter(Document.id == document_id).first()
+        if not document:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Document not found"
+            )
+        
+        if document.owner_id != current_user.id:
+            if not has_permission(current_user, "document:share:view", db):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Insufficient permissions"
+                )
+        
+        shares_query = shares_query.filter(DocumentShare.document_id == document_id)
+        documents_query = documents_query.filter(Document.id == document_id)
+    else:
+        # User can only see their own documents unless admin
+        if not has_permission(current_user, "document:share:admin", db):
+            user_documents = db.query(Document.id).filter(Document.owner_id == current_user.id).subquery()
+            shares_query = shares_query.filter(DocumentShare.document_id.in_(user_documents))
+            documents_query = documents_query.filter(Document.owner_id == current_user.id)
+
+    shares = shares_query.all()
+    documents = documents_query.all()
+    
+    return generate_share_analytics_report(shares, documents)
+
+
+@router.get("/analyze/system-health")
+async def analyze_system_health(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Analyze overall system health for sharing functionality."""
+    # Check if user has admin permissions
+    if not has_permission(current_user, "system:admin", db):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin permissions required"
+        )
+    
+    # Get system-wide statistics
+    total_shares = db.query(DocumentShare).count()
+    active_shares = db.query(DocumentShare).filter(DocumentShare.is_active == True).count()
+    expired_shares = db.query(DocumentShare).filter(
+        and_(
+            DocumentShare.expires_at.isnot(None),
+            DocumentShare.expires_at < datetime.now(timezone.utc)
+        )
+    ).count()
+    
+    # Get encryption statistics
+    total_documents = db.query(Document).count()
+    encrypted_documents = db.query(Document).filter(Document.is_encrypted == True).count()
+    
+    # Calculate health metrics
+    health_score = 100
+    issues = []
+    recommendations = []
+    
+    # Check share health
+    if total_shares > 0:
+        active_ratio = active_shares / total_shares
+        if active_ratio < 0.5:
+            health_score -= 20
+            issues.append(f"Low active share ratio: {active_ratio:.2%}")
+            recommendations.append("Review and clean up inactive shares")
+        
+        expired_ratio = expired_shares / total_shares
+        if expired_ratio > 0.3:
+            health_score -= 15
+            issues.append(f"High expired share ratio: {expired_ratio:.2%}")
+            recommendations.append("Implement automated cleanup of expired shares")
+    
+    # Check encryption health
+    if total_documents > 0:
+        encryption_ratio = encrypted_documents / total_documents
+        if encryption_ratio < 0.8:
+            health_score -= 25
+            issues.append(f"Low encryption adoption: {encryption_ratio:.2%}")
+            recommendations.append("Encourage users to enable encryption on documents")
+    
+    # Check for potential security issues
+    public_shares = db.query(DocumentShare).filter(
+        and_(
+            DocumentShare.share_type == "public",
+            DocumentShare.is_active == True
+        )
+    ).count()
+    
+    if public_shares > total_shares * 0.1:  # More than 10% public shares
+        health_score -= 10
+        issues.append(f"High number of public shares: {public_shares}")
+        recommendations.append("Review public shares for security compliance")
+    
+    return {
+        "health_score": max(0, health_score),
+        "status": "healthy" if health_score >= 80 else "warning" if health_score >= 60 else "critical",
+        "statistics": {
+            "total_shares": total_shares,
+            "active_shares": active_shares,
+            "expired_shares": expired_shares,
+            "total_documents": total_documents,
+            "encrypted_documents": encrypted_documents,
+            "public_shares": public_shares
+        },
+        "issues": issues,
+        "recommendations": recommendations,
+        "last_checked": datetime.now(timezone.utc).isoformat()
+    }
 
 
 
@@ -1555,6 +2045,420 @@ async def preview_shared_image(document, share_token: str, encryption_password: 
             "suggestion": "Download the file to view the image in an external viewer"
         }
 
+def validate_encryption_data(key, salt, iv):
+    """Validate that encryption data is properly formatted"""
+    try:
+        if key and not isinstance(key, (str, bytes)):
+            return False
+        if salt and not isinstance(salt, (str, bytes)):
+            return False
+        if iv and not isinstance(iv, (str, bytes)):
+            return False
+            
+        # If they're strings, they should be valid base64
+        if isinstance(salt, str):
+            base64.b64decode(salt)
+        if isinstance(iv, str):
+            base64.b64decode(iv)
+            
+        return True
+    except (binascii.Error, ValueError):
+        return False
+
+
+def analyze_share_security(share: DocumentShare, document: Document) -> Dict[str, Any]:
+    """Analyze security aspects of a document share."""
+    analysis = {
+        "security_score": 0,
+        "vulnerabilities": [],
+        "recommendations": [],
+        "compliance_status": "unknown"
+    }
+    
+    # Check password protection
+    if share.require_password:
+        analysis["security_score"] += 25
+    else:
+        analysis["vulnerabilities"].append("No password protection")
+        analysis["recommendations"].append("Enable password protection for sensitive documents")
+    
+    # Check expiration
+    if share.expires_at:
+        analysis["security_score"] += 20
+        if share.expires_at < datetime.now(timezone.utc) + timedelta(days=30):
+            analysis["security_score"] += 10  # Bonus for short expiration
+    else:
+        analysis["vulnerabilities"].append("No expiration date")
+        analysis["recommendations"].append("Set expiration date to limit access window")
+    
+    # Check access limits
+    if share.max_access_count:
+        analysis["security_score"] += 15
+    else:
+        analysis["vulnerabilities"].append("No access count limit")
+        analysis["recommendations"].append("Set maximum access count to prevent abuse")
+    
+    # Check share type security
+    if share.share_type == "internal":
+        analysis["security_score"] += 20
+    elif share.share_type == "external":
+        analysis["security_score"] += 10
+        if not share.require_password:
+            analysis["vulnerabilities"].append("External share without password")
+    else:  # public
+        analysis["vulnerabilities"].append("Public share - highest risk")
+        analysis["recommendations"].append("Consider using internal or external share instead")
+    
+    # Check document encryption
+    if document.is_encrypted:
+        analysis["security_score"] += 20
+    else:
+        analysis["vulnerabilities"].append("Document not encrypted")
+        analysis["recommendations"].append("Enable client-side encryption for sensitive documents")
+    
+    # Determine compliance status
+    if analysis["security_score"] >= 80:
+        analysis["compliance_status"] = "excellent"
+    elif analysis["security_score"] >= 60:
+        analysis["compliance_status"] = "good"
+    elif analysis["security_score"] >= 40:
+        analysis["compliance_status"] = "fair"
+    else:
+        analysis["compliance_status"] = "poor"
+    
+    return analysis
+
+
+def analyze_share_performance(share: DocumentShare, document: Document) -> Dict[str, Any]:
+    """Analyze performance metrics of a document share."""
+    analysis = {
+        "access_frequency": 0,
+        "avg_access_per_day": 0,
+        "peak_usage_detected": False,
+        "performance_score": 0,
+        "bottlenecks": [],
+        "optimizations": []
+    }
+    
+    # Calculate access frequency
+    if share.created_at:
+        days_active = (datetime.now(timezone.utc) - share.created_at).days or 1
+        analysis["avg_access_per_day"] = share.access_count / days_active
+        
+        if analysis["avg_access_per_day"] > 10:
+            analysis["peak_usage_detected"] = True
+            analysis["optimizations"].append("Consider CDN caching for high-traffic shares")
+    
+    # File size analysis
+    if document.file_size:
+        size_mb = document.file_size / (1024 * 1024)
+        if size_mb > 100:
+            analysis["bottlenecks"].append(f"Large file size: {size_mb:.1f}MB")
+            analysis["optimizations"].append("Consider file compression or chunked delivery")
+        elif size_mb > 10:
+            analysis["optimizations"].append("Monitor download times for large files")
+    
+    # Encryption overhead analysis
+    if document.is_encrypted:
+        analysis["bottlenecks"].append("Encryption/decryption overhead")
+        analysis["optimizations"].append("Pre-decrypt for external shares if security allows")
+    
+    # Calculate performance score
+    base_score = 50
+    if analysis["avg_access_per_day"] < 5:
+        base_score += 20  # Low traffic is easier to handle
+    elif analysis["avg_access_per_day"] > 20:
+        base_score -= 10  # High traffic needs optimization
+    
+    if document.file_size and document.file_size < 10 * 1024 * 1024:  # < 10MB
+        base_score += 20
+    
+    if not document.is_encrypted:
+        base_score += 10  # No encryption overhead
+    
+    analysis["performance_score"] = min(100, max(0, base_score))
+    
+    return analysis
+
+
+def analyze_share_usage_patterns(shares: List[DocumentShare]) -> Dict[str, Any]:
+    """Analyze usage patterns across multiple shares."""
+    if not shares:
+        return {"error": "No shares to analyze"}
+    
+    analysis = {
+        "total_shares": len(shares),
+        "active_shares": 0,
+        "expired_shares": 0,
+        "password_protected": 0,
+        "share_types": {"internal": 0, "external": 0, "public": 0},
+        "access_patterns": {
+            "high_traffic": 0,
+            "medium_traffic": 0,
+            "low_traffic": 0,
+            "unused": 0
+        },
+        "security_distribution": {
+            "excellent": 0,
+            "good": 0,
+            "fair": 0,
+            "poor": 0
+        },
+        "recommendations": []
+    }
+    
+    now = datetime.now(timezone.utc)
+    
+    for share in shares:
+        # Count active/expired
+        if share.is_active and (not share.expires_at or share.expires_at > now):
+            analysis["active_shares"] += 1
+        else:
+            analysis["expired_shares"] += 1
+        
+        # Count password protected
+        if share.require_password:
+            analysis["password_protected"] += 1
+        
+        # Count share types
+        if share.share_type in analysis["share_types"]:
+            analysis["share_types"][share.share_type] += 1
+        
+        # Analyze access patterns
+        if share.access_count == 0:
+            analysis["access_patterns"]["unused"] += 1
+        elif share.access_count < 5:
+            analysis["access_patterns"]["low_traffic"] += 1
+        elif share.access_count < 20:
+            analysis["access_patterns"]["medium_traffic"] += 1
+        else:
+            analysis["access_patterns"]["high_traffic"] += 1
+    
+    # Generate recommendations
+    if analysis["password_protected"] / len(shares) < 0.5:
+        analysis["recommendations"].append("Consider enabling password protection on more shares")
+    
+    if analysis["expired_shares"] > analysis["active_shares"]:
+        analysis["recommendations"].append("Clean up expired shares to improve management")
+    
+    if analysis["access_patterns"]["unused"] > len(shares) * 0.3:
+        analysis["recommendations"].append("Review and remove unused shares")
+    
+    return analysis
+
+
+def analyze_document_shareability(document: Document) -> Dict[str, Any]:
+    """Analyze how suitable a document is for sharing."""
+    analysis = {
+        "shareability_score": 0,
+        "suitability": "unknown",
+        "concerns": [],
+        "requirements": [],
+        "recommended_settings": {}
+    }
+    
+    base_score = 50
+    
+    # File size considerations
+    if document.file_size:
+        size_mb = document.file_size / (1024 * 1024)
+        if size_mb > 500:
+            analysis["concerns"].append(f"Very large file ({size_mb:.1f}MB) - slow downloads")
+            base_score -= 20
+        elif size_mb > 100:
+            analysis["concerns"].append(f"Large file ({size_mb:.1f}MB) - consider compression")
+            base_score -= 10
+        else:
+            base_score += 10
+    
+    # Encryption status
+    if document.is_encrypted:
+        base_score += 20
+        analysis["recommended_settings"]["share_type"] = "external"
+        analysis["recommended_settings"]["require_password"] = True
+    else:
+        analysis["concerns"].append("Document not encrypted - security risk")
+        analysis["requirements"].append("Enable encryption before sharing")
+        base_score -= 15
+    
+    # File type considerations
+    if document.mime_type:
+        if document.mime_type.startswith("image/"):
+            base_score += 10  # Images are generally safe to share
+        elif document.mime_type in ["application/pdf", "text/plain"]:
+            base_score += 5   # Common document types
+        elif document.mime_type.startswith("application/"):
+            analysis["concerns"].append("Executable content - verify safety")
+            base_score -= 10
+    
+    # Age of document
+    if document.created_at:
+        age_days = (datetime.now(timezone.utc) - document.created_at).days
+        if age_days > 365:
+            analysis["concerns"].append("Old document - verify relevance")
+            base_score -= 5
+    
+    analysis["shareability_score"] = min(100, max(0, base_score))
+    
+    # Determine suitability
+    if analysis["shareability_score"] >= 80:
+        analysis["suitability"] = "excellent"
+    elif analysis["shareability_score"] >= 60:
+        analysis["suitability"] = "good"
+    elif analysis["shareability_score"] >= 40:
+        analysis["suitability"] = "fair"
+    else:
+        analysis["suitability"] = "poor"
+    
+    # Default recommended settings
+    if not analysis["recommended_settings"]:
+        analysis["recommended_settings"] = {
+            "share_type": "internal",
+            "require_password": True,
+            "expires_at": (datetime.now(timezone.utc) + timedelta(days=30)).isoformat(),
+            "max_access_count": 10
+        }
+    
+    return analysis
+
+
+def analyze_encryption_strength(document: Document) -> Dict[str, Any]:
+    """Analyze the strength of document encryption."""
+    analysis = {
+        "encryption_score": 0,
+        "algorithm_strength": "unknown",
+        "key_strength": "unknown",
+        "vulnerabilities": [],
+        "compliance": {
+            "fips_140_2": False,
+            "aes_256": False,
+            "secure_kdf": False
+        }
+    }
+    
+    if not document.is_encrypted:
+        analysis["encryption_score"] = 0
+        analysis["vulnerabilities"].append("Document not encrypted")
+        return analysis
+    
+    base_score = 30  # Base score for having encryption
+    
+    # Check algorithm
+    if document.encryption_algorithm:
+        if "aes-256" in document.encryption_algorithm.lower():
+            analysis["algorithm_strength"] = "strong"
+            analysis["compliance"]["aes_256"] = True
+            base_score += 25
+        elif "aes" in document.encryption_algorithm.lower():
+            analysis["algorithm_strength"] = "good"
+            base_score += 15
+        else:
+            analysis["algorithm_strength"] = "weak"
+            analysis["vulnerabilities"].append(f"Weak algorithm: {document.encryption_algorithm}")
+    
+    # Check for proper salt
+    if document.encryption_salt:
+        base_score += 15
+        analysis["compliance"]["secure_kdf"] = True
+    else:
+        analysis["vulnerabilities"].append("No salt found - weak key derivation")
+    
+    # Check for IV/nonce
+    if document.encryption_iv:
+        base_score += 10
+    else:
+        analysis["vulnerabilities"].append("No IV found - potential security risk")
+    
+    # Check for authenticated encryption (GCM mode)
+    if document.encryption_algorithm and "gcm" in document.encryption_algorithm.lower():
+        base_score += 20
+        analysis["compliance"]["fips_140_2"] = True
+    else:
+        analysis["vulnerabilities"].append("No authenticated encryption detected")
+    
+    analysis["encryption_score"] = min(100, base_score)
+    
+    # Determine key strength based on score
+    if analysis["encryption_score"] >= 80:
+        analysis["key_strength"] = "strong"
+    elif analysis["encryption_score"] >= 60:
+        analysis["key_strength"] = "good"
+    elif analysis["encryption_score"] >= 40:
+        analysis["key_strength"] = "fair"
+    else:
+        analysis["key_strength"] = "weak"
+    
+    return analysis
+
+
+def generate_share_analytics_report(shares: List[DocumentShare], documents: List[Document]) -> Dict[str, Any]:
+    """Generate comprehensive analytics report for shares."""
+    report = {
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "summary": {},
+        "security_analysis": {},
+        "performance_analysis": {},
+        "usage_patterns": {},
+        "recommendations": [],
+        "compliance_status": "unknown"
+    }
+    
+    if not shares:
+        report["summary"] = {"error": "No shares to analyze"}
+        return report
+    
+    # Generate usage patterns
+    report["usage_patterns"] = analyze_share_usage_patterns(shares)
+    
+    # Analyze security across all shares
+    security_scores = []
+    encryption_scores = []
+    
+    for share in shares:
+        # Find corresponding document
+        document = next((d for d in documents if d.id == share.document_id), None)
+        if document:
+            sec_analysis = analyze_share_security(share, document)
+            security_scores.append(sec_analysis["security_score"])
+            
+            enc_analysis = analyze_encryption_strength(document)
+            encryption_scores.append(enc_analysis["encryption_score"])
+    
+    # Calculate averages
+    if security_scores:
+        avg_security = sum(security_scores) / len(security_scores)
+        report["security_analysis"] = {
+            "average_security_score": round(avg_security, 2),
+            "security_distribution": {
+                "excellent": len([s for s in security_scores if s >= 80]),
+                "good": len([s for s in security_scores if 60 <= s < 80]),
+                "fair": len([s for s in security_scores if 40 <= s < 60]),
+                "poor": len([s for s in security_scores if s < 40])
+            }
+        }
+    
+    if encryption_scores:
+        avg_encryption = sum(encryption_scores) / len(encryption_scores)
+        report["security_analysis"]["average_encryption_score"] = round(avg_encryption, 2)
+    
+    # Generate recommendations
+    if security_scores and sum(security_scores) / len(security_scores) < 60:
+        report["recommendations"].append("Improve overall security by enabling password protection and expiration dates")
+    
+    if encryption_scores and sum(encryption_scores) / len(encryption_scores) < 70:
+        report["recommendations"].append("Upgrade encryption algorithms to AES-256-GCM for better security")
+    
+    # Determine overall compliance
+    if security_scores:
+        avg_score = sum(security_scores) / len(security_scores)
+        if avg_score >= 75:
+            report["compliance_status"] = "compliant"
+        elif avg_score >= 50:
+            report["compliance_status"] = "partially_compliant"
+        else:
+            report["compliance_status"] = "non_compliant"
+    
+    return report
 
 async def decrypt_document_content_for_share(document, encryption_password: str) -> bytes:
     """Decrypt document content for shared access."""

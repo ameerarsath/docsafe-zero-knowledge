@@ -3,7 +3,7 @@
     "axios": "^1.12.1"
   },
   "devDependencies": {
-    "@playwright/test": "^1.55.0",
+    "@playwright/test": "^1.55.1",
     "playwright": "^1.55.0"
   }
 }
