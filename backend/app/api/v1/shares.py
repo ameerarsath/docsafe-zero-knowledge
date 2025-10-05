@@ -1717,7 +1717,8 @@ def decrypt_document_for_sharing(document, encrypted_data: bytes, password: str)
     from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
     from cryptography.hazmat.primitives import hashes
     from cryptography.hazmat.backends import default_backend
-    
+    from cryptography.exceptions import InvalidTag
+
     try:
         print(f"Document ID: {document.id}")
         print(f"Password length: {len(password)}")
@@ -1768,19 +1769,25 @@ def decrypt_document_for_sharing(document, encrypted_data: bytes, password: str)
                     print(f"DEK - Ciphertext: {len(dek_ciphertext)} bytes")
                     print(f"DEK - Auth tag: {dek_tag.hex()}")
 
-                    aesgcm = AESGCM(master_key)
-                    dek = aesgcm.decrypt(dek_iv, dek_ciphertext + dek_tag, None)
+                    try:
+                        aesgcm = AESGCM(master_key)
+                        dek = aesgcm.decrypt(dek_iv, dek_ciphertext + dek_tag, None)
 
-                    print(f"✅ DEK decrypted successfully with {iterations} iterations!")
-                    print(f"DEK length: {len(dek)} bytes")
-                    break
+                        print(f"✅ DEK decrypted successfully with {iterations} iterations!")
+                        print(f"DEK length: {len(dek)} bytes")
+                        print(f"DEK preview: {dek.hex()[:32]}...")
+                        break
 
-                except Exception as e:
-                    print(f"❌ Failed to decrypt DEK with {iterations} iterations: {type(e).__name__}")
-                    continue
+                    except InvalidTag as dek_error:
+                        print(f"❌ DEK InvalidTag with {iterations} iterations: Authentication failed")
+                        print(f"   This indicates the share password is INCORRECT or DEK is corrupted")
+                        continue
+                    except Exception as dek_error:
+                        print(f"❌ DEK decryption error with {iterations} iterations: {type(dek_error).__name__}: {dek_error}")
+                        continue
 
             if not dek:
-                raise ValueError("Failed to decrypt DEK with any iteration count")
+                raise ValueError(f"FAILED TO DECRYPT DEK - This means the share password is INCORRECT or the DEK is corrupted.\nDocument {document.id} cannot be decrypted with the provided password.\n\nPlease verify:\n1. The share password matches the document encryption password\n2. The document encryption metadata is intact\n3. The iteration count for PBKDF2 key derivation is correct")
 
             # Step 3: Now decrypt the document content using the DEK
             # Get IV and auth tag from database
