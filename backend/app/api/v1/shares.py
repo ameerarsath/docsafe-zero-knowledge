@@ -1556,16 +1556,47 @@ def decrypt_document_for_sharing(document, encrypted_data: bytes, password: str)
             else:
                 print("WARNING: Auth tags DO NOT match!")
 
-            # Decrypt document content using DEK
-            doc_aesgcm = AESGCM(dek)
-            plaintext = doc_aesgcm.decrypt(doc_iv, doc_ciphertext + doc_auth_tag, None)
+            # ROBUST DECRYPTION: Try multiple strategies to handle InvalidTag errors
+            from cryptography.exceptions import InvalidTag
 
-            print(f"✅ Document decrypted successfully!")
-            print(f"Decrypted {len(plaintext)} bytes")
-            print(f"Preview: {plaintext[:50]}...")
-            print("🔐 === DECRYPTION END ===\n")
+            decryption_strategies = [
+                ("Database IV + Database Auth Tag", doc_iv, doc_auth_tag),
+                ("Database IV + File Auth Tag", doc_iv, file_auth_tag),
+            ]
 
-            return plaintext
+            # Add file IV strategies as fallback if database IV is missing
+            if not doc_iv and len(encrypted_data) >= 28:
+                file_iv = encrypted_data[:12]  # First 12 bytes from file
+                decryption_strategies.append(("File IV + File Auth Tag", file_iv, file_auth_tag))
+                if doc_auth_tag:
+                    decryption_strategies.append(("File IV + Database Auth Tag", file_iv, doc_auth_tag))
+
+            # Try each decryption strategy
+            for strategy_name, iv_to_use, auth_tag_to_use in decryption_strategies:
+                if iv_to_use and auth_tag_to_use:
+                    try:
+                        print(f"\n🔓 Trying strategy: {strategy_name}")
+                        print(f"IV: {iv_to_use.hex()}")
+                        print(f"Auth Tag: {auth_tag_to_use.hex()}")
+
+                        doc_aesgcm = AESGCM(dek)
+                        plaintext = doc_aesgcm.decrypt(iv_to_use, doc_ciphertext + auth_tag_to_use, None)
+
+                        print(f"✅ SUCCESS with strategy: {strategy_name}")
+                        print(f"Decrypted {len(plaintext)} bytes")
+                        print(f"Preview: {plaintext[:50]}...")
+                        print("🔐 === DECRYPTION END ===\n")
+                        return plaintext
+
+                    except InvalidTag as e:
+                        print(f"❌ InvalidTag with {strategy_name}: Authentication failed")
+                        continue
+                    except Exception as e:
+                        print(f"❌ Error with {strategy_name}: {type(e).__name__}: {e}")
+                        continue
+
+            # All DEK-based strategies failed
+            raise ValueError("All DEK decryption strategies failed - InvalidTag error persists")
 
         # FALLBACK: Direct password-based encryption (no DEK)
         print("✓ Direct password-based encryption (no DEK)")
@@ -1622,7 +1653,7 @@ def decrypt_document_for_sharing(document, encrypted_data: bytes, password: str)
         for iterations in iteration_counts:
             try:
                 print(f"\n🔑 Attempting {iterations} iterations...")
-                
+
                 # Derive key
                 kdf = PBKDF2HMAC(
                     algorithm=hashes.SHA256(),
@@ -1632,20 +1663,23 @@ def decrypt_document_for_sharing(document, encrypted_data: bytes, password: str)
                     backend=default_backend()
                 )
                 key = kdf.derive(password.encode('utf-8'))
-                
+
                 # Decrypt with AES-256-GCM
                 aesgcm = AESGCM(key)
                 plaintext = aesgcm.decrypt(iv, ciphertext + auth_tag, None)
-                
+
                 print(f"✅ SUCCESS with {iterations} iterations!")
                 print(f"Decrypted {len(plaintext)} bytes")
                 print(f"Preview: {plaintext[:50]}...")
                 print("🔐 === DECRYPTION END ===\n")
-                
+
                 return plaintext
-                
+
+            except InvalidTag as e:
+                print(f"❌ InvalidTag with {iterations} iterations: Authentication failed")
+                continue
             except Exception as e:
-                print(f"❌ Failed with {iterations} iterations: {type(e).__name__}")
+                print(f"❌ Failed with {iterations} iterations: {type(e).__name__}: {e}")
                 continue
         
         raise ValueError("All iteration counts failed")
