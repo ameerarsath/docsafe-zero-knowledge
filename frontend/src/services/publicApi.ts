@@ -5,7 +5,7 @@
  * such as external shares and public document access
  */
 
-const API_BASE_URL = 'http://localhost:8000';
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8002';
 
 export interface ShareInfo {
   id: number;
@@ -26,7 +26,7 @@ export const publicApi = {
    * Get share information without authentication
    */
   async getShareInfo(shareToken: string): Promise<ShareInfo> {
-    const response = await fetch(`${API_BASE_URL}/share/${shareToken}/info`, {
+    const response = await fetch(`${API_BASE_URL}/api/share/${shareToken}/info`, {
       method: 'GET',
       mode: 'cors',
       credentials: 'include'
@@ -46,7 +46,7 @@ export const publicApi = {
    * Verify share password
    */
   async verifySharePassword(shareToken: string, password: string): Promise<boolean> {
-    const response = await fetch(`${API_BASE_URL}/share/${shareToken}/verify-password`, {
+    const response = await fetch(`${API_BASE_URL}/api/share/${shareToken}/verify-password`, {
       method: 'POST',
       mode: 'cors',
       credentials: 'include',
@@ -68,7 +68,7 @@ export const publicApi = {
    * Get public document metadata
    */
   async getDocumentMetadata(shareToken: string): Promise<any> {
-    const response = await fetch(`${API_BASE_URL}/share/${shareToken}/metadata`, {
+    const response = await fetch(`${API_BASE_URL}/api/share/${shareToken}/metadata`, {
       method: 'GET',
       mode: 'cors',
       credentials: 'include'
@@ -90,7 +90,7 @@ export const publicApi = {
     reason?: string;
   }> {
     try {
-      const response = await fetch(`${API_BASE_URL}/share/${shareToken}/stream`, {
+      const response = await fetch(`${API_BASE_URL}/api/share/${shareToken}/stream`, {
         method: 'HEAD',
         mode: 'cors',
         credentials: 'include',

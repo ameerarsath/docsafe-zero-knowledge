@@ -81,10 +81,10 @@ export class ExternalShareDecryptService {
   static async fetchAndDecryptShare(
     shareToken: string,
     password: string,
-    baseUrl: string = 'http://localhost:8000'
+    baseUrl: string = import.meta.env.VITE_API_URL || 'http://localhost:8002'
   ): Promise<DecryptionResult> {
     try {
-      const response = await fetch(`${baseUrl}/share/${shareToken}/stream`, {
+      const response = await fetch(`${baseUrl}/api/share/${shareToken}/stream`, {
         method: 'GET',
         headers: password ? {
           'X-Share-Password': password

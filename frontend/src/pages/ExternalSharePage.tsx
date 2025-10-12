@@ -29,6 +29,8 @@ export const ExternalSharePage: React.FC = () => {
   const { shareToken } = useParams<{ shareToken: string }>();
   const navigate = useNavigate();
 
+  const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8002';
+
   const [shareInfo, setShareInfo] = useState<ShareInfo | null>(null);
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -53,7 +55,7 @@ export const ExternalSharePage: React.FC = () => {
       setError(null);
 
       // First try to access without password
-      const response = await fetch(`http://localhost:8000/share/${shareToken}/info`, {
+      const response = await fetch(`${API_BASE_URL}/api/share/${shareToken}/info`, {
         method: 'GET',
         mode: 'cors',
         credentials: 'include'
@@ -100,7 +102,7 @@ export const ExternalSharePage: React.FC = () => {
       setError(null);
 
       // Verify password by trying to access the file
-      const response = await fetch(`http://localhost:8000/share/${shareToken}/stream`, {
+      const response = await fetch(`${API_BASE_URL}/api/share/${shareToken}/stream`, {
         method: 'HEAD',
         mode: 'cors',
         credentials: 'include',
@@ -281,7 +283,7 @@ export const ExternalSharePage: React.FC = () => {
             </div>
             <button
               onClick={() => {
-                const downloadUrl = `http://localhost:8000/share/${shareToken}/stream?download=true${password ? `&password=${encodeURIComponent(password)}` : ''}`;
+                const downloadUrl = `${API_BASE_URL}/api/share/${shareToken}/stream?download=true${password ? `&password=${encodeURIComponent(password)}` : ''}`;
                 window.open(downloadUrl, '_blank');
               }}
               className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"

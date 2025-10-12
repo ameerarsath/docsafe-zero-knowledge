@@ -44,9 +44,9 @@ export const ExternalShareViewer: React.FC<ExternalShareViewerProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
-  const baseUrl = 'http://localhost:8000';
-  const streamUrl = `${baseUrl}/share/${shareToken}/stream${password ? `?password=${encodeURIComponent(password)}` : ''}`;
-  const downloadUrl = `${baseUrl}/share/${shareToken}/stream?download=true${password ? `&password=${encodeURIComponent(password)}` : ''}`;
+  const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:8002';
+  const streamUrl = `${baseUrl}/api/share/${shareToken}/stream${password ? `?password=${encodeURIComponent(password)}` : ''}`;
+  const downloadUrl = `${baseUrl}/api/share/${shareToken}/stream?download=true${password ? `&password=${encodeURIComponent(password)}` : ''}`;
 
   useEffect(() => {
     setIsLoading(true);

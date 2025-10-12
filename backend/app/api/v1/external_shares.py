@@ -68,7 +68,7 @@ async def get_external_share_metadata(
         "max_access_count": share.max_access_count
     }
 
-@router.get("/{share_token}/stream")
+@router.api_route("/{share_token}/stream", methods=["GET", "HEAD"])
 async def stream_external_share(
     share_token: str,
     request: Request,
@@ -90,7 +90,7 @@ async def stream_external_share(
         cors_headers = {
             "Access-Control-Allow-Origin": origin,
             "Access-Control-Allow-Credentials": "true",
-            "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+            "Access-Control-Allow-Methods": "GET, HEAD, POST, OPTIONS",
             "Access-Control-Allow-Headers": "*",
             "Access-Control-Expose-Headers": "Content-Length, Content-Type, Content-Disposition"
         }
@@ -101,6 +101,9 @@ async def stream_external_share(
             status_code=200,
             headers=cors_headers
         )
+
+    # Handle HEAD requests - return headers only without body
+    is_head_request = request.method == "HEAD"
 
     # Load share with document
     share = db.query(DocumentShare).options(
@@ -178,7 +181,8 @@ async def stream_external_share(
                                 decrypted_data,
                                 document,
                                 download,
-                                cors_headers
+                                cors_headers,
+                                is_head_request=is_head_request
                             )
                 except Exception as decrypt_error:
                     print(f"❌ Server-side decryption failed: {decrypt_error}")
@@ -190,7 +194,8 @@ async def stream_external_share(
                 document,
                 download,
                 cors_headers,
-                is_encrypted=True
+                is_encrypted=True,
+                is_head_request=is_head_request
             )
 
         # For unencrypted documents, serve directly
@@ -198,7 +203,8 @@ async def stream_external_share(
             file_data,
             document,
             download,
-            cors_headers
+            cors_headers,
+            is_head_request=is_head_request
         )
 
     except Exception as e:
@@ -211,7 +217,8 @@ async def _serve_file_content(
     document,
     download: bool,
     cors_headers: dict,
-    is_encrypted: bool = False
+    is_encrypted: bool = False,
+    is_head_request: bool = False
 ):
     """Serve file content with appropriate headers based on file type."""
 
@@ -286,6 +293,13 @@ async def _serve_file_content(
         headers.update({
             "Content-Type": mime_type
         })
+
+    # For HEAD requests, return only headers without body
+    if is_head_request:
+        return Response(
+            status_code=200,
+            headers=headers
+        )
 
     return StreamingResponse(
         iter([file_data]),

@@ -29,11 +29,13 @@ export const SecurePDFViewer: React.FC<SecurePDFViewerProps> = ({
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
+  const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8002';
+
   // Build the streaming URL
-  const streamUrl = `http://localhost:8000/share/${shareToken}/stream${password ? `?password=${encodeURIComponent(password)}` : ''}`;
+  const streamUrl = `${API_BASE_URL}/api/share/${shareToken}/stream${password ? `?password=${encodeURIComponent(password)}` : ''}`;
 
   // Build the download URL
-  const downloadUrl = `http://localhost:8000/share/${shareToken}/stream?download=true${password ? `&password=${encodeURIComponent(password)}` : ''}`;
+  const downloadUrl = `${API_BASE_URL}/api/share/${shareToken}/stream?download=true${password ? `&password=${encodeURIComponent(password)}` : ''}`;
 
   useEffect(() => {
     setIsLoading(true);
