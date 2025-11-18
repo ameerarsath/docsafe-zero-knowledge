@@ -482,7 +482,8 @@ class DocumentShare(Base):
     require_password = Column(Boolean, default=False, nullable=False)
     password_hash = Column(String(100))  # Hashed password for protected shares
     encryption_password = Column(String(255))  # Encryption password for server-side decryption of external shares
-    
+    share_encrypted_dek = Column(Text)  # Re-encrypted DEK for zero-knowledge sharing (JSON with ciphertext, iv, salt, etc.)
+
     # Temporal controls
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     expires_at = Column(DateTime(timezone=True))
